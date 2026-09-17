@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace spear {
 
@@ -47,6 +48,15 @@ public:
     // 運転中の retune 要求(timed command, §17.1)。宣言は即座に更新され、実際に適用された時点で
     // Retune event(value = 実周波数, range.begin = 境界 sample index)が出る。要求は失われない(最新値が勝つ)。
     virtual bool retune(double center_freq_hz) = 0;
+
+    // ---- 立ち上げ(起動時、App を始める前)----
+    // 実機なら自己診断 → 装置の出現待ち → open(FPGA ロード)→ tune 確認 → close まで裏で進め、装置を「すぐ使える」状態にする。
+    // 進行中は warming_up() が true、経過は startup_report()(行の列)と device_status()(状態・進捗)で見える。
+    // start() は warm_up の完了を待ってから走る。実機以外では何もしない。
+    virtual void warm_up() {}
+    virtual bool warming_up() const { return false; }
+    virtual void cancel_warm_up() {}                                  // 装置の出現待ちを打ち切る(open 中は打ち切れない)
+    virtual std::vector<std::string> startup_report() const { return {}; }
 };
 
 class Sink {

@@ -18,6 +18,7 @@ qt_add_qml_module(spear-gui
     qml/StatusBar.qml
     qml/SoftKeyBar.qml
     qml/MenuPage.qml
+    qml/SplashPage.qml
     qml/DiagnosticsPage.qml
   SOURCES
     src/system_model.hpp

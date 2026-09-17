@@ -16,6 +16,10 @@ Window {
 
     readonly property bool appOpen: shell.activeApp !== null
     readonly property bool diagOpen: shell.diagnosticsOpen
+    // スプラッシュ: 立ち上げ(Source::warm_up、実機の FPGA ロード等)が終わるまで。実機でなくても名前を 1.5 s は見せる
+    property bool splashHold: true
+    readonly property bool splashOpen: (sys.warmingUp || splashHold) && !win.appOpen && !win.diagOpen
+    Timer { interval: 1500; running: true; onTriggered: win.splashHold = false }
 
     function back() {
         if (shell.diagnosticsOpen) { shell.showDiagnostics(false); return }
@@ -49,8 +53,9 @@ Window {
             id: content
             anchors.top: status.bottom; anchors.bottom: softkeys.top; width: parent.width
 
+            SplashPage { anchors.fill: parent; visible: win.splashOpen }
             MenuPage {
-                anchors.fill: parent; visible: !win.appOpen && !win.diagOpen
+                anchors.fill: parent; visible: !win.appOpen && !win.diagOpen && !win.splashOpen
                 onSelected: (i) => { if (!shell.busy) shell.startApp(i) }
                 onAskGain: win.askGain(shell.draftGain, (v) => { if (v < 0) shell.draftAgc = true; else shell.draftGain = v })
             }
@@ -79,7 +84,11 @@ Window {
             width: parent.width; anchors.bottom: parent.bottom
             keys: {
                 var k = []
-                if (win.diagOpen) {
+                if (win.splashOpen) {
+                    for (var i = 0; i < 7; ++i) k.push(null)
+                    k.push(sys.warmingUp && !(sys.deviceStateCode >= 2 && sys.deviceStateCode <= 4) ? { label: "CONTINUE", action: "skipwarm" } : null)
+                    return k
+                } else if (win.diagOpen) {
                     for (var i = 0; i < 7; ++i) k.push(null)
                 } else if (win.appOpen && appPage.item && appPage.item.softKeys) {
                     k = appPage.item.softKeys.slice(0, 7)
@@ -110,6 +119,7 @@ Window {
         case "back": back(); return
         case "mgain": askGain(shell.draftGain, (v) => { if (v < 0) shell.draftAgc = true; else shell.draftGain = v }); return
         case "diag": shell.showDiagnostics(true); return
+        case "skipwarm": shell.skipWarmUp(); return
         }
         if (win.appOpen && appPage.item && appPage.item.softKey) appPage.item.softKey(k.action)
     }

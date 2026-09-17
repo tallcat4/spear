@@ -44,6 +44,9 @@ class SystemModel : public QObject {
     Q_PROPERTY(int stage READ stage NOTIFY changed)
     Q_PROPERTY(int generation READ generation NOTIFY changed)
     Q_PROPERTY(double stateSeconds READ stateSeconds NOTIFY changed)
+    Q_PROPERTY(int deviceProgress READ deviceProgress NOTIFY changed)          // FPGA 書き込みの進捗 %(無ければ −1)
+    Q_PROPERTY(bool warmingUp READ warmingUp NOTIFY changed)                   // 立ち上げ(Source::warm_up)進行中
+    Q_PROPERTY(QStringList startupReport READ startupReport NOTIFY changed)   // 立ち上げの経過(自己診断 / 装置 / FPGA / tune)
     // ---- RF ----
     Q_PROPERTY(double centerFreq READ centerFreq NOTIFY changed)
     Q_PROPERTY(double appliedFreq READ appliedFreq NOTIFY changed)
@@ -94,6 +97,9 @@ public:
     int stage() const { return ds_.stage; }
     int generation() const { return static_cast<int>(ds_.generation); }
     double stateSeconds() const { return ds_.since_ns ? static_cast<double>(host_now_ns() - ds_.since_ns) * 1e-9 : 0; }
+    int deviceProgress() const { return ds_.progress_pct; }
+    bool warmingUp() const { return warming_; }
+    QStringList startupReport() const { return report_; }
     double centerFreq() const { return cfg_.center_freq; }          // Source::config()(宣言。retune で即時更新)
     double appliedFreq() const { return applied_freq_; }             // Retune event の実周波数(適用済み)
     double sampleRate() const { return cfg_.sample_rate; }
@@ -142,6 +148,8 @@ protected:
 private:
     Core& core_;
     DeviceStatus ds_;
+    bool warming_ = false;
+    QStringList report_;
     RfConfig cfg_;
     HealthSnapshot h_;
     QVariantList consumers_;

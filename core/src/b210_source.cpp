@@ -41,14 +41,79 @@ bool B210LiveSource::configure(const RfConfig& cfg, std::string* err) {
 
 void B210LiveSource::start() {
     if (running_.exchange(true)) return;
+    // 立ち上げが進行中なら完了を待つ(open の途中で RX thread が同じ Radio を触らないように)
+    warm_cancel_ = true;
+    if (warm_th_.joinable()) warm_th_.join();
     stop_req_ = false;
     th_ = std::thread([this] { run(); });
 }
 
 void B210LiveSource::stop() {
     stop_req_ = true;
+    warm_cancel_ = true;
+    if (warm_th_.joinable()) warm_th_.join();
     if (th_.joinable()) th_.join();
     running_ = false;
+}
+
+void B210LiveSource::report(const std::string& line) {
+    { std::lock_guard lk(mu_); report_.push_back(line); }
+    if (events_) events_->emit(EventKind::Info, "radio", "warm-up: " + line);
+}
+
+void B210LiveSource::warm_up() {
+    if (running_) return;
+    if (warming_.exchange(true)) return;
+    if (warm_th_.joinable()) warm_th_.join();
+    warm_cancel_ = false;
+    { std::lock_guard lk(mu_); report_.clear(); }
+    warm_th_ = std::thread([this] { warm_run(); warming_ = false; });
+}
+
+// 立ち上げ: App を始める前に装置を「すぐ使える」状態にする。
+// UHD は multi_usrp::make() の中で FPGA を書き込む(ストリームを始める必要はない)ので、open → close で FPGA は構成済みのまま残り、
+// 次の open(App 起動)はハッシュ照合で書き込みを飛ばして数秒で済む。
+void B210LiveSource::warm_run() {
+    auto sleep_s = [&](double sec) {
+        for (int i = 0; i < 20 && !warm_cancel_ && !stop_req_; ++i)
+            std::this_thread::sleep_for(std::chrono::duration<double>(sec / 20));
+    };
+    // stage 0: 装置に触らない自己診断
+    const auto sc = radio_.self_check();
+    report("UHD " + sc.uhd_version);
+    report(std::string("FW image: ") + (sc.fw_image.empty() ? "MISSING" : sc.fw_image));
+    report(std::string("FPGA image: ") + (sc.fpga_image.empty() ? "MISSING" : sc.fpga_image));
+    report("RLIMIT_RTPRIO=" + std::to_string(sc.rtprio_limit) + (sc.rtprio_limit == 0 ? " (SCHED_FIFO unavailable)" : "") +
+           "  RLIMIT_MEMLOCK=" + (sc.memlock_limit_kb < 0 ? std::string("unlimited") : std::to_string(sc.memlock_limit_kb) + " kB"));
+    for (const auto& n : sc.notes) if (n.rfind("RLIMIT_RTPRIO", 0) != 0) report("note: " + n);   // rtprio は上の行に出ている
+    if (!sc.ok) { report("self-check FAILED: cannot open the device"); return; }
+    report("self-check ok");
+    // 装置の出現待ち(副作用なしの probe)
+    bool announced = false;
+    ProbeSummary ps;
+    while (!warm_cancel_ && !stop_req_) {
+        ps = radio_.probe();
+        if (ps.attempt_open) break;
+        if (!announced) { report("waiting for device: " + ps.evidence); announced = true; }
+        sleep_s(ps.state == DeviceState::Fault ? opt_.fault_retry_s : opt_.probe_period_s);
+    }
+    if (warm_cancel_ || stop_req_) { report("skipped (device wait cancelled)"); return; }
+    report("device present: serial=" + ps.serial + "  " + ps.evidence);
+    // open: NoFirmware なら FW、FPGA 未構成なら FPGA を UHD が書き込む(進捗は DeviceStatus::progress_pct)
+    const RfConfig cfg = config();
+    report(ps.state == DeviceState::Ready ? "opening device (FPGA already configured)" : "opening device: loading FPGA (about 70 s on USB 2.0) ...");
+    std::string err;
+    if (!radio_.open(cfg, &err)) { report("open FAILED: " + err); radio_.close(); return; }
+    const auto& info = radio_.info();
+    report("open ok: " + info.product + " serial=" + info.serial + "  fw=" + info.fw_version + "  fpga=" + info.fpga_version + "  USB " + std::to_string(info.usb_version));
+    // tune 確認(LO ロック)。運転の RF は App が決めるので、ここは草案での動作確認だけ
+    char buf[128];
+    std::snprintf(buf, sizeof buf, "tune check: %.6f MHz @ %.3f Msps gain %.1f dB", cfg.center_freq / 1e6, cfg.sample_rate / 1e6, cfg.gain);
+    if (!radio_.tune_rx(cfg, &err)) report(std::string(buf) + " FAILED: " + err);
+    else report(std::string(buf) + " lo_locked");
+    radio_.close();
+    report("closed; FPGA stays configured. ready");
+    radio_.probe();   // 状態は一次ソース(FX3 レジスタ)から: running → READY
 }
 
 void B210LiveSource::request_retune(double freq_hz) {

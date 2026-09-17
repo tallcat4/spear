@@ -86,6 +86,7 @@ public:
 
     // stage 0: 装置に触らずに分かること(UHD version / image files / rlimit)。起動時に 1 回。
     SelfCheck self_check(const std::string& product_hint = "B210");
+    SelfCheck last_self_check() const { std::lock_guard lk(st_mu_); return self_check_; }
 
     // 受信中に安全に読めるセンサ(実測: temp/rssi/lo_locked/ref_locked/time は転送を止めない)
     LiveSensors read_live_sensors();
@@ -101,6 +102,7 @@ public:
     uint64_t state_version() const { return state_version_.load(); }
     // 状態遷移。evidence は一次ソースの値をそのまま書く。変化時に DeviceState event を出す。
     void set_state(DeviceState st, std::string evidence, int stage = -1);
+    void set_progress(int pct);   // 書き込み進捗(UHD ログ由来)。Standby 以外の状態では −1 に戻る
     void set_generation(uint64_t g);
 
     const RadioInfo& info() const { return info_; }
@@ -121,6 +123,7 @@ private:
     double actual_rate_ = 0, actual_freq_ = 0;
     mutable std::mutex st_mu_;
     DeviceStatus st_;
+    SelfCheck self_check_;
     std::atomic<uint64_t> state_version_{0};
     TimeReference time_ref_;
     std::string clock_source_ = "internal";

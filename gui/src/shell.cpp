@@ -31,6 +31,8 @@ void Shell::startApp(int index) {
     if (busy_) return;
     if (index == diagnosticsIndex()) { diagnostics_ = true; Q_EMIT activeChanged(); return; }
     if (index < 0 || index >= static_cast<int>(instances_.size())) return;
+    // 立ち上げ(FPGA ロード等)の途中では App を始めない。start() は完了を待つが、GUI を 1 分止めるより拒否して見せる
+    if (core_.source().warming_up()) { last_error_ = "device is still warming up"; Q_EMIT activeChanged(); return; }
     auto app = instances_[index];
     app->set_rf_config(draft_);
     busy_ = true;

@@ -153,6 +153,7 @@ struct DeviceStatus {
     std::string serial;        // 見えている個体
     std::string fx3_state;     // FX3 状態レジスタの文字列(取得できたとき)
     int         stage = 0;     // 起動シーケンスの到達段 (0..6)
+    int         progress_pct = -1; // 書き込みの進捗(B2xx の FPGA ロード、UHD のログ "FPGA load: NN%" 由来)。無ければ −1
     uint64_t    since_ns = 0;  // この状態に入った host 時刻
     uint64_t    generation = 0;
     LiveSensors sensors;

@@ -23,7 +23,7 @@
 | `dsp/` 共通 | `design_lowpass`、`FirDecimator` / `FirInterpolator`(ベクトル化カーネル)、`PfbChannelizer`、`SpectrumEstimator`、`stage.hpp`(StageInfo / Provenance)、FFTW プランナ mutex | gtest(参照ベクトル) |
 | `appfw/` App SDK | `GuiApp`(on_start/on_stop は GUI thread 保証、`configure(QVariantMap)`、`persist({...})`)、`SettingsStore`(運転状態の復元・自動保存 `~/spear/state.conf`)、ビルド時レジストリ、`ViewProcessor/ViewSource`(任意の複素 stream → spectrum/waterfall、手動レンジは再起動をまたぐ)、`TraceSource` + `EyeDiagramItem`、`SpectrumItem` / `WaterfallItem`(自前 QRhiTexture リング) | `apps/tests/test_apps.cpp`(全 App のライフサイクル)、`test_settings.cpp`(往復・全 App の宣言解決) |
 | `widgets/ input/ theme/` | `SpectrumView`(markers / compact)、`EyeDiagram`、`Readout`、`LevelMeter`、`Spear.Input`(KeyButton / Keypad / StepKeys / ValueField / NumericEntry、タッチ専用)、`Theme` | スクリーンショットで目視(`docs/gui/*.png`) |
-| `gui/` シェル | メニュー(GAIN のみ、center/rate は App が決める)/ ステータスバー / ソフトキー / DIAGNOSTICS / 数値入力モーダル、`--set key=value`、`--screenshot` 検証ハーネス | 実機・合成 |
+| `gui/` シェル | スプラッシュ(起動時の立ち上げ: 自己診断 → 装置待ち → FPGA ロード(進捗)→ tune 確認。完了まで App を始めない)/ メニュー(GAIN のみ、center/rate は App が決める)/ ステータスバー / ソフトキー / DIAGNOSTICS / 数値入力モーダル、`--set key=value`、`--screenshot` 検証ハーネス | 実機・合成。FPGA 進捗バーは未構成からの起動でまだ未確認 |
 | `apps/spectrum` | 汎用。FREQ / RATE(再起動)/ REF / AVG / HOLD | off-air 確認済み |
 | `apps/recorder` | Lossless 録音、sidecar、録音中は FREQ 無効 | gtest(drop 0)、実機 |
 | `apps/demod` | NFM/WFM/AM、LO を RX から 250 kHz 離す、channel IQ と audio を Stream Bus に publish | 合成 FM トーン gtest、off-air FM |
@@ -59,6 +59,8 @@
 - **`dsp::Provenance` は群遅延を引く**(2026-09-17、ADS-B の合成 PPM テストで発覚)。段は因果なので出力 index → 入力 index は −群遅延。以前は足していた。
 - **DSP カーネルは既定 x86-64 で組み、`target_clones` で AVX2/FMA 版を併せ持つ**(2026-09-17、`dsp/src/fir.cpp`)。`-march=native` は golden の丸めを
   全体で変えるので採らない。`FirDecimator` の decim 1 はタップ外側の axpy(8 Msps × 47 tap で 1/2)。
+- **起動時に装置を立ち上げてから App を選ばせる**(2026-09-17、`Source::warm_up`)。以前は最初の App 起動まで状態が UNKNOWN で、FPGA 書き込み中でも App を始められた。
+  UHD は `multi_usrp::make` で FPGA を書くので open → close だけで済み、libuhd のパッチは要らない。
 - **可搬機なので位置・方位の前提を置かない**(2026-09-17、ADS-B)。GPS も方位センサも無い。地図は受信した機体の位置だけから決め(自動フィット)、
   地図データはリポジトリに同梱してバイナリに埋め込む(オフライン、パブリックドメインの Natural Earth + OurAirports)。
 - **高頻度の事象はフレームごとに Event にしない**(ADS-B: 新規機 / 初回位置 / 消失だけ。フレーム数は統計)。イベントログを溢れさせない。

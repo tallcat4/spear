@@ -68,6 +68,12 @@ public:
     void request_retune(double freq_hz);
     bool retune(double freq_hz) override { request_retune(freq_hz); return true; }
 
+    // 立ち上げ(Source::warm_up): 自己診断 → 装置の出現待ち → open(FPGA ロード)→ tune 確認 → close。裏スレッドで進める
+    void warm_up() override;
+    bool warming_up() const override { return warming_.load(); }
+    void cancel_warm_up() override { warm_cancel_ = true; }
+    std::vector<std::string> startup_report() const override { std::lock_guard lk(mu_); return report_; }
+
     B210RxStats stats() const;
     PoolStats pool_stats() const { return pool_.stats(); }
     const Radio& radio() const { return radio_; }
@@ -81,6 +87,8 @@ private:
     void run();
     bool bring_up();          // 手順 1〜5
     void tear_down(bool device_lost);
+    void warm_run();
+    void report(const std::string& line);
 
     EventBus* events_;
     B210SourceOptions opt_;
@@ -93,6 +101,9 @@ private:
     uhd::rx_streamer::sptr rx_;
 
     std::thread th_;
+    std::thread warm_th_;
+    std::atomic<bool> warming_{false}, warm_cancel_{false};
+    std::vector<std::string> report_;       // mu_ で保護。立ち上げの経過(GUI のスプラッシュが表示する)
     std::thread sensor_th_;                 // 受信中のセンサ監視(lo_locked / temp / rssi / drift)。安全性は実測済み
     std::atomic<bool> sensor_stop_{false};
     std::atomic<bool> running_{false}, stop_req_{false};

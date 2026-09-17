@@ -104,6 +104,7 @@ int main(int argc, char** argv) {
         if (!store.path().isEmpty()) std::fprintf(stderr, "state: %s (%d restored, %d bound)\n", qPrintable(store.path()), store.restoredCount(), store.boundCount());
     }
     core.source().configure(shell.draft());   // 起動時点の宣言を適用(App 起動前でも status bar に正しい RF を出す)
+    core.source().warm_up();                  // 実機: 自己診断 → 装置待ち → FPGA ロード → tune 確認 → close(スプラッシュが経過を見せる)
     {
         QVariantMap settings;
         settings["record_dir"] = QString::fromStdString(record_dir);

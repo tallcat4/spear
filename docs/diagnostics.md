@@ -2,6 +2,14 @@
 
 最重要部分。推定ではなく一次ソースで判定し、根拠(evidence)を必ず付ける。
 
+## 立ち上げ(GUI 起動時、App を始める前。`Source::warm_up`、2026-09-17)
+`spear-gui` は起動直後に `B210LiveSource::warm_up()` を裏スレッドで走らせ、スプラッシュ(`gui/qml/SplashPage.qml`)がその経過を見せる:
+自己診断(stage 0)→ 装置の出現待ち(probe)→ `Radio::open`(UHD の `multi_usrp::make` が FW / FPGA を書き込む。ストリームを始める必要はない)
+→ `tune_rx` で LO ロック確認 → `close`。FPGA は構成済みのまま残るので、App 起動時の open はハッシュ照合で書き込みを飛ばして約 2 s。
+書き込み中の進捗は UHD 自身の debug ログ `FPGA load: NN%` を `DeviceStatus::progress_pct` に写して進捗バーにする(libuhd のパッチは不要)。
+立ち上げ中は `Shell::startApp` が App の起動を拒否する。装置の出現待ちだけは CONTINUE で打ち切れる(open 中は打ち切れない)。
+経過は `startup_report()`(行の列)と `warm-up:` の Info event に残る。
+
 ## 起動シーケンス(各段を個別に報告: `startup_stage` / `error` event, value = 段番号)
 
 | 段 | 内容 | 一次ソース | 失敗時 |
@@ -36,4 +44,4 @@
 * TX 側(`recv_async_msg`: underflow / seq_error / time_error)— TX App と同時に
 * libudev による USB add/remove の監視(kernel 側の一次ソース。UHD より先に切断を知れる)— 任意
 * rtprio: `/etc/security/limits.d` 未設定のため SCHED_FIFO 無効(stage 0 で報告される)
-* FPGA 進捗の STANDBY 表示は次回の抜き差しで確認
+* FPGA 進捗(STANDBY + `progress_pct`)の表示は次回の抜き差し(FPGA 未構成からの起動)で確認。ログの解釈は既存

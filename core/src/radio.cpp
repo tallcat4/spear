@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <chrono>
 #include <cstdio>
 #include <atomic>
@@ -52,9 +53,10 @@ void Radio::install_uhd_log_hook() {
         ev->emit(EventKind::UhdLog, "uhd/" + li.component, li.message, {}, static_cast<int64_t>(li.verbosity));
         // UHD 自身の「書き込み中」報告 → STANDBY(FPGA, 進捗つき)/ NO_FIRMWARE(FW)。open() 完了時に上書きされる。
         if (radio && li.component == "B200") {
-            if (li.message.rfind("Loading FPGA image", 0) == 0 || fpga_progress)
+            if (li.message.rfind("Loading FPGA image", 0) == 0 || fpga_progress) {
                 radio->set_state(DeviceState::Standby, "uhd: " + li.message, 1);
-            else if (li.message.rfind("Loading firmware image", 0) == 0)
+                if (fpga_progress) radio->set_progress(std::atoi(li.message.c_str() + std::strlen("FPGA load:")));   // "FPGA load:  45%"
+            } else if (li.message.rfind("Loading firmware image", 0) == 0)
                 radio->set_state(DeviceState::NoFirmware, "uhd: " + li.message, 1);
         }
     });
@@ -91,6 +93,7 @@ SelfCheck Radio::self_check(const std::string& product_hint) {
                           " memlock_kb=" + std::to_string(sc.memlock_limit_kb);
     for (const auto& n : sc.notes) summary += "; " + n;
     stage(0, summary, sc.ok);
+    { std::lock_guard lk(st_mu_); self_check_ = sc; }
     if (!sc.ok) set_state(DeviceState::Fault, "self-check: " + summary, 0);
     return sc;
 }
@@ -154,11 +157,22 @@ void Radio::set_state(DeviceState st, std::string evidence, int stage) {
         st_.state = st;
         st_.evidence = evidence;
         if (stage >= 0) st_.stage = stage;
+        if (st != DeviceState::Standby) st_.progress_pct = -1;
         st_.serial = info_.serial;
     }
     if (changed) state_version_++;
     if (changed && events_)
         events_->emit(EventKind::DeviceState, "radio", std::string(to_string(st)) + ": " + evidence, {}, static_cast<int64_t>(st));
+}
+
+void Radio::set_progress(int pct) {
+    bool changed;
+    {
+        std::lock_guard lk(st_mu_);
+        changed = st_.progress_pct != pct;
+        st_.progress_pct = pct;
+    }
+    if (changed) state_version_++;
 }
 
 void Radio::set_generation(uint64_t g) {
