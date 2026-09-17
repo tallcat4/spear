@@ -1,5 +1,6 @@
 #include "spear/dsp/fir.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
@@ -7,7 +8,16 @@ namespace spear::dsp {
 namespace {
 // 内積カーネル。累算器を 8 本に分けて和の順序を固定し、-ffast-math なしでも自動ベクトル化できる形にする
 // (実測: 520 tap の実数 FIR 30 本 @62.5 kHz が素朴なループの ~5 倍速)。taps は時間順(h[0] が最古)。
-inline float dot(const float* x, const float* h, std::size_t n) {
+// 対象機(FZ-G2, i5-10310U)は AVX2/FMA を持つが、バイナリは既定の x86-64(SSE2)で組む。カーネルだけ target_clones で
+// AVX2+FMA 版を併せて生成し、実行時に選ぶ(8 Msps × 47 tap の複素 FIR で SSE2 の約 3 倍)。FMA は丸めが 1 ulp 変わり得る。
+// サニタイザ付きビルドでは使わない(ifunc の resolver が TSan の初期化前に走って起動時に落ちる)。
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
+#define SPEAR_KERNEL_CLONES inline
+#else
+#define SPEAR_KERNEL_CLONES __attribute__((target_clones("avx2,fma", "default")))
+#endif
+SPEAR_KERNEL_CLONES
+float dot(const float* x, const float* h, std::size_t n) {
     float a0 = 0, a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0, a7 = 0;
     std::size_t k = 0;
     for (; k + 8 <= n; k += 8) {
@@ -17,18 +27,34 @@ inline float dot(const float* x, const float* h, std::size_t n) {
     for (; k < n; ++k) a0 += x[k] * h[k];
     return ((a0 + a1) + (a2 + a3)) + ((a4 + a5) + (a6 + a7));
 }
-inline cf32 dot(const cf32* x, const float* h, std::size_t n) {
-    // 複素 × 実: re/im を独立に。x を float 配列として見て h を 2 倍に展開したものと等価だが、ここは 4 本ずつ
-    float r0 = 0, r1 = 0, r2 = 0, r3 = 0, i0 = 0, i1 = 0, i2 = 0, i3 = 0;
+// 複素 × 実。x を float 配列(re, im, re, im, …)として見て、係数を 2 倍に展開した h2(h2[2k] = h2[2k+1] = h[k])との内積を
+// 8 本の累算器で取る(実数版と同じ形なので同じように自動ベクトル化される)。偶数番の累算器が実部、奇数番が虚部。
+// 4 本ずつの複素ループ(以前の形)は re/im のインターリーブ読み出しがベクトル化されず、8 Msps × 47 tap で ~10 ns/sample かかっていた。
+SPEAR_KERNEL_CLONES
+cf32 dot(const cf32* x, const float* h2, std::size_t n) {
+    const float* xf = reinterpret_cast<const float*>(x);
+    const std::size_t n2 = 2 * n;
+    float a0 = 0, a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0, a7 = 0;
     std::size_t k = 0;
-    for (; k + 4 <= n; k += 4) {
-        r0 += x[k].real() * h[k]; i0 += x[k].imag() * h[k];
-        r1 += x[k + 1].real() * h[k + 1]; i1 += x[k + 1].imag() * h[k + 1];
-        r2 += x[k + 2].real() * h[k + 2]; i2 += x[k + 2].imag() * h[k + 2];
-        r3 += x[k + 3].real() * h[k + 3]; i3 += x[k + 3].imag() * h[k + 3];
+    for (; k + 8 <= n2; k += 8) {
+        a0 += xf[k] * h2[k]; a1 += xf[k + 1] * h2[k + 1]; a2 += xf[k + 2] * h2[k + 2]; a3 += xf[k + 3] * h2[k + 3];
+        a4 += xf[k + 4] * h2[k + 4]; a5 += xf[k + 5] * h2[k + 5]; a6 += xf[k + 6] * h2[k + 6]; a7 += xf[k + 7] * h2[k + 7];
     }
-    for (; k < n; ++k) { r0 += x[k].real() * h[k]; i0 += x[k].imag() * h[k]; }
-    return {(r0 + r1) + (r2 + r3), (i0 + i1) + (i2 + i3)};
+    for (; k < n2; k += 2) { a0 += xf[k] * h2[k]; a1 += xf[k + 1] * h2[k + 1]; }
+    return {(a0 + a2) + (a4 + a6), (a1 + a3) + (a5 + a7)};
+}
+// y[m] += a · x[m](間引きなし FIR のタップ外側ループ用。restrict で別名なしを宣言し、自動ベクトル化させる)
+SPEAR_KERNEL_CLONES
+void axpy(float* __restrict y, const float* __restrict x, float a, std::size_t n) {
+    for (std::size_t m = 0; m < n; ++m) y[m] += x[m] * a;
+}
+// T に応じたカーネル用の係数列(float: 時間順そのまま、cf32: 2 倍展開)
+template <class T> std::vector<float> kernel_taps(const std::vector<float>& taps_rev);
+template <> std::vector<float> kernel_taps<float>(const std::vector<float>& t) { return t; }
+template <> std::vector<float> kernel_taps<cf32>(const std::vector<float>& t) {
+    std::vector<float> h2(2 * t.size());
+    for (std::size_t k = 0; k < t.size(); ++k) h2[2 * k] = h2[2 * k + 1] = t[k];
+    return h2;
 }
 } // namespace
 
@@ -53,6 +79,7 @@ template <class T>
 FirDecimator<T>::FirDecimator(std::string name, double in_rate, std::vector<float> taps, std::size_t decim)
     : taps_(std::move(taps)), decim_(decim == 0 ? 1 : decim) {
     taps_rev_.assign(taps_.rbegin(), taps_.rend());   // 畳み込み用に時間順(最古が先頭)
+    taps_kernel_ = kernel_taps<T>(taps_rev_);
     info_.name = std::move(name);
     info_.in_rate = in_rate;
     info_.out_rate = in_rate / static_cast<double>(decim_);
@@ -66,9 +93,12 @@ void FirDecimator<T>::reset() {
     phase_ = 0;
 }
 
+// T を float の並びとして見たときの要素数(cf32 = 2)
+template <class T> constexpr std::size_t floats_per = sizeof(T) / sizeof(float);
+
 template <class T>
 std::size_t FirDecimator<T>::process(std::span<const T> in, std::span<T> out) {
-    // 作業バッファ: 履歴 + 入力 を連結して畳み込む(素朴だが 2 Msps では十分。最適化対象 §1.1)
+    // 作業バッファ: 履歴 + 入力 を連結して畳み込む
     const std::size_t nt = taps_.size();
     auto& buf = buf_;
     buf.clear();
@@ -76,12 +106,36 @@ std::size_t FirDecimator<T>::process(std::span<const T> in, std::span<T> out) {
     buf.insert(buf.end(), hist_.begin(), hist_.end());
     buf.insert(buf.end(), in.begin(), in.end());
     std::size_t produced = 0;
-    // 出力 sample は入力位置 i(= buf[i + nt - 1] が最新)で計算。phase_ で間引き位相を保つ
-    std::size_t i = phase_;
-    for (; i < in.size(); i += decim_) {
-        if (produced < out.size()) out[produced++] = dot(buf.data() + i, taps_rev_.data(), nt);
+    const std::size_t nin = in.size();
+    if (decim_ == 1) {
+        // 間引きなし: タップ外側の形 out[i] += h[k] · x[i + k]。出力ごとの内積呼び出しより速い
+        // (8 Msps × 47 tap で 1/4。内積は出力ごとの呼び出し・ベクトル化の前後処理が支配的で、タップ数によらず ~11 ns/出力かかる)。
+        // T を float の並びとして axpy にする(cf32 は re/im とも同じ実係数)。
+        produced = std::min(nin, out.size());
+        constexpr std::size_t fp = floats_per<T>;
+        float* of = reinterpret_cast<float*>(out.data());
+        const float* bf = reinterpret_cast<const float*>(buf.data());
+        const std::size_t nf = produced * fp;
+        std::fill_n(of, nf, 0.f);
+        // L1 に収まる塊(1024 float)ごとに全タップを回す(塊なしで全長を回すと L2 帯域に律速され 2 倍遅い)
+        constexpr std::size_t kChunk = 1024;
+        for (std::size_t c = 0; c < nf; c += kChunk) {
+            const std::size_t len = std::min(kChunk, nf - c);
+            for (std::size_t k = 0; k < nt; ++k) axpy(of + c, bf + c + k * fp, taps_rev_[k], len);
+        }
+        phase_ = 0;
+    } else {
+        // 出力 sample は入力位置 i(= buf[i + nt - 1] が最新)で計算。phase_ で間引き位相を保つ。
+        const T* bp = buf.data();
+        const float* h = taps_kernel_.data();
+        T* op = out.data();
+        const std::size_t cap = out.size(), decim = decim_;
+        std::size_t i = phase_;
+        for (; i < nin; i += decim) {
+            if (produced < cap) op[produced++] = dot(bp + i, h, nt);
+        }
+        phase_ = i - nin;
     }
-    phase_ = i - in.size();
     // 履歴更新
     if (nt > 1) {
         const std::size_t keep = nt - 1;
@@ -103,7 +157,7 @@ FirInterpolator<T>::FirInterpolator(std::string name, double in_rate, std::vecto
         for (std::size_t p = 0; p < interp_; ++p)
             phase_taps_[p][k] = taps[k * interp_ + p] * static_cast<float>(interp_);
     phase_taps_rev_.resize(interp_);
-    for (std::size_t p = 0; p < interp_; ++p) phase_taps_rev_[p].assign(phase_taps_[p].rbegin(), phase_taps_[p].rend());
+    for (std::size_t p = 0; p < interp_; ++p) phase_taps_rev_[p] = kernel_taps<T>(std::vector<float>(phase_taps_[p].rbegin(), phase_taps_[p].rend()));   // カーネル形(cf32 は 2 倍展開)
     info_.name = std::move(name);
     info_.in_rate = in_rate;
     info_.out_rate = in_rate * static_cast<double>(interp_);

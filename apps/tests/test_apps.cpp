@@ -1,6 +1,7 @@
 // App SDK の検証: 各 App が SyntheticSource 上で start → 出力 → stop できること。
 #include "spear/appfw/app.hpp"
 #include "spear/core/synthetic_source.hpp"
+#include "adsb_app.hpp"
 #include "demod_app.hpp"
 #include "recorder_app.hpp"
 #include "spectrum_app.hpp"
@@ -173,6 +174,33 @@ TEST(Apps, StdT98LifecycleOnSynthetic) {
     ASSERT_EQ(chans.size(), 30);
     EXPECT_GT(chans[0].toMap()["power"].toDouble(), chans[10].toMap()["power"].toDouble() + 20) << "ch1 のトーンがチャネル電力に出る";
     EXPECT_EQ(app->losslessDrops(), 0.0);
+    core.stop_app();
+    EXPECT_FALSE(app->running());
+    EXPECT_EQ(core.rx().consumer_count(), 0u) << "stop 後に consumer が残ってはならない";
+}
+
+TEST(Apps, AdsbLifecycleOnSynthetic) {
+    // 8 Msps フルレート消費の App を合成源(信号なし)で start → 観測点が動く → stop。実信号の検証は apps/adsb/tests(合成 PPM と実録音 golden)
+    Core core(".");
+    SyntheticSignal sig; sig.tones = {{2e6, 0.05}};   // 1090 MHz の位置(LO は −2 MHz)に無変調トーン
+    sig.noise_amplitude = 0.002;
+    core.set_source(std::make_unique<SyntheticSource>(&core.events(), sig));
+    auto app = std::make_shared<apps::AdsbApp>(appfw::AppInfo{"adsb", "ADS-B", "", Direction::RX, ""});
+    QVariantMap settings; settings["adsb.ref_lat"] = 35.68; settings["adsb.ref_lon"] = 139.77;
+    app->configure(settings);
+    EXPECT_TRUE(app->hasReference());
+    RfConfig c; c.center_freq = 100e6; c.sample_rate = 1e6;   // App が 8 Msps / 1090 MHz − 2 MHz に上書きする
+    app->set_rf_config(c);
+    ASSERT_TRUE(core.run_app(app));
+    EXPECT_DOUBLE_EQ(core.source().config().sample_rate, 8e6);
+    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 1090e6 - 2e6);
+    std::this_thread::sleep_for(800ms);
+    ASSERT_NE(app->view()->processor(), nullptr);
+    EXPECT_GT(app->view()->processor()->rows_written(), 3u) << "radio.rx の観測点が流れていること";
+    const auto st = app->stats();
+    EXPECT_EQ(st["frames"].toDouble(), 0.0) << "無変調トーンからフレームが出てはならない";
+    EXPECT_EQ(st["drops"].toDouble(), 0.0);
+    EXPECT_EQ(app->aircraft().size(), 0);
     core.stop_app();
     EXPECT_FALSE(app->running());
     EXPECT_EQ(core.rx().consumer_count(), 0u) << "stop 後に consumer が残ってはならない";

@@ -66,7 +66,7 @@ Linux 上の SDR アプリケーションではなく、Linux を内部実装と
               App SDK(GuiApp、観測点、TraceSource、ビルド時レジストリ)
                   │
    ┌──────────────┼───────────────┬──────────────────┐
- SPECTRUM    IQ RECORDER      FM / AM RX     STD-T98 MONITOR   … 任意の App
+ SPECTRUM    IQ RECORDER    FM / AM RX    STD-T98 MONITOR    ADS-B   … 任意の App
 ```
 
 | 層 | ディレクトリ | 役割 |
@@ -93,6 +93,7 @@ App は基盤の上に載る利用者であり、同時に基盤を検証する�
 | **IQ RECORDER** | 損失なし SigMF 録音(sidecar に世代 / 不連続 / retune 履歴) | Lossless 不変条件の画面化、録音の再生 |
 | **FM / AM RX** | NFM / WFM / AM 復調、ゼロ IF の DC を避ける LO 分離、音声出力 | 共通 DSP の境界、段の規約と来歴、観測点の後付け |
 | **STD-T98 MONITOR** | ARIB STD-T98(デジタル簡易無線)30 チャネル同時受信・復号・AMBE 音声・秘話の鍵探索 | Qt / UHD 非依存の受信機のヘッドレス検証、実録音の真値、実機での引き込み、学習済みモデルの C++ / ONNX 推論をワーカースレッドで |
+| **ADS-B** | 1090 MHz Mode S / Extended Squitter、航空機表と極座標表示 | 8 Msps をフルレートで Lossless 消費、高頻度事象の Event の粒度、来歴のサンプル精度(共通 DSP の群遅延の符号誤りを発見) |
 
 <table><tr>
 <td><img src="docs/gui/std_t98.png" alt="STD-T98 MONITOR"></td>

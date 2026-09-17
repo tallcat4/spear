@@ -11,4 +11,5 @@ cmake -S . -B build-ci-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSPEAR_TSAN=ON -D
 ninja -C build-ci-tsan
 TSAN_OPTIONS="halt_on_error=1" ./build-ci-tsan/tests/spear_tests
 TSAN_OPTIONS="halt_on_error=1" ./build-ci-tsan/apps/std_t98/tests/spear_std_t98_tests
+TSAN_OPTIONS="halt_on_error=1" ./build-ci-tsan/apps/adsb/tests/spear_adsb_tests
 echo "CI OK"

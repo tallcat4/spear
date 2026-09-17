@@ -66,7 +66,9 @@ void RecordingSource::on_start() {
 void RecordingSource::on_stop() { data_.close(); }
 
 uint32_t RecordingSource::fill(BlockBuilder& b) {
-    if (!data_) return 0;
+    // 末尾の半端なブロック(録音長がブロック長の倍数でないとき)を読むと eof/fail が立つ。ここで !data_ と判定して止めると
+    // ループ再生が 1 周で終わる。開いてさえいれば読みに行き、0 サンプルなら下のループ処理(reopen)に任せる
+    if (!data_.is_open()) return 0;
     auto out = b.data<sc16>();
     const std::size_t esz = dtype_size(meta_.dtype);
     // capture 境界(retune)を block 境界に揃え、Retune flag を立てる

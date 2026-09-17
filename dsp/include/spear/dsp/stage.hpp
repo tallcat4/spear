@@ -30,16 +30,19 @@ struct StageInfo {
 // provenance: 出力 index → 対応する入力 index(群遅延補正込み)。チェーン全体は各段の合成。
 // 「rate 変換・group delay の補正は各 App 内で手計算し、根拠をコメントで残す」(§4.5) を、
 // 段が宣言した数値から計算する形にする。手計算より間違えにくく、根拠が info() に残る。
+// 段の時間規約: 出力 k は入力 [k·decim − (N−1), k·decim] から計算する(因果、FirDecimator::process)。
+// 入力の事象は群遅延ぶん **遅れて** 出力に現れるので、出力 index → 入力 index は群遅延を **引く**。
+// (ADS-B の合成 PPM テストがサンプル単位で確認する。以前は足していたため 2 × 群遅延ぶん遅い index を返していた)
 struct Provenance {
     double scale = 1.0;   // 出力 index 1 あたりの入力 index
-    double offset = 0.0;  // 入力 index の補正(群遅延の合計、入力 index 単位)
+    double offset = 0.0;  // 入力 index の補正(群遅延の合計、入力 index 単位、負)
 
     static Provenance identity() { return {}; }
     // 後段 s を合成する(this = これまでのチェーン、s = 追加する段)
     Provenance then(const StageInfo& s) const {
         Provenance p;
         p.scale = scale / s.ratio();
-        p.offset = offset + s.group_delay_in * scale;
+        p.offset = offset - s.group_delay_in * scale;
         return p;
     }
     // チェーン出力 index → 元 stream の sample index(実数。切り出しは floor/ceil で幅を取る)

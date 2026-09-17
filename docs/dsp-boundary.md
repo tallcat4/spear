@@ -20,7 +20,7 @@ GNU Radio 的な網羅は目指さない。App 内部で GNU Radio を使う道 
 ## 共通側が提供するもの
 | 種別 | 内容 |
 |---|---|
-| **段の規約** | `dsp/stage.hpp`: 入出力 rate と群遅延の宣言、`Provenance` による出力 index → 入力 index の機械計算 (§4.5)、TAP の置き場 |
+| **段の規約** | `dsp/stage.hpp`: 入出力 rate と群遅延の宣言、`Provenance` による出力 index → 入力 index の機械計算 (§4.5、段は因果なので群遅延を引く)、TAP の置き場 |
 | **原始演算**(基準を満たすもの) | 現状(2026-09-17): `design_lowpass`、`FirDecimator<T>` / `FirInterpolator<T>`(8/4 本累算のベクトル化カーネル、時間順 taps)、`PfbChannelizer`(critically-sampled polyphase)、`SpectrumEstimator`(sc16/cf32)、FFTW プランナの単一 mutex(`fftw_planner.hpp`)。App 内に留めているもの(2 つ目の App で抽出): quadrature_demod(demod / STD-T98 receiver で 2 回目 → 抽出候補)、一次 IIR、DC block、squelch、Gardner symbol sync、RC/RRC 設計 |
 | **テスト用信号生成** | `SyntheticSource` の拡張(変調済みテスト信号)。これは検証基盤であり DSP 部品ではない |
 | **参照ベクトルの枠組み** | 段単位・App 単位の回帰テスト (§12.3) |

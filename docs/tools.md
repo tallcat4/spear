@@ -24,6 +24,13 @@ RF の center / rate は各 App が決める(汎用 App は FREQ / RATE キー�
 秘話呼(SACCH call=1)は GUI と同じポリシーで鍵を探索し(1 ブロック約 0.6 s)、以後のフレームを復号して WAV に出す。フレーム行末に
 `SECRET key=<鍵> (<経路>, <秒>)`、以後 `[secret K <鍵>]` が付く。`--no-secret` で探索を止める(スクランブルのまま)。
 
+## ADS-B 録音の解析
+```
+./build/tools/spear-adsb-decode ~/spear/recordings/<base> [--ref <lat>,<lon>] [--fix] [--golden ~/spear/golden/adsb/es.golden.txt]
+```
+受理フレームの行(radio.rx の index、DF、ICAO、hex、解読内容、RSSI/SNR、位置)と統計、航空機一覧を出す。LO オフセットは録音の中心周波数から求める。
+`--golden` は "index hex" を 1 行ずつ書き、抜粋録音と並べて `~/spear/golden/adsb/es.*` に置くと `spear_adsb_tests` の golden が有効になる。
+
 ## 秘話モデルの更新(再学習したときだけ。通常は不要 — モデルはリポジトリに同梱しバイナリに埋め込む)
 ```
 ../std-t98-tools/env/bin/pip install onnx onnxruntime              # 変換用(std-t98-tools の venv、numpy は <2 のまま)

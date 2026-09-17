@@ -36,7 +36,8 @@ public:
 private:
     StageInfo info_;
     std::vector<float> taps_;
-    std::vector<float> taps_rev_;   // 時間順(畳み込みカーネル用)
+    std::vector<float> taps_rev_;   // 時間順(最古が先頭)
+    std::vector<float> taps_kernel_; // 内積カーネル用(cf32 では re/im 用に 2 倍展開)。decim > 1 の経路で使う
     std::vector<T> buf_;            // 作業バッファ(呼び出しごとの確保を避ける)
     std::size_t decim_ = 1;
     std::vector<T> hist_;     // 直近 taps-1 サンプル(循環ではなく末尾保持)
@@ -62,7 +63,7 @@ private:
     StageInfo info_;
     std::size_t interp_ = 1;
     std::vector<std::vector<float>> phase_taps_;   // [p][k] = taps[k*interp + p] * interp
-    std::vector<std::vector<float>> phase_taps_rev_; // 同、時間順
+    std::vector<std::vector<float>> phase_taps_rev_; // 同、時間順(カーネル用。cf32 では 2 倍展開)
     std::vector<T> buf_;
     std::vector<T> hist_;                           // 直近 taps_per_phase-1 入力
     std::size_t taps_per_phase_ = 0;

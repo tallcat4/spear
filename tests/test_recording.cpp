@@ -110,6 +110,36 @@ TEST(Recording, LoopAdvancesGeneration) {
     EXPECT_TRUE(saw_disc);
 }
 
+TEST(Recording, LoopWorksWhenLengthIsNotBlockMultiple) {
+    // 録音長がブロック長の倍数でない(末尾が半端)場合もループする(ADS-B の合成録音で 1 周で止まった)
+    EventBus ev;
+    SyntheticSignal sig; sig.max_samples = 1024 * 3;
+    RfConfig cfg; cfg.sample_rate = 1e6;
+    const auto base = tmp_base("loop_partial");
+    {
+        SyntheticSource src(&ev, sig, 1024);
+        ASSERT_TRUE(src.configure(cfg));
+        src.set_realtime(false);
+        SigmfRecorder rec(base, src.output().meta(), cfg, &ev);
+        drain(src, [&](const Delivery& d) { rec.write(d); });
+        rec.close();
+    }
+    RecordingSource src(&ev, base, true, 1000);   // 3072 = 3 × 1000 + 72
+    ASSERT_TRUE(src.open());
+    src.set_realtime(false);
+    auto sub = src.output().subscribe("app", DeliveryPolicy::Lossless, 64);
+    src.start();
+    uint64_t max_gen = 0; int blocks = 0; uint64_t samples = 0;
+    while (blocks < 10) {
+        if (auto d = sub->pop(500ms)) { ++blocks; samples += d->block.header().sample_count; max_gen = std::max(max_gen, d->block.header().generation); }
+        else break;
+    }
+    src.stop();
+    EXPECT_EQ(blocks, 10) << "ループが 1 周で止まっている";
+    EXPECT_GE(max_gen, 2u);
+    EXPECT_EQ(samples, 2u * 3072 + 2 * 1000) << "半端ブロック(72)を含めて全サンプルを出す";
+}
+
 TEST(Recording, DiscontinuityIsRecordedInSidecar) {
     EventBus ev;
     RfConfig cfg; cfg.sample_rate = 1e6;

@@ -55,7 +55,7 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
 - ユニット/回帰: `ctest`。App のライフサイクル(stop 後に consumer が残らない)は `apps/tests/test_apps.cpp`。
 - 画面: `WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 QT_QPA_PLATFORM=wayland QT_FORCE_STDERR_LOGGING=1 \
   ./build/gui/spear-gui --source file:<base> --screenshot out.png --after 10 --start-app <n> [--diag] [--app-action <key>] [--restart-rate R]`
-  → PNG を見る(App 番号はメニュー順: 0 SPECTRUM, 1 RECORDER, 2 FM/AM, 3 STD-T98)。`--state-file` を付けなければ運転状態は復元も保存もされない(再現性のため)。
+  → PNG を見る(App 番号はメニュー順: 0 SPECTRUM, 1 RECORDER, 2 FM/AM, 3 STD-T98, 4 ADS-B)。`--state-file` を付けなければ運転状態は復元も保存もされない(再現性のため)。
 - 実機: B210 の FPGA ロードは USB 2.0 で約 70 s。`--after` はそれより長く(短く切ると次回また読み込む)。
   実機の新しい表示部品・DSP 段は **既知周波数の実信号**で軸の向きと絶対値を確認する(合成トーンでは向きの誤りが出ない)。
 - 実録音: `spear-std-t98-decode <base> --freq-err <unit Hz> --squelch -50 [--wav out]` でフレーム表と音声(秘話呼は鍵探索して復号)。
