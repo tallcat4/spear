@@ -12,7 +12,9 @@ apps/adsb/
   dsp/ppm.*          プリアンブル検出(パルスチップ 0/2/7/9 vs 無音チップ、電力比)+ PPM ビット判定。dump1090 の detectModeS を任意の整数 spc に一般化
   receiver.*         回転(−lo_offset)→ 低域 FIR(±1.5 MHz、47 tap)→ |x|² → PpmDecoder → CRC →(任意)1 bit 訂正 → Message。既知 ICAO キャッシュ(300 s)
   aircraft.*         AircraftTable: ICAO ごとの集約、CPR 偶奇ペア(10 s)→ 前回位置からの局所解、基準位置からの距離・方位、期限切れ(60 s)
-  adsb_app.* / AdsbPage.qml   GUI(表 / 極座標 / 最後のフレームの電力窓 / 統計)
+  map/               ミニマップ: world.spearmap(Natural Earth 1:10m + OurAirports、build_map.py で生成、バイナリに埋め込み 3.9 MB)、map_data(展開)、
+                     view.hpp(局所等距円筒、自動フィット)、map_item(QQuickPaintedItem: 陸 / 湖 / 境界 / 都市 / 空港 / 滑走路 / 航跡 / 機体)
+  adsb_app.* / AdsbPage.qml   GUI(表 / ミニマップ / 最後のフレームの電力窓 / 統計)
 tools/adsb_decode  spear-adsb-decode <base> [--fix] [--ref lat,lon] [--golden out.txt]
 ```
 
@@ -25,7 +27,7 @@ tools/adsb_decode  spear-adsb-decode <base> [--fix] [--ref lat,lon] [--golden ou
 | 対応 DF | 17/18(ES: 識別・空中位置・速度・TC28 スコーク)、11、AP 形式 0/4/5/16/20/21(既知 ICAO に一致するときだけ) | dump1090 の実績ある範囲。地上位置(TC5–8)はフラグのみ |
 | 1 bit 訂正 | シンドローム表(112 本)で O(1)。**既定 on**、訂正したフレームは ICAO が既知のときだけ受理(FIX 1BIT キーで切れる) | 実録音で +5 %。偶然シンドロームに一致する確率は候補あたり 112/2^24 なので、既知 ICAO の条件で幻の機体を作らない |
 | Event | 新規機 / 初回位置確定 / 消失だけ。provenance は契機フレームの sample 範囲 | フレームごとでは都市部で 1000/s を超える。フレーム数は統計 |
-| 現場固有値 | `adsb.ref_lat` / `adsb.ref_lon` / `adsb.lo_offset_hz` は site.conf | 基準位置は局所 CPR と距離・方位に使う。基準があれば 600 km 超の位置を捨てる |
+| 現場固有値 | `adsb.lo_offset_hz` は site.conf。`adsb.ref_lat` / `adsb.ref_lon` は**任意**(あれば局所 CPR の初期解と 600 km 超の位置の棄却に使う。表示は依存しない) | 可搬機なので基準位置を前提にしない |
 
 ## 検証
 - `apps/adsb/tests/test_protocol.cpp`: 既知ベクトル(KLM1023、偶奇ペア → 52.2572 N 3.91937 E / 38000 ft、速度 159 kt / 182.88° / −832 fpm、
@@ -70,8 +72,10 @@ cutoff 1.2 MHz は 801、2.5 MHz は 630(1.5 MHz が最良)。taps 23 は 47 と
    ずつの部分和にする。
 6. **Event に generation が無い**: `Frame` は radio.rx の sample index を持つが generation を持たず、Event の `SampleRange.generation` は 0 で出している
    (STD-T98 も同じ)。Receiver に generation を渡す口を SDK として揃えるべき。
-7. **表と極座標は App 内**(`AdsbPage.qml` の ListView + Canvas)。STATUS #4 の録音一覧(ListPicker)が 2 つ目の利用者になった時点で `Spear.Widgets` / `Spear.Input` に抽出する。
-   表の model は 250 ms ごとに作り直す QVariantList なので delegate も作り直される(数十機なら問題ないが、多数なら差分更新の model が要る)。
+7. **表とミニマップは App 内**(`AdsbPage.qml` の ListView、`map/MapItem`)。地図は APRS / AIS / ラジオゾンデ等の候補 App でも要るので、2 つ目の利用者が出た時点で
+   `map/` を `Spear.Widgets`(地図データは共通の資源)に抽出する。表の model は 250 ms ごとに作り直す QVariantList なので delegate も作り直される
+   (数十機なら問題ないが、多数なら差分更新の model が要る)。ミニマップの下地は表示範囲が変わるたび(自動フィット中は 4 Hz)に描き直す。
+   世界規模の幅では陸リングが多く 1 回数十 ms かかる(実用の 20–300 km では数 ms)。
 8. **sc16 → cf32 変換と回転**はどの App でも書いている(demod / STD-T98 / ADS-B)。`docs/dsp-boundary.md` の基準(数学的定義、定数なし、2 つ目の利用者、参照ベクトル)を
    満たすので共通 DSP への昇格候補(回転は 4. の形で)。
 9. **Event の頻度制御は SDK に無い**。App 側で「事象の粒度を選ぶ」規約で足りるか、DIAGNOSTICS のイベントログに間引きが要るかは実機で判断する。
@@ -79,4 +83,4 @@ cutoff 1.2 MHz は 801、2.5 MHz は 630(1.5 MHz が最良)。taps 23 は 47 と
     これは App が各自書いている(STD-T98 は原点を最初のブロックに固定したまま)。SDK の規約として「generation 切替で受信機を reset する」を置くべき。
 
 ## 画面
-`docs/gui/adsb.png`(実録音 `rec_20260917_130714` を再生、基準位置 35.55 / 139.78)。
+`docs/gui/adsb.png`(実録音 `rec_20260917_130714` を再生。羽田 34L/34R への最終進入 2 機と出発 1 機、滑走路は OurAirports の実寸)。

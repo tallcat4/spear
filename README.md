@@ -93,7 +93,7 @@ App は基盤の上に載る利用者であり、同時に基盤を検証する�
 | **IQ RECORDER** | 損失なし SigMF 録音(sidecar に世代 / 不連続 / retune 履歴) | Lossless 不変条件の画面化、録音の再生 |
 | **FM / AM RX** | NFM / WFM / AM 復調、ゼロ IF の DC を避ける LO 分離、音声出力 | 共通 DSP の境界、段の規約と来歴、観測点の後付け |
 | **STD-T98 MONITOR** | ARIB STD-T98(デジタル簡易無線)30 チャネル同時受信・復号・AMBE 音声・秘話の鍵探索 | Qt / UHD 非依存の受信機のヘッドレス検証、実録音の真値、実機での引き込み、学習済みモデルの C++ / ONNX 推論をワーカースレッドで |
-| **ADS-B** | 1090 MHz Mode S / Extended Squitter、航空機表と極座標表示 | 8 Msps をフルレートで Lossless 消費、高頻度事象の Event の粒度、来歴のサンプル精度(共通 DSP の群遅延の符号誤りを発見) |
+| **ADS-B** | 1090 MHz Mode S / Extended Squitter、航空機表とミニマップ(埋め込みのオフライン地図、全機が収まるよう自動フィット) | 8 Msps をフルレートで Lossless 消費、高頻度事象の Event の粒度、来歴のサンプル精度(共通 DSP の群遅延の符号誤りを発見) |
 
 <table><tr>
 <td><img src="docs/gui/std_t98.png" alt="STD-T98 MONITOR"></td>
@@ -143,3 +143,4 @@ ctest --test-dir build -j4                         # テスト(ハードウェ�
 GPL-3.0-or-later([`LICENSE`](LICENSE))。
 `apps/std_t98/ambe/` は mbelib / mbelib-neo 由来の GPL-2.0-or-later(各ファイルの SPDX と著作権表示を参照)。
 `packaging/libuhd` のパッチは UHD(GPL-3.0-or-later)への変更。
+`apps/adsb/map/world.spearmap`(ミニマップの地図)は Natural Earth と OurAirports のデータ(いずれもパブリックドメイン)から `build_map.py` で生成したもの。

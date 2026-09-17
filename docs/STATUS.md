@@ -28,14 +28,14 @@
 | `apps/recorder` | Lossless 録音、sidecar、録音中は FREQ 無効 | gtest(drop 0)、実機 |
 | `apps/demod` | NFM/WFM/AM、LO を RX から 250 kHz 離す、channel IQ と audio を Stream Bus に publish | 合成 FM トーン gtest、off-air FM |
 | `apps/std_t98` | 30ch 受信機(純 C++、Qt/UHD 非依存)、プロトコル、AMBE(C++ 化)、秘話(PN、ffnn C++ 推論、hybrid ONNX Runtime、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照との等価(プロトコル・AMBE・秘話)、実機で送信確認(平文・秘話) |
-| `apps/adsb` | 1090 MHz Mode S / ADS-B 受信機(純 C++: 回転 → 低域 FIR → 電力 → プリアンブル / PPM → CRC-24、DF17/18/11 + AP 形式)、航空機表(CPR 偶奇 / 局所、距離・方位)、GUI(表 / 極座標 / 電力窓 / 統計)。radio.rx を 8 Msps フルレートで Lossless 消費 | 既知ベクトル(The 1090MHz Riddle)、合成 PPM で provenance をサンプル単位、ライフサイクル、実録音 golden(`~/spear/golden/adsb`、羽田近傍 3 s / 136 フレーム)、実機で動作(`docs/apps/adsb.md`) |
+| `apps/adsb` | 1090 MHz Mode S / ADS-B 受信機(純 C++: 回転 → 低域 FIR → 電力 → プリアンブル / PPM → CRC-24、DF17/18/11 + AP 形式)、航空機表(CPR 偶奇 / 局所)、GUI(表 / ミニマップ: 埋め込みのオフライン地図(Natural Earth + OurAirports)に全機が収まるよう自動フィット / 電力窓 / 統計)。radio.rx を 8 Msps フルレートで Lossless 消費 | 既知ベクトル(The 1090MHz Riddle)、合成 PPM で provenance をサンプル単位、ライフサイクル、実録音 golden(`~/spear/golden/adsb`、羽田近傍 3 s / 136 フレーム)、実機で動作(`docs/apps/adsb.md`) |
 | `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード、秘話呼は鍵探索して復号)、`spear-adsb-decode`(録音 → フレーム表 / 航空機一覧 / golden) | — |
 
 ## 未完・既知の欠陥・次の仕事
 1. **STD-T98 秘話の golden**: 実機の秘話呼で動作確認済み(2026-09-17)。その録音の抜粋(鍵つき)を `~/spear/golden/std_t98/` に加え、
    受信 → 鍵探索 → 復号を通しで回帰テストにする(現状の E2E は平文の実音声を自己スクランブルしたもの)。
 2. **ADS-B**(2026-09-17 実装・実機確認済み、`docs/apps/adsb.md`): 残りは地上位置(TC5–8)の CPR、表の差分更新 model(多数機のとき)、
-   受信機 reset の SDK 規約(generation 切替)。
+   受信機 reset の SDK 規約(generation 切替)、ミニマップの `Spear.Widgets` への抽出(2 つ目の利用者が出たら)。
 3. **STD-T98 の実機での引き込み**: `max_deviation` の単位バグ修正後、毎回の送信で即ロックすることを継続確認。
    もし再発したら FRAME LOG と SPS(26.02〜26.06 のはず)を記録。
 4. **IQ RECORDER**: 録音一覧 / 再生元選択(`Spear.Input` に ListPicker が要る)、ディスク残量による自動停止。
@@ -59,6 +59,8 @@
 - **`dsp::Provenance` は群遅延を引く**(2026-09-17、ADS-B の合成 PPM テストで発覚)。段は因果なので出力 index → 入力 index は −群遅延。以前は足していた。
 - **DSP カーネルは既定 x86-64 で組み、`target_clones` で AVX2/FMA 版を併せ持つ**(2026-09-17、`dsp/src/fir.cpp`)。`-march=native` は golden の丸めを
   全体で変えるので採らない。`FirDecimator` の decim 1 はタップ外側の axpy(8 Msps × 47 tap で 1/2)。
+- **可搬機なので位置・方位の前提を置かない**(2026-09-17、ADS-B)。GPS も方位センサも無い。地図は受信した機体の位置だけから決め(自動フィット)、
+  地図データはリポジトリに同梱してバイナリに埋め込む(オフライン、パブリックドメインの Natural Earth + OurAirports)。
 - **高頻度の事象はフレームごとに Event にしない**(ADS-B: 新規機 / 初回位置 / 消失だけ。フレーム数は統計)。イベントログを溢れさせない。
 - **受信系の golden は実録音**。合成変調器は規格外のパラメータ合わせになるので作らない(STD-T98 で失敗して学んだ)。
 - **個体設定は `~/spear/site.conf`**(例 `std_t98.freq_err_hz=<Hz>`)。コードにも要件にも埋めない。

@@ -1,8 +1,8 @@
 // ADS-B のページ (1920×1200)
 //   上 : radio.rx のスペクトラム(8 MHz、1090 MHz にマーカー。アンテナと利得の確認用)
-//   中 : 左 航空機表(タップで選択)/ 右 極座標(基準位置から北上、距離リング)
+//   中 : 左 航空機表(タップで選択)/ 右 ミニマップ(埋め込み地図、位置のある全機が収まるよう自動フィット。ドラッグ / ピンチで手動、FIT で戻す)
 //   下 : 最後に受理したフレームの振幅窓(プリアンブル 8 µs + データ)/ 読み出し(レート・機数・CRC・drops・DSP)
-// LO / rate は App が決める(1090 MHz − loOffset、8 Msps)ので操作キーは置かない。基準位置は site.conf(adsb.ref_lat / ref_lon)。
+// LO / rate は App が決める(1090 MHz − loOffset、8 Msps)ので操作キーは置かない。GPS は無いので地図は機体の位置だけから決める。
 import QtQuick
 import Spear.Theme
 import Spear.Widgets
@@ -15,18 +15,20 @@ Item {
 
     readonly property var st: app.stats
     readonly property var list: app.aircraft
-    readonly property var ranges: [25, 50, 100, 200, 400]
-    readonly property var sortKeys: ["dist", "seen", "call", "alt"]
+    readonly property var sortKeys: ["seen", "call", "alt", "msgs"]
 
     readonly property var softKeys: [
         { label: "SORT " + app.sortKey.toUpperCase(), action: "sort" },
-        { label: "RANGE " + app.rangeKm.toFixed(0), action: "range" },
+        { label: "MAP FIT", action: "fit", active: mapItem.autoFit },
+        { label: "ZOOM −", action: "zoomout" }, { label: "ZOOM +", action: "zoomin" },
         { label: "FIX 1BIT", action: "fix", active: app.fixBits },
-        { label: "CLEAR", action: "clear" }, null, null, { label: "DIAG", action: "diag" } ]
+        { label: "CLEAR", action: "clear" }, { label: "DIAG", action: "diag" } ]
     function softKey(action) {
         switch (action) {
         case "sort": app.sortKey = sortKeys[(sortKeys.indexOf(app.sortKey) + 1) % sortKeys.length]; break
-        case "range": app.rangeKm = ranges[(ranges.indexOf(app.rangeKm) + 1) % ranges.length]; break
+        case "fit": mapItem.autoFit = !mapItem.autoFit; break
+        case "zoomout": mapItem.zoom(1.5); break
+        case "zoomin": mapItem.zoom(1 / 1.5); break
         case "fix": app.fixBits = !app.fixBits; break
         case "clear": app.clearTable(); break
         case "diag": ui.showDiagnostics(); break
@@ -57,7 +59,7 @@ Item {
         readonly property var cols: [
             ["ICAO", 90, "hex", false], ["CALLSIGN", 120, "callsign", false], ["SQ", 66, "squawk", false], ["ALT ft", 90, "alt", true],
             ["GS kt", 76, "gs", true], ["TRK", 66, "trk", true], ["VR", 80, "vr", true], ["LAT", 110, "lat", true], ["LON", 116, "lon", true],
-            ["DIST km", 90, "dist", true], ["BRG", 60, "brg", true], ["MSGS", 70, "msgs", true], ["AGE", 60, "age", true], ["RSSI", 70, "rssi", true] ]
+            ["MSGS", 70, "msgs", true], ["AGE", 60, "age", true], ["RSSI", 70, "rssi", true] ]
         function cell(row, c) {
             const k = c[2], v = row[k]
             switch (k) {
@@ -67,8 +69,6 @@ Item {
             case "vr": return row.hasVr ? (v > 0 ? "+" : "") + v : "--"
             case "lat": return row.hasPos ? v.toFixed(4) : "--"
             case "lon": return row.hasPos ? v.toFixed(4) : "--"
-            case "dist": return fmtNum(v, 1)
-            case "brg": return fmtNum(v, 0)
             case "msgs": return v.toFixed(0)
             case "age": return v.toFixed(0) + "s"
             case "rssi": return v.toFixed(0)
@@ -78,7 +78,7 @@ Item {
 
         Rectangle {
             id: tableBox
-            x: 0; y: 0; width: 1180; height: parent.height
+            x: 0; y: 0; width: 1030; height: parent.height
             color: Theme.panel; border.color: Theme.line; border.width: 1
             Row {
                 id: header
@@ -127,56 +127,42 @@ Item {
             Text { anchors.centerIn: table; visible: page.list.length === 0; text: "NO AIRCRAFT"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsLarge }
         }
 
-        // 極座標(北上、基準位置が中心)
+        // ミニマップ(北が上。位置のある全機を含むように自動フィット。地図は Natural Earth + OurAirports をバイナリに埋め込み)
         Rectangle {
-            id: polarBox
+            id: mapBox
             x: tableBox.width + Theme.pad; y: 0; width: parent.width - x; height: parent.height
-            color: Theme.panel; border.color: Theme.line; border.width: 1
-            readonly property real r: Math.min(width, height) / 2 - 30
-            readonly property real cx: width / 2
-            readonly property real cy: height / 2
-            Text { x: Theme.pad; y: 4; text: app.hasReference ? "POLAR  N up  ref " + app.refLat.toFixed(3) + " " + app.refLon.toFixed(3) : "POLAR  NO REFERENCE (site.conf adsb.ref_lat / adsb.ref_lon)"
-                   color: app.hasReference ? Theme.textDim : Theme.amber; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-            Canvas {
-                id: rings
-                anchors.fill: parent
-                onPaint: {
-                    const ctx = getContext("2d")
-                    ctx.clearRect(0, 0, width, height)
-                    ctx.strokeStyle = Theme.gridMajor; ctx.lineWidth = 1
-                    for (let k = 1; k <= 4; ++k) { ctx.beginPath(); ctx.arc(polarBox.cx, polarBox.cy, polarBox.r * k / 4, 0, 2 * Math.PI); ctx.stroke() }
-                    ctx.beginPath(); ctx.moveTo(polarBox.cx - polarBox.r, polarBox.cy); ctx.lineTo(polarBox.cx + polarBox.r, polarBox.cy)
-                    ctx.moveTo(polarBox.cx, polarBox.cy - polarBox.r); ctx.lineTo(polarBox.cx, polarBox.cy + polarBox.r); ctx.stroke()
-                }
-                Component.onCompleted: requestPaint()
-                onWidthChanged: requestPaint()
-                onHeightChanged: requestPaint()
-            }
-            Repeater {
-                model: 4
-                delegate: Text {
-                    required property int index
-                    x: polarBox.cx + 4; y: polarBox.cy - polarBox.r * (index + 1) / 4 - height
-                    text: (app.rangeKm * (index + 1) / 4).toFixed(0); color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall
+            color: Theme.bg; border.color: Theme.line; border.width: 1
+            clip: true
+            MapItem {
+                id: mapItem
+                anchors.fill: parent; anchors.margins: 1
+                aircraft: page.list
+                selectedIcao: app.selectedIcao
+                landColor: "#161616"; coastColor: Theme.line; lineColor: Theme.gridMajor; textColor: Theme.text; dimColor: Theme.textDim
+                aircraftColor: Theme.green; selectedColor: Theme.amber; airportColor: Theme.cyan; fontFamily: Theme.mono
+                onSelectedChanged: app.selectedIcao = selectedIcao
+                // タッチ: ドラッグでパン、タップで選択、ピンチでズーム(操作すると自動フィットが切れる。FIT で戻す)
+                PinchArea {
+                    anchors.fill: parent
+                    property real startSpan: 0
+                    onPinchStarted: startSpan = mapItem.spanKm
+                    onPinchUpdated: (p) => { if (p.scale > 0) mapItem.zoom((startSpan / p.scale) / mapItem.spanKm) }
+                    MouseArea {
+                        anchors.fill: parent
+                        property real lx: 0; property real ly: 0; property real moved: 0
+                        onPressed: (m) => { lx = m.x; ly = m.y; moved = 0 }
+                        onPositionChanged: (m) => { if (!pressed) return; mapItem.pan(m.x - lx, m.y - ly); moved += Math.abs(m.x - lx) + Math.abs(m.y - ly); lx = m.x; ly = m.y }
+                        onReleased: (m) => { if (moved < 8) { const i = mapItem.icaoAt(m.x, m.y); app.selectedIcao = (i === app.selectedIcao ? 0 : i) } }
+                    }
                 }
             }
-            Text { x: polarBox.cx - width / 2; y: polarBox.cy - polarBox.r - 22; text: "N"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-            Repeater {
-                model: page.list
-                delegate: Item {
-                    required property var modelData
-                    readonly property bool shown: app.hasReference && modelData.hasPos && modelData.dist >= 0 && modelData.dist <= app.rangeKm
-                    readonly property real rr: polarBox.r * modelData.dist / app.rangeKm
-                    readonly property real ang: (modelData.brg - 90) * Math.PI / 180
-                    readonly property bool sel: modelData.icao === app.selectedIcao
-                    visible: shown
-                    x: polarBox.cx + rr * Math.cos(ang); y: polarBox.cy + rr * Math.sin(ang)
-                    Rectangle { x: -4; y: -4; width: 8; height: 8; color: sel ? Theme.amber : page.ageColor(modelData.age) }
-                    Text { x: 7; y: -9; text: modelData.callsign.length ? modelData.callsign : modelData.hex
-                           color: sel ? Theme.amber : Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-                    MouseArea { x: -14; y: -14; width: 28; height: 28; onClicked: app.selectedIcao = (sel ? 0 : modelData.icao) }
-                }
-            }
+            Text { x: Theme.pad; y: 4
+                   text: "MAP  N up  " + (mapItem.autoFit ? "AUTO FIT" : "MANUAL") + "  " + mapItem.spanKm.toFixed(0) + " km  " + mapItem.centerLat.toFixed(2) + " " + mapItem.centerLon.toFixed(2)
+                         + (mapItem.positioned === 0 ? "   (no position yet)" : "")
+                   color: mapItem.autoFit ? Theme.textDim : Theme.amber; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+            Text { anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 6; anchors.rightMargin: Theme.pad
+                   text: mapItem.mapLoaded ? "Natural Earth · OurAirports" : "MAP DATA MISSING"; color: mapItem.mapLoaded ? Theme.textDim : Theme.red
+                   font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
         }
     }
 

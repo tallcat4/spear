@@ -20,7 +20,7 @@ constexpr std::size_t kTraceDecim = 1;  // 振幅窓は 240 チップ × 4 = 960
 AdsbApp::AdsbApp(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::move(info), parent) {
     trace_.setCapacity(1);
     // 再起動をまたいで残す運転状態(現場固有値 ref/lo_offset は site.conf、選択機・観測値は宣言しない)
-    persist({"sortKey", "fixBits", "rangeKm", "view.dbMin", "view.dbMax", "view.manualRange", "view.averaging"});
+    persist({"sortKey", "fixBits", "view.dbMin", "view.dbMax", "view.manualRange", "view.averaging"});
 }
 AdsbApp::~AdsbApp() = default;
 
@@ -47,13 +47,10 @@ QVariantList AdsbApp::aircraft() const {
     for (const auto& a : table_.all()) v.push_back(&a);
     const QString key = sort_key_;
     std::sort(v.begin(), v.end(), [&](const Aircraft* a, const Aircraft* b) {
-        if (key == "seen") return a->last_seen_s > b->last_seen_s;
         if (key == "call") { if (a->callsign.empty() != b->callsign.empty()) return !a->callsign.empty(); return a->callsign < b->callsign; }
         if (key == "alt") return a->altitude_ft.value_or(-1) > b->altitude_ft.value_or(-1);
-        // dist: 位置のある機を近い順、無い機は後ろ(最終受信順)
-        if (a->distance_km.has_value() != b->distance_km.has_value()) return a->distance_km.has_value();
-        if (a->distance_km) return *a->distance_km < *b->distance_km;
-        return a->last_seen_s > b->last_seen_s;
+        if (key == "msgs") return a->messages > b->messages;
+        return a->last_seen_s > b->last_seen_s;   // seen(既定。未知のキーもここ)
     });
     QVariantList out;
     const double now = rate_hist_.empty() ? 0 : rate_hist_.back().first;

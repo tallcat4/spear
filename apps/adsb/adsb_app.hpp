@@ -4,7 +4,7 @@
 //   * radio.rx を 8 Msps のままフルレートで Lossless 消費する初めての App(間引かない。DSP 負荷と drops を見る)
 //   * §4.5 provenance: フレーム event の sample 範囲を radio.rx index で(高頻度なので event は新規機 / 初回位置 / 消失だけ)
 //   * 現場固有値(基準位置 adsb.ref_lat / ref_lon、LO オフセット)を site.conf で渡す経路
-//   * 表と極座標という新しい表示(App 内に置き、2 つ目の利用者が出たら部品へ)
+//   * 表とミニマップ(埋め込み地図 + 自動フィット、map/)という新しい表示(App 内に置き、2 つ目の利用者が出たら部品へ)
 // RF: 8 Msps(4 サンプル/チップ)、LO = 1090 MHz − loOffset(ゼロ IF の DC スパイクを信号帯域の外へ)。振幅復調なので LO 誤差は無関係。
 // GAIN はメニュー(固定利得を推奨: AGC はパルス信号に不向き)。
 #pragma once
@@ -32,12 +32,11 @@ class AdsbApp final : public appfw::GuiApp {
     Q_OBJECT
     // ---- この App が所有する State ----
     Q_PROPERTY(double loOffsetHz READ loOffsetHz NOTIFY configChanged)            // site.conf: adsb.lo_offset_hz
-    Q_PROPERTY(bool hasReference READ hasReference NOTIFY configChanged)          // site.conf: adsb.ref_lat / adsb.ref_lon
+    Q_PROPERTY(bool hasReference READ hasReference NOTIFY configChanged)          // site.conf: adsb.ref_lat / adsb.ref_lon(任意: 距離・方位列と局所 CPR の初期解に使う。可搬機なので必須にしない)
     Q_PROPERTY(double refLat READ refLat NOTIFY configChanged)
     Q_PROPERTY(double refLon READ refLon NOTIFY configChanged)
-    Q_PROPERTY(QString sortKey READ sortKey WRITE setSortKey NOTIFY configChanged)   // dist / seen / call / alt
+    Q_PROPERTY(QString sortKey READ sortKey WRITE setSortKey NOTIFY configChanged)   // seen / call / alt / msgs
     Q_PROPERTY(bool fixBits READ fixBits WRITE setFixBits NOTIFY configChanged)      // DF17/18 の 1 bit 訂正
-    Q_PROPERTY(double rangeKm READ rangeKm WRITE setRangeKm NOTIFY configChanged)    // 極座標の外周
     Q_PROPERTY(int selectedIcao READ selectedIcao WRITE setSelectedIcao NOTIFY configChanged)   // 表でタップした機(0 = なし)
     // ---- 観測値(DSP thread が更新、timer で通知)----
     Q_PROPERTY(QVariantList aircraft READ aircraft NOTIFY metersChanged)
@@ -60,8 +59,6 @@ public:
     void setSortKey(const QString& k) { sort_key_ = k; Q_EMIT configChanged(); }
     bool fixBits() const { return fix_bits_; }
     void setFixBits(bool on) { fix_bits_ = on; Q_EMIT configChanged(); }
-    double rangeKm() const { return range_km_; }
-    void setRangeKm(double km) { range_km_ = km; Q_EMIT configChanged(); }
     int selectedIcao() const { return selected_icao_; }
     void setSelectedIcao(int icao) { selected_icao_ = icao; Q_EMIT configChanged(); }
     Q_INVOKABLE void clearTable();
@@ -87,9 +84,8 @@ private:
 
     double lo_offset_hz_ = 2e6;
     std::optional<adsb::Position> ref_;
-    QString sort_key_ = "dist";
+    QString sort_key_ = "seen";
     std::atomic<bool> fix_bits_{true};
-    double range_km_ = 200;
     int selected_icao_ = 0;
     std::atomic<bool> clear_{false};
 
