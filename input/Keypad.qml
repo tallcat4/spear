@@ -1,5 +1,5 @@
 // Spear.Input — Keypad: キー配列を model で与える汎用グリッド。
-// keys: [{label, action, span?, sublabel?, enabled?, active?, repeat?}] を columns 列で並べる。null = 空き。
+// keys: [{label, action, span?, sublabel?, enabled?, active?, repeat?, accent?}] を columns 列で並べる。null = 空き。accent = 強調色(確定キー等)。
 // 数字テンキー、単位キー、将来の英数キーボード、機能キー列など、あらゆる自前入力の土台。
 import QtQuick
 import Spear.Theme
@@ -34,6 +34,7 @@ Item {
             enabled: modelData ? (modelData.enabled !== false) : false
             active: modelData ? (modelData.active === true) : false
             repeat: modelData ? (modelData.repeat === true) : false
+            accent: modelData && modelData.accent ? modelData.accent : "transparent"
             labelSize: pad.labelSize
             onPressed: pad.pressed(modelData.action, modelData)
         }

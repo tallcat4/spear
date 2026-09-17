@@ -8,6 +8,8 @@
 //   * stop(): 全 consumer を解放する
 //   * QML ページ: apps/<id>/<Page>.qml。ページには `app`(この QObject)、`sys`(SystemModel)、`shell` が見える
 //   * App 固有の State: この QObject の Q_PROPERTY として App 自身が所有する(docs/state-ownership.md)
+//   * 再起動をまたいで残す State: コンストラクタで persist({"squelchDb", "view.dbMax", ...}) と宣言する。シェルの SettingsStore が
+//     起動時に書き戻し、NOTIFY のたびに保存する(App に保存コードは要らない)。観測値・派生値・個体値(site.conf)は宣言しない。
 // 登録は apps/CMakeLists.txt の spear_add_app() 1 行。レジストリはビルド時に生成される(§3.1 静的配線)。
 #pragma once
 
@@ -17,11 +19,13 @@
 #include <QMetaObject>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QThread>
 #include <QVariantList>
 #include <QVariantMap>
 
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -49,7 +53,10 @@ public:
     bool running() const { return running_; }
 
     // 起動時設定(録音先ディレクトリ等)。シェルが全 App に同じ map を渡す。必要なキーだけ読む。
+    // 保存値の復元より後に呼ばれる(--set / site.conf が保存値より優先)。
     virtual void configure(const QVariantMap& /*settings*/) {}
+    // 再起動をまたいで残すプロパティ(WRITE + NOTIFY を持つもの。"child.prop" は 1 段の子 QObject)
+    const QStringList& persistedProperties() const { return persisted_; }
 
     // ---- spear::App ----
     std::string name() const override { return info_.name; }
@@ -70,12 +77,14 @@ protected:
     virtual void on_start(Core& core) = 0;
     virtual void on_stop() = 0;
     Core* core() const { return core_; }
+    void persist(std::initializer_list<const char*> props) { for (const char* p : props) persisted_.push_back(QString::fromLatin1(p)); }
 
 private:
     AppInfo info_;
     RfConfig rf_;
     Core* core_ = nullptr;
     bool running_ = false;
+    QStringList persisted_;
 };
 
 inline void GuiApp::start(Core& core) {

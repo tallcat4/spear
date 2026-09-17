@@ -20,7 +20,7 @@
 | `core/` Sources | `B210LiveSource`(再接続・watchdog・generation)、`SyntheticSource`(トーン/FM/AM)、`RecordingSource`(SigMF) | gtest、実機 |
 | `core/` その他 | `EventBus`(履歴、dispatch thread)、`TAP()`、`HealthMonitor`、`EventLogFile`、`AudioSink`(ALSA/PipeWire) | gtest、実機 |
 | `dsp/` 共通 | `design_lowpass`、`FirDecimator` / `FirInterpolator`(ベクトル化カーネル)、`PfbChannelizer`、`SpectrumEstimator`、`stage.hpp`(StageInfo / Provenance)、FFTW プランナ mutex | gtest(参照ベクトル) |
-| `appfw/` App SDK | `GuiApp`(on_start/on_stop は GUI thread 保証、`configure(QVariantMap)`)、ビルド時レジストリ、`ViewProcessor/ViewSource`(任意の複素 stream → spectrum/waterfall)、`TraceSource` + `EyeDiagramItem`、`SpectrumItem` / `WaterfallItem`(自前 QRhiTexture リング) | `apps/tests/test_apps.cpp`(全 App のライフサイクル) |
+| `appfw/` App SDK | `GuiApp`(on_start/on_stop は GUI thread 保証、`configure(QVariantMap)`、`persist({...})`)、`SettingsStore`(運転状態の復元・自動保存 `~/spear/state.conf`)、ビルド時レジストリ、`ViewProcessor/ViewSource`(任意の複素 stream → spectrum/waterfall、手動レンジは再起動をまたぐ)、`TraceSource` + `EyeDiagramItem`、`SpectrumItem` / `WaterfallItem`(自前 QRhiTexture リング) | `apps/tests/test_apps.cpp`(全 App のライフサイクル)、`test_settings.cpp`(往復・全 App の宣言解決) |
 | `widgets/ input/ theme/` | `SpectrumView`(markers / compact)、`EyeDiagram`、`Readout`、`LevelMeter`、`Spear.Input`(KeyButton / Keypad / StepKeys / ValueField / NumericEntry、タッチ専用)、`Theme` | スクリーンショットで目視(`docs/gui/*.png`) |
 | `gui/` シェル | メニュー(GAIN のみ、center/rate は App が決める)/ ステータスバー / ソフトキー / DIAGNOSTICS / 数値入力モーダル、`--set key=value`、`--screenshot` 検証ハーネス | 実機・合成 |
 | `apps/spectrum` | 汎用。FREQ / RATE(再起動)/ REF / AVG / HOLD | off-air 確認済み |
@@ -50,6 +50,8 @@
   共用開発機にはフル構成パッチ版だけを入れる。B200-only は appliance 用。
 - **GUI はタッチのみ・計器の文法**(`docs/gui/DESIGN.md`)。OS 仮想キーボード不採用。1920×1200 固定キャンバス。
 - **状態の単一所有**(`docs/state-ownership.md`)— 4 か所に周波数がコピーされていた不具合から規約化。
+- **運転状態の保存は SDK の 1 つの仕組み(`SettingsStore` + `persist()` 宣言)で、所有者は増やさない**(2026-09-17、「再起動のたびに
+  スケルチ / AGC が初期化される」不具合から)。優先順位 既定 < `state.conf` < site.conf。録音再生では周波数/レートを復元しない(録音条件が真値)。
 - **共通 DSP の境界**(`docs/dsp-boundary.md`)— 変調方式名の付いた部品は App 内、昇格は抽出で。
 - **受信系の golden は実録音**。合成変調器は規格外のパラメータ合わせになるので作らない(STD-T98 で失敗して学んだ)。
 - **個体設定は `~/spear/site.conf`**(例 `std_t98.freq_err_hz=<Hz>`)。コードにも要件にも埋めない。

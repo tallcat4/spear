@@ -54,6 +54,7 @@ public:
     void setDraftGain(double v) { draft_.gain = v; draft_.agc = false; Q_EMIT draftChanged(); }   // 数値を入れたら AGC は切れる
     bool draftAgc() const { return draft_.agc; }
     void setDraftAgc(bool on) { draft_.agc = on; Q_EMIT draftChanged(); }
+    const RfConfig& draft() const { return draft_; }   // 復元後の草案を起動時の宣言に使う(main)
 
     Q_INVOKABLE void startApp(int index);   // 非同期。結果は activeChanged
     Q_INVOKABLE void stopApp();

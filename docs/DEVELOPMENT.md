@@ -29,6 +29,7 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
 
 ## 守ること(理由は各ドキュメントに)
 - **状態は所有者 1 つ**。宣言は `Source::config()` だけ、GUI/App はコピーを持たず Core を読む。要求は捨てない(`docs/state-ownership.md`)。
+  再起動をまたいで残す値は App が `persist({...})` で宣言し、シェルの `SettingsStore`(`~/spear/state.conf`)が復元・自動保存する。App に保存コードを書かない。
 - **共通 DSP には「数学的に定義され・定数を含まず・2 つ目の App が要り・参照ベクトルで検証できる」ものだけ**。
   変調方式の名前が付いた部品は App 内(`docs/dsp-boundary.md`)。昇格は予測せず抽出で。
 - **UI はタッチのみ・黒基調フラット・計器の文法**。キーボード/マウス前提の要素、グラデーション、SF 風装飾は不可。
@@ -43,7 +44,7 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
   バイナリに埋め込む(実行時のパスを持たない)。推論は DSP thread の外の専用スレッドで(STD-T98 の `secret::Worker`)。Python 側を真値にした
   golden で logits の一致を確かめる。
 - **個体・現場固有の値はコードに埋めない**。`~/spear/site.conf` の `key=value` → `spear.sh` が `--set` で App に渡す
-  (例: `std_t98.freq_err_hz=<Hz>` = その B210 個体の LO 誤差)。
+  (例: `std_t98.freq_err_hz=<Hz>` = その B210 個体の LO 誤差)。site.conf は自動保存された運転状態(`state.conf`)より優先。
 - **libuhd はパッチ済みパッケージ(`packaging/libuhd`)を使う。upstream に PR は出さない。B200-only プロファイルは
   共用開発機に入れない**(他の UHD アプリを壊す)。
 - **事象(event)には radio.rx の sample 範囲(provenance)を付ける**。中間 stream には `TAP()` を置く。
@@ -54,7 +55,7 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
 - ユニット/回帰: `ctest`。App のライフサイクル(stop 後に consumer が残らない)は `apps/tests/test_apps.cpp`。
 - 画面: `WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 QT_QPA_PLATFORM=wayland QT_FORCE_STDERR_LOGGING=1 \
   ./build/gui/spear-gui --source file:<base> --screenshot out.png --after 10 --start-app <n> [--diag] [--app-action <key>] [--restart-rate R]`
-  → PNG を見る(App 番号はメニュー順: 0 SPECTRUM, 1 RECORDER, 2 FM/AM, 3 STD-T98)。
+  → PNG を見る(App 番号はメニュー順: 0 SPECTRUM, 1 RECORDER, 2 FM/AM, 3 STD-T98)。`--state-file` を付けなければ運転状態は復元も保存もされない(再現性のため)。
 - 実機: B210 の FPGA ロードは USB 2.0 で約 70 s。`--after` はそれより長く(短く切ると次回また読み込む)。
   実機の新しい表示部品・DSP 段は **既知周波数の実信号**で軸の向きと絶対値を確認する(合成トーンでは向きの誤りが出ない)。
 - 実録音: `spear-std-t98-decode <base> --freq-err <unit Hz> --squelch -50 [--wav out]` でフレーム表と音声(秘話呼は鍵探索して復号)。

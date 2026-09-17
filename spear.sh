@@ -3,7 +3,8 @@
 #   ./spear.sh                    B210 で全画面起動
 #   ./spear.sh --source synthetic 合成データ
 #   ./spear.sh --windowed         ウィンドウ表示(開発用)
-# 追加引数はそのまま spear-gui へ渡す。ログ・録音・イベントログは ~/spear/ 配下。個体設定は ~/spear/site.conf。
+# 追加引数はそのまま spear-gui へ渡す。ログ・録音・イベントログは ~/spear/ 配下。個体設定は ~/spear/site.conf、
+# 運転状態(ゲイン/AGC、スケルチ、音量、表示レンジ…)は ~/spear/state.conf に自動保存され次回復元される(site.conf が優先)。
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN="$HERE/build/gui/spear-gui"
@@ -43,5 +44,6 @@ cd "$HERE"
 exec "$BIN" $MODE "${ARGS[@]}" \
   --record-dir "$DATA/recordings" \
   --event-log "$DATA/logs/events.jsonl" \
+  --state-file "$DATA/state.conf" \
   --rate 4e6 --freq 100e6 --gain 30 \
   2>&1 | tee "$LOG"

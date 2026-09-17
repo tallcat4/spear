@@ -29,6 +29,8 @@ StdT98App::StdT98App(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::
     stats_.resize(static_cast<std::size_t>(cfg_.num_channels));
     eye_.setCapacity(200);
     eye_.set_rate(cfg_.baud);
+    // 再起動をまたいで残す運転状態(個体値 freq_err は site.conf、チャネル IQ 表示のレンジは帯域表示に追従する派生値なので宣言しない)
+    persist({"squelchDb", "selectedChannel", "volume", "mute", "allChannelAudio", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange", "bandView.averaging"});
 }
 StdT98App::~StdT98App() = default;
 

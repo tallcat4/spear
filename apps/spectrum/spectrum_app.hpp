@@ -13,7 +13,9 @@ class SpectrumApp : public appfw::GuiApp {
     Q_OBJECT
     Q_PROPERTY(spear::appfw::ViewSource* view READ view CONSTANT)
 public:
-    explicit SpectrumApp(appfw::AppInfo info, QObject* parent = nullptr) : appfw::GuiApp(std::move(info), parent) {}
+    explicit SpectrumApp(appfw::AppInfo info, QObject* parent = nullptr) : appfw::GuiApp(std::move(info), parent) {
+        persist({"view.dbMin", "view.dbMax", "view.manualRange", "view.averaging"});   // REF / AVG。周波数・レートは Core(草案はシェルが残す)
+    }
     appfw::ViewSource* view() { return &view_; }
 
     // 周波数は Core(Source)が所有する State。App は要求を渡すだけ。表示は sys.centerFreq。

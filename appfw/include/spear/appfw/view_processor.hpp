@@ -54,6 +54,7 @@ public:
     void set_averaging(int frames) { avg_frames_ = frames < 1 ? 1 : frames; }
     void reset_max_hold() { reset_max_ = true; }
     void request_auto_range() { auto_range_ = true; }   // 次の frame でノイズ床から dB レンジを決める
+    void cancel_auto_range() { auto_range_ = false; }   // 手動レンジが決まっている(ViewSource が復元した)
 
     ConsumerStats stats() const { return sub_ ? sub_->stats() : ConsumerStats{}; }
 

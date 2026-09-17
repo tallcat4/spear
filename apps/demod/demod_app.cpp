@@ -58,7 +58,11 @@ struct DemodApp::Chain {
     float fm_scale = 1.f, am_scale = 1.f;
 };
 
-DemodApp::DemodApp(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::move(info), parent) {}
+DemodApp::DemodApp(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::move(info), parent) {
+    // 再起動をまたいで残す運転状態。channelOffsetHz は loOffset から導く派生値、RX 周波数は Core(草案はシェルが残す)
+    persist({"mode", "loOffsetHz", "squelchDb", "volume", "mute", "view.dbMin", "view.dbMax", "view.manualRange", "view.averaging",
+             "channelView.dbMin", "channelView.dbMax", "channelView.manualRange", "channelView.averaging"});
+}
 DemodApp::~DemodApp() = default;
 
 void DemodApp::configure(const QVariantMap& settings) {

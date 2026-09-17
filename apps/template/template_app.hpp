@@ -24,7 +24,9 @@ class TemplateApp final : public appfw::GuiApp {
     Q_PROPERTY(double threshold READ threshold WRITE setThreshold NOTIFY thresholdChanged)
     Q_PROPERTY(double blocksSeen READ blocksSeen NOTIFY statsChanged)
 public:
-    explicit TemplateApp(appfw::AppInfo info, QObject* parent = nullptr) : appfw::GuiApp(std::move(info), parent) {}
+    explicit TemplateApp(appfw::AppInfo info, QObject* parent = nullptr) : appfw::GuiApp(std::move(info), parent) {
+        persist({"threshold"});   // 再起動をまたいで残す State はここで宣言する(シェルの SettingsStore が復元・保存)
+    }
     double threshold() const { return threshold_; }
     void setThreshold(double v) { threshold_ = v; Q_EMIT thresholdChanged(); }
     double blocksSeen() const { return static_cast<double>(blocks_.load()); }

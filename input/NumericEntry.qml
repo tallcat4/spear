@@ -142,7 +142,7 @@ Item {
         Keypad {
             x: unitsPad.x + unitsPad.width + 16; y: 276
             columns: 1; keyWidth: 220; keyHeight: 100; gap: 8; labelSize: Theme.fsLarge
-            keys: [ { label: "ENTER", action: "enter", sublabel: entry.displayUnit },
+            keys: [ { label: "ENTER", action: "enter", sublabel: entry.displayUnit, accent: Theme.green },   // 確定 = 緑(他のキーと一目で区別)
                     null, null,
                     { label: "CANCEL", action: "cancel" } ]
             onPressed: (a) => { if (a === "enter") entry.commit(entry.displayFactor, entry.displayUnit); else { entry.close(); entry.cancelled() } }

@@ -73,7 +73,7 @@ Linux 上の SDR アプリケーションではなく、Linux を内部実装と
 |---|---|---|
 | Core | `core/` | Radio、Stream Bus、Block pool、Source(B210 / SigMF 録音 / 合成)、Event、Health、TAP、AudioSink |
 | 共通 DSP | `dsp/` | 数学的に定義され用途の定数を含まない原始演算だけ(FIR 設計、間引き / 補間、PFB channelizer、スペクトラム推定、段の規約) |
-| App SDK | `appfw/` | `GuiApp` 基底、レジストリ、任意の stream に付く観測点、アイパターン用トレース |
+| App SDK | `appfw/` | `GuiApp` 基底、レジストリ、任意の stream に付く観測点、アイパターン用トレース、運転状態の自動保存(`SettingsStore`) |
 | 部品 | `widgets/ input/ theme/` | 計器の表示部品、自前のタッチ入力、デザイントークン |
 | シェル | `gui/` | メニュー / ステータスバー / ソフトキー / 診断画面 / 数値入力 |
 | App | `apps/` | 1 ディレクトリ = 1 App。`spear_add_app()` を 1 回呼べば登録される。学習済みモデル(STD-T98 秘話)も App の下に置き、バイナリに埋め込む |
@@ -122,6 +122,7 @@ ctest --test-dir build -j4                         # テスト(ハードウェ�
 ```
 
 個体・現場固有の値(その B210 の LO 誤差など)は `~/spear/site.conf` に置き、コードには入れない。
+運転状態(ゲイン/AGC、各 App のスケルチ・音量・モード・表示レンジ…)は `~/spear/state.conf` に自動保存され、次回起動時に復元される。
 運用の詳細は [`docs/tools.md`](docs/tools.md)。
 
 ## ドキュメント

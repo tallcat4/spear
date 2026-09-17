@@ -13,17 +13,19 @@ Rectangle {
     property int repeatIntervalMs: 80
     property int labelSize: Theme.fsLarge
     property color labelColor: Theme.text
+    property color accent: "transparent"  // 確定キー(ENTER)などの強調色: 枠と文字がその色、押下でその色に反転(意味のある色だけ使う)
+    readonly property bool accented: accent.a > 0
     signal pressed()
 
     implicitWidth: 120; implicitHeight: 84
-    color: (active || ma.pressed) && enabled ? Theme.invertBg : Theme.bg
-    border.color: enabled ? Theme.line : Theme.lineDim; border.width: 1
+    color: (active || ma.pressed) && enabled ? (accented ? accent : Theme.invertBg) : Theme.bg
+    border.color: enabled ? (accented ? accent : Theme.line) : Theme.lineDim; border.width: accented && enabled ? 2 : 1
 
     Text { x: 8; y: 5; text: key.sublabel; color: key.enabled ? Theme.textDim : Theme.lineDim
            font.family: Theme.mono; font.pixelSize: Theme.fsSmall; visible: key.sublabel.length > 0 }
     Text { anchors.centerIn: parent; anchors.verticalCenterOffset: key.sublabel.length ? 4 : 0
            text: key.label; font.family: Theme.mono; font.pixelSize: key.labelSize; font.bold: true
-           color: (key.active || ma.pressed) && key.enabled ? Theme.invertText : (key.enabled ? key.labelColor : Theme.lineDim) }
+           color: (key.active || ma.pressed) && key.enabled ? Theme.invertText : (key.enabled ? (key.accented ? key.accent : key.labelColor) : Theme.lineDim) }
 
     MouseArea {
         id: ma

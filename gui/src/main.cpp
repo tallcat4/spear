@@ -1,10 +1,12 @@
 // spear-gui — エントリ。Core + Source を組み、QML シェルを起動する (要件 §9)
 //
 //   spear-gui [--source b210|synthetic|file:<base>] [--rate 4e6] [--freq 100e6] [--gain 30]   (既定: b210)
-//             [--record-dir ./recordings] [--event-log path] [--screenshot out.png --after 5]
+//             [--record-dir ./recordings] [--event-log path] [--state-file path] [--screenshot out.png --after 5]
 //             [--fullscreen] [--width W --height H]
+// --state-file: 運転状態(ゲイン/AGC、各 App のスケルチ・音量・表示レンジ…)の自動保存先。無ければ保存も復元もしない(検証用の起動)。
 #include "shell.hpp"
 #include "system_model.hpp"
+#include "spear/appfw/settings_store.hpp"
 #include "spear/core/event_log.hpp"
 #include "spear/core/recording.hpp"
 #include "spear/core/synthetic_source.hpp"
@@ -86,10 +88,22 @@ int main(int argc, char** argv) {
 #endif
     else { std::fprintf(stderr, "unknown source %s\n", source.c_str()); return 1; }
     core.set_source(std::move(src));
-    core.source().configure(cfg);   // 起動時点の宣言を適用(App 起動前でも status bar に正しい RF を出す)
 
     SystemModel model(core);
     Shell shell(core, cfg);
+    // 運転状態の復元 → 起動時設定(--set)の順。保存値はコマンドラインの既定(--freq/--rate/--gain)より優先、--set(site.conf)はさらに優先
+    appfw::SettingsStore store(QString::fromUtf8(arg(argc, argv, "--state-file", "")));
+    {
+        QString err;
+        if (!store.load(&err)) std::fprintf(stderr, "state: %s\n", qPrintable(err));
+        // シェルの草案: ゲイン/AGC はどの Source でも(setDraftGain は AGC を切るので AGC を後に復元)。周波数/レートは録音再生では録音条件が真値なので残さない
+        QStringList shell_props = {"draftGain", "draftAgc"};
+        if (source.rfind("file:", 0) != 0) shell_props << "draftFreq" << "draftRate";
+        store.bind(&shell, "shell", shell_props);
+        for (const auto& app : shell.instances()) store.bind(app.get(), app->appId(), app->persistedProperties());
+        if (!store.path().isEmpty()) std::fprintf(stderr, "state: %s (%d restored, %d bound)\n", qPrintable(store.path()), store.restoredCount(), store.boundCount());
+    }
+    core.source().configure(shell.draft());   // 起動時点の宣言を適用(App 起動前でも status bar に正しい RF を出す)
     {
         QVariantMap settings;
         settings["record_dir"] = QString::fromStdString(record_dir);
@@ -144,5 +158,6 @@ int main(int argc, char** argv) {
     }
     const int rc = app.exec();
     core.stop_app();
+    store.flush();
     return rc;
 }

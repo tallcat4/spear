@@ -7,7 +7,9 @@ add_library(spear_appfw STATIC
   src/spectrum_item.cpp
   src/waterfall_item.cpp
   src/eye_diagram_item.cpp
+  src/settings_store.cpp
   include/spear/appfw/app.hpp
+  include/spear/appfw/settings_store.hpp
   include/spear/appfw/view_source.hpp
   include/spear/appfw/spectrum_item.hpp
   include/spear/appfw/waterfall_item.hpp

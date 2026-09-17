@@ -37,7 +37,8 @@ docs/apps/<id>.md    欠陥レポート
 | TAP | 中間 stream に `TAP("<id>.<point>", ptr, n)` (§5.3) |
 | ページ | `required property var app / ui`、`softKeys`(7 個まで、8 個目 BACK はシェル)、`softKey(action)`。部品は `Spear.Widgets` / `Spear.Input` |
 | 入力 | `ui.askFreq / askRate / askGain / askRef / askOffset(current, callback)`、`ui.restartWithRate(v)`、`ui.showDiagnostics()`。自前の数値入力(タッチ専用) |
-| 設定 | `configure(const QVariantMap&)`: `record_dir`、`audio_device`、`--set key=value`(`spear.sh` が `~/spear/site.conf` から渡す。キーは `<id>.<name>`) |
+| 設定 | `configure(const QVariantMap&)`: `record_dir`、`audio_device`、`--set key=value`(`spear.sh` が `~/spear/site.conf` から渡す。キーは `<id>.<name>`)。保存値の復元より後に呼ばれる(site.conf が勝つ) |
+| 運転状態の保存 | コンストラクタで `persist({"squelchDb", "view.dbMax", ...})`。シェルの `SettingsStore` が `~/spear/state.conf` から書き戻し、NOTIFY のたびに保存する。宣言するのは **ユーザーが操作する値**(スケルチ、音量、モード、REF/AVG、選択 ch)。観測値・派生値(チャネル IQ 表示のレンジ等)・個体値(site.conf)は宣言しない。名前の解決は `spear_settings_tests` が全 App について確認する |
 | 観測点 | 内部 stream を `Stream<cf32>/<float>` として publish し `ViewProcessor` を繋ぐ(spectrum/waterfall)。短いトレース(アイ等)は `appfw::TraceSource` に push → `EyeDiagram` |
 | 表示 | `SpectrumView`(`markers` で多チャネル、`compact` で狭い場所)、`EyeDiagram`、`Readout`、`LevelMeter`。1920×1200 固定キャンバス、タッチのみ |
 | 音声 | `AudioSink(events, device, rate)`。複数 stream を混ぜるなら provenance の時刻に加算するミキサ(STD-T98 の `Mixer` を参照) |
@@ -47,6 +48,7 @@ docs/apps/<id>.md    欠陥レポート
 ## チェックリスト(App 完了時)
 * [ ] SyntheticSource で回るテストがあり、stop 後に consumer が残らない
 * [ ] App の State に所有者以外からの書き込みが無い
+* [ ] ユーザーが操作する State を `persist({...})` で宣言した(`spear_settings_tests` が名前を確認する)
 * [ ] Event に provenance が付いている
 * [ ] 中間 stream に TAP がある
 * [ ] `docs/apps/<id>.md` に欠陥レポートを書いた(共通に欲しかった部品は `docs/dsp-boundary.md` の基準で判定)
