@@ -1,0 +1,115 @@
+# S.P.E.A.R. 用 libuhd (要件 §17.2 再接続の前提)
+# Arch 公式 libuhd 4.9.0.1-8 の PKGBUILD をベースに、device 消失時に shared_ptr deleter から
+# 例外が投げられて std::terminate する UHD のバグを直すパッチを当てる。
+# docs / python-uhd は作らない(公式パッケージをそのまま使う。ABI は同一)。
+#
+# 2 つのプロファイル:
+#   デフォルト        : 公式と同じフル構成 + パッチ。共用の開発機はこちら(gnuradio / soapyuhd /
+#                       python-uhd / sdrangel など UHD を使う他アプリを壊さない)。
+#   SPEAR_B200_ONLY=1 : B200 (USB) 以外の全 device / MPMD / DPDK / C API を無効化(libuhd.so 13 MB → 5.3 MB、
+#                       共有ライブラリ依存 45 → 14)。Appliance 用 OS image (§13) 専用。共用機に入れないこと。
+# Maintainer (upstream Arch): Carl Smedstad <carsme@archlinux.org>
+
+pkgbase=libuhd
+pkgname=(
+  libuhd
+  libuhd-utils
+)
+pkgver=4.9.0.1
+pkgrel=8.2
+pkgdesc="Universal Software Radio Peripheral (USRP) userspace driver (spear: usb release() no-throw, b2xx probe/fx3_state)"
+arch=(x86_64)
+url="https://github.com/EttusResearch/uhd"
+license=(GPL-3.0-or-later)
+makedepends=(
+  boost
+  boost-libs
+  cmake
+  dpdk
+  git
+  python-mako
+  python-numpy
+  python-ruamel-yaml
+  python-setuptools
+)
+source=(
+  "git+$url.git#tag=v$pkgver"
+  0001-usb-do-not-throw-from-buffer-release.patch
+  0002-b2xx-public-probe-and-fx3-state.patch
+)
+sha256sums=('74830b4ceffc05173cf21073bf25a8e32458a91bf083f634d349ad1593d86bf8'
+            'SKIP'
+            'SKIP')
+
+prepare() {
+  cd uhd
+  # 再ビルド時に前回のパッチが残っていると二重適用になるので、まず tag の状態に戻す
+  git checkout -- .
+  git clean -fdq
+  patch -Np1 -i "$srcdir/0001-usb-do-not-throw-from-buffer-release.patch"
+  patch -Np1 -i "$srcdir/0002-b2xx-public-probe-and-fx3-state.patch"
+}
+
+build() {
+  export CMAKE_POLICY_VERSION_MINIMUM=3.5
+  cmake -S uhd/host -B build \
+    -DCMAKE_BUILD_TYPE=None \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -Wno-dev \
+    -DUHD_GIT_BRANCH_OVERRIDE=UHD-${pkgver%.*.*} \
+    -DENABLE_PYTHON_API=OFF \
+    -DENABLE_DOXYGEN=OFF \
+    -DENABLE_MANUAL=OFF \
+    -DENABLE_TESTS=OFF \
+    -DENABLE_EXAMPLES=OFF \
+    ${_b200_only_flags}
+  cmake --build build
+}
+
+if [ "${SPEAR_B200_ONLY:-0}" = "1" ]; then
+  pkgrel="${pkgrel%.*}.9"   # pkgrel は integer[.integer] 制約。フル構成 8.N に対し 8.9 = B200-only
+  pkgdesc+=" [B200-only appliance profile]"
+  _b200_only_flags="-DENABLE_C_API=OFF -DENABLE_USB=ON -DENABLE_B200=ON -DENABLE_B100=OFF -DENABLE_USRP1=OFF
+    -DENABLE_USRP2=OFF -DENABLE_X300=OFF -DENABLE_MPMD=OFF -DENABLE_SIM=OFF -DENABLE_N300=OFF -DENABLE_N320=OFF
+    -DENABLE_E320=OFF -DENABLE_E300=OFF -DENABLE_X400=OFF -DENABLE_OCTOCLOCK=OFF -DENABLE_DPDK=OFF"
+else
+  _b200_only_flags=""
+fi
+
+package_libuhd() {
+  depends=(
+    boost-libs
+    dpdk
+    glibc
+    libgcc
+    libstdc++
+    libusb
+    python
+  )
+  provides=(libuhd.so)
+
+  DESTDIR="$pkgdir" cmake --install build --component devel
+  DESTDIR="$pkgdir" cmake --install build --component headers
+  DESTDIR="$pkgdir" cmake --install build --component libraries
+  DESTDIR="$pkgdir" cmake --install build --component manpages
+  DESTDIR="$pkgdir" cmake --install build --component readme
+  install -vDm644 uhd/host/utils/uhd-usrp.rules \
+    "$pkgdir/usr/lib/udev/rules.d/10-uhd-usrp.rules"
+}
+
+package_libuhd-utils() {
+  pkgdesc+=" (utilities)"
+  depends=(
+    boost-libs
+    glibc
+    libgcc
+    libstdc++
+    libuhd
+    ncurses
+    python
+    python-uhd
+  )
+
+  DESTDIR="$pkgdir" cmake --install build --component utilities
+  rm -v "$pkgdir/usr/share/uhd/rfnoc-newmod/python/setup.py.in"
+}

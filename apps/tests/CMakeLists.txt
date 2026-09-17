@@ -1,0 +1,5 @@
+# App の回帰テスト: ハードウェアなし(SyntheticSource)で App のライフサイクルと出力を検証する (§12.3)
+add_executable(spear_app_tests test_apps.cpp)
+target_link_libraries(spear_app_tests PRIVATE spear_apps spear_app_template GTest::gtest Qt6::Core PkgConfig::FFTW3F)
+target_compile_definitions(spear_app_tests PRIVATE QT_NO_KEYWORDS)
+add_test(NAME spear_app_tests COMMAND spear_app_tests)

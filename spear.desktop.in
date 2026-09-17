@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=S.P.E.A.R.
+Comment=Signal Processing & Emission Analysis Receiver (USRP B210)
+Exec=@SPEAR_DIR@/spear.sh
+Path=@SPEAR_DIR@
+Terminal=false
+Categories=HamRadio;Science;

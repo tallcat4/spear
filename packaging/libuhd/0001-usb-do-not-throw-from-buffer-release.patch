@@ -1,0 +1,49 @@
+From: spear <tallcat1021@gmail.com>
+Subject: [PATCH] transport: libusb: do not throw from managed buffer release()
+
+libusb_zero_copy_mb::release() is invoked from the managed_buffer
+shared_ptr deleter, i.e. from a noexcept context.  It re-submits the
+buffer via enqueue_buffer() -> submit_what_we_can(), which throws
+uhd::usb_error when libusb_submit_transfer() fails.
+
+When the USB device has been unplugged, libusb_submit_transfer() fails
+with LIBUSB_ERROR_NO_DEVICE on the very first send after the loss.  The
+exception escapes the deleter and the process is terminated by
+std::terminate.  This happens even while destroying the device object
+(b200_impl's destructors send control packets), so an application cannot
+recover from a device loss: the object can neither be used nor destroyed,
+and uhd::device::make() keeps handing out the dead cached object.
+
+Catch the error in enqueue_buffer(): submit_what_we_can() has already
+switched the transport to STATUS_ERROR, after which get_buff() returns
+immediately with an empty buffer and callers see ordinary timeouts, which
+every UHD destructor already handles via UHD_SAFE_CALL.
+
+Observed on UHD 4.9.0.1 with a B210 over USB 2.0 (Linux, libusb 1.0).
+---
+ host/lib/transport/libusb1_zero_copy.cpp | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/host/lib/transport/libusb1_zero_copy.cpp b/host/lib/transport/libusb1_zero_copy.cpp
+--- a/host/lib/transport/libusb1_zero_copy.cpp
++++ b/host/lib/transport/libusb1_zero_copy.cpp
+@@ -363,7 +363,18 @@ private:
+     {
+         std::lock_guard<std::mutex> l(_queue_mutex);
+         _released.push_back(mb);
+-        this->submit_what_we_can();
++        // Called from the managed buffer's shared_ptr deleter (noexcept).  A
++        // submit failure (e.g. LIBUSB_ERROR_NO_DEVICE after the device was
++        // unplugged) must not propagate, or the process is terminated.
++        // submit_what_we_can() has set STATUS_ERROR; subsequent get_buff()
++        // calls return empty buffers and callers see timeouts instead.
++        try {
++            this->submit_what_we_can();
++        } catch (const uhd::usb_error& e) {
++            UHD_LOGGER_WARNING("USB")
++                << "Transfer submit failed on buffer release, transport disabled: "
++                << e.what();
++        }
+         _buff_ready_cond.notify_one();
+     }
+ 

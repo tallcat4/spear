@@ -1,0 +1,17 @@
+build/
+build-*/
+*.sigmf-data
+*.sigmf-meta
+*.tap
+/tap/
+compile_commands.json
+.cache/
+soak_*.csv
+packaging/libuhd/src/
+packaging/libuhd/pkg/
+packaging/libuhd/*.pkg.tar.*
+packaging/libuhd/uhd/
+soak_*.log
+# ローカルの開発メモ(個体・環境固有。公開しない)
+CLAUDE.md
+.claude/

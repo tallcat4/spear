@@ -1,0 +1,59 @@
+// S.P.E.A.R. core — AudioSink (要件 §7 Sink 抽象の音声版)
+//
+// ALSA(PipeWire の ALSA 互換層経由)。自前 thread が ring buffer から PCM へ書く。
+// 不変条件は TX と同じ (§10): 全 sample を出すか、underrun を数えて event にするか。無言の欠落は無い。
+// GUI/DSP thread は write() でブロックしない(ring が満杯なら捨てて overrun を数える)。
+#pragma once
+
+#include "event.hpp"
+
+#include <atomic>
+#include <cstdint>
+#include <mutex>
+#include <span>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace spear {
+
+struct AudioStats {
+    uint64_t frames_written = 0;   // PCM へ渡した frame 数
+    uint64_t underruns = 0;        // ALSA の underrun(再生側が空)
+    uint64_t overruns = 0;         // ring が満杯で捨てた frame 数
+    double   latency_ms = 0;       // ring の滞留(推定)
+    bool     open = false;
+    std::string error;
+};
+
+class AudioSink {
+public:
+    // device: "default" 等。mono float を渡す。
+    AudioSink(EventBus* events, std::string device = "default", unsigned sample_rate = 48000,
+              std::size_t ring_frames = 48000 / 4);
+    ~AudioSink();
+    bool open(std::string* err = nullptr);
+    void close();
+    void write(std::span<const float> mono);   // ノンブロッキング
+    void set_volume(float gain) { gain_ = gain; }
+    void set_mute(bool m) { mute_ = m; }
+    AudioStats stats() const;
+    unsigned sample_rate() const { return rate_; }
+
+private:
+    void run();
+    EventBus* events_;
+    std::string device_;
+    unsigned rate_;
+    void* pcm_ = nullptr;      // snd_pcm_t*
+    std::vector<float> ring_;
+    std::size_t head_ = 0, tail_ = 0, count_ = 0;   // mu_ で保護
+    mutable std::mutex mu_;
+    std::thread th_;
+    std::atomic<bool> stop_{false};
+    std::atomic<float> gain_{0.5f};
+    std::atomic<bool> mute_{false};
+    AudioStats st_;
+};
+
+} // namespace spear

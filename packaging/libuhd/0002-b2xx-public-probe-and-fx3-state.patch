@@ -1,0 +1,233 @@
+From: spear <tallcat1021@gmail.com>
+Subject: [PATCH] b2xx: expose the FX3 status register as a public API
+
+Add uhd::usrp::b2xx::probe(), a side-effect-free enumeration of B2xx
+devices (never loads firmware or FPGA, unlike device::find()) that reports
+firmware_loaded, whether interface 0 is claimed, and the FX3 status
+register (B200_VREQ_GET_STATUS: fpga_ready / configuring_fpga / busy /
+running / unconfigured / error), compat number and USB speed.
+
+For an open device the same register is published in the property tree
+as /mboards/N/fx3_state (string) and /mboards/N/fx3_state_code (int).
+
+This lets an application track the device state (disconnected / standby
+while the FPGA loads / ready / fault) from the primary source instead of
+inferring it from side effects.
+---
+diff -ruN a/host/include/uhd/usrp/b2xx_probe.hpp b/host/include/uhd/usrp/b2xx_probe.hpp
+--- a/host/include/uhd/usrp/b2xx_probe.hpp
++++ b/host/include/uhd/usrp/b2xx_probe.hpp
+@@ -0,0 +1,70 @@
++//
++// Copyright 2026 spear (S.P.E.A.R. project)
++//
++// SPDX-License-Identifier: GPL-3.0-or-later
++//
++// Side-effect-free enumeration of B2xx devices, exposing the FX3 status
++// register as a public API.  Unlike uhd::device::find(), probe() never loads
++// firmware or the FPGA image, so it can be polled to track the device state
++// (absent / bootloader / configuring FPGA / running / error) from the primary
++// source instead of inferring it.
++//
++// For a device that is currently open (multi_usrp), the same state is readable
++// from the property tree at /mboards/N/fx3_state (string) and
++// /mboards/N/fx3_state_code (int).
++//
++
++#pragma once
++
++#include <uhd/config.hpp>
++#include <cstdint>
++#include <string>
++#include <vector>
++
++namespace uhd { namespace usrp { namespace b2xx {
++
++//! FX3 firmware state register values (B200_VREQ_GET_STATUS)
++enum class fx3_state : uint8_t {
++    undefined        = 0x00,
++    fpga_ready       = 0x01, //!< FX3 ready to receive an FPGA image
++    configuring_fpga = 0x02, //!< FPGA image transfer in progress
++    busy             = 0x03,
++    running          = 0x04, //!< FPGA configured, device operational
++    unconfigured     = 0x05, //!< FPGA not configured
++    error            = 0x06,
++    unknown          = 0xff, //!< not queried / query failed
++};
++
++UHD_API std::string to_string(fx3_state s);
++UHD_API fx3_state fx3_state_from_code(uint8_t code);
++
++struct UHD_API probe_result
++{
++    uint16_t vid = 0;
++    uint16_t pid = 0;
++    std::string serial;
++    std::string manufacturer;
++    std::string product;
++    //! FX3 runs the UHD firmware (from the USB descriptors; false = FX3 bootloader)
++    bool firmware_loaded = false;
++    //! interface 0 is claimed elsewhere (e.g. by a multi_usrp in this process)
++    bool in_use = false;
++    //! The fields below were successfully queried from the FX3
++    bool queried = false;
++    fx3_state state     = fx3_state::unknown;
++    uint16_t compat_num = 0; //!< FX3 firmware compat number (major << 8 | minor)
++    uint8_t usb_speed   = 0; //!< 2 or 3
++    //! Why the query failed (empty on success)
++    std::string error;
++};
++
++/*!
++ * Enumerate B2xx devices on USB without side effects.
++ *
++ * Never loads firmware or FPGA images.  Devices whose interface 0 is claimed
++ * (open in this or another process) are reported with in_use = true and no
++ * FX3 query.
++ */
++UHD_API std::vector<probe_result> probe();
++
++}}} // namespace uhd::usrp::b2xx
+diff -ruN a/host/include/uhd/usrp/CMakeLists.txt b/host/include/uhd/usrp/CMakeLists.txt
+--- a/host/include/uhd/usrp/CMakeLists.txt
++++ b/host/include/uhd/usrp/CMakeLists.txt
+@@ -23,6 +23,7 @@
+ 
+     ### interfaces ###
+     multi_usrp.hpp
++    b2xx_probe.hpp
+ 
+     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/uhd/usrp
+     COMPONENT headers
+diff -ruN a/host/lib/usrp/b200/b200_impl.cpp b/host/lib/usrp/b200/b200_impl.cpp
+--- a/host/lib/usrp/b200/b200_impl.cpp
++++ b/host/lib/usrp/b200/b200_impl.cpp
+@@ -494,6 +494,14 @@
+     _tree->create<double>(mb_path / "link_max_rate")
+         .set((usb_speed == 3) ? B200_MAX_RATE_USB3 : B200_MAX_RATE_USB2);
+     _tree->create<int>(mb_path / "usb_version").set(usb_speed);
++    // FX3 status register (B200_VREQ_GET_STATUS): primary source for the device
++    // state while the device is open.  See uhd/usrp/b2xx_probe.hpp for the codes.
++    _tree->create<int>(mb_path / "fx3_state_code").set_publisher([this]() {
++        return static_cast<int>(_iface->get_fx3_status());
++    });
++    _tree->create<std::string>(mb_path / "fx3_state").set_publisher([this]() {
++        return b200_iface::fx3_state_string(_iface->get_fx3_status());
++    });
+ 
+     ////////////////////////////////////////////////////////////////////
+     // Async task structure
+diff -ruN a/host/lib/usrp/b200/b2xx_probe.cpp b/host/lib/usrp/b200/b2xx_probe.cpp
+--- a/host/lib/usrp/b200/b2xx_probe.cpp
++++ b/host/lib/usrp/b200/b2xx_probe.cpp
+@@ -0,0 +1,100 @@
++//
++// Copyright 2026 spear (S.P.E.A.R. project)
++//
++// SPDX-License-Identifier: GPL-3.0-or-later
++//
++
++#include "b200_iface.hpp"
++#include <uhd/exception.hpp>
++#include <uhd/transport/usb_control.hpp>
++#include <uhd/transport/usb_device_handle.hpp>
++#include <uhd/usrp/b2xx_probe.hpp>
++
++using namespace uhd;
++using namespace uhd::transport;
++
++namespace uhd { namespace usrp { namespace b2xx {
++
++std::string to_string(fx3_state s)
++{
++    switch (s) {
++        case fx3_state::undefined:
++            return "undefined";
++        case fx3_state::fpga_ready:
++            return "fpga_ready";
++        case fx3_state::configuring_fpga:
++            return "configuring_fpga";
++        case fx3_state::busy:
++            return "busy";
++        case fx3_state::running:
++            return "running";
++        case fx3_state::unconfigured:
++            return "unconfigured";
++        case fx3_state::error:
++            return "error";
++        default:
++            return "unknown";
++    }
++}
++
++fx3_state fx3_state_from_code(uint8_t code)
++{
++    return code <= 0x06 ? static_cast<fx3_state>(code) : fx3_state::unknown;
++}
++
++std::vector<probe_result> probe()
++{
++    static const std::vector<usb_device_handle::vid_pid_pair_t> pairs = {
++        {B200_VENDOR_ID, B200_PRODUCT_ID},
++        {B200_VENDOR_ID, B200MINI_PRODUCT_ID},
++        {B200_VENDOR_ID, B205MINI_PRODUCT_ID},
++        {B200_VENDOR_ID, B206MINI_PRODUCT_ID},
++        {B200_VENDOR_NI_ID, B200_PRODUCT_NI_ID},
++        {B200_VENDOR_NI_ID, B210_PRODUCT_NI_ID},
++    };
++
++    std::vector<probe_result> out;
++    for (usb_device_handle::sptr handle : usb_device_handle::get_device_list(pairs)) {
++        probe_result r;
++        r.vid          = handle->get_vendor_id();
++        r.pid          = handle->get_product_id();
++        r.serial       = handle->get_serial();
++        r.manufacturer = handle->get_manufacturer();
++        r.product      = handle->get_product();
++        try {
++            r.firmware_loaded = handle->firmware_loaded();
++        } catch (const std::exception& e) {
++            r.error = e.what();
++            out.push_back(r);
++            continue;
++        }
++        if (!r.firmware_loaded) {
++            // FX3 bootloader: no vendor requests available, nothing more to ask.
++            out.push_back(r);
++            continue;
++        }
++        usb_control::sptr control;
++        try {
++            control = usb_control::make(handle, 0);
++        } catch (const std::exception& e) {
++            // interface 0 already claimed: device is open (here or elsewhere)
++            r.in_use = true;
++            r.error  = e.what();
++            out.push_back(r);
++            continue;
++        }
++        try {
++            b200_iface::sptr iface = b200_iface::make(control);
++            r.state      = fx3_state_from_code(iface->get_fx3_status());
++            r.compat_num = iface->get_compat_num();
++            r.usb_speed  = iface->get_usb_speed();
++            r.queried    = true;
++        } catch (const std::exception& e) {
++            r.error = e.what();
++        }
++        out.push_back(r);
++    }
++    return out;
++}
++
++}}} // namespace uhd::usrp::b2xx
+diff -ruN a/host/lib/usrp/b200/CMakeLists.txt b/host/lib/usrp/b200/CMakeLists.txt
+--- a/host/lib/usrp/b200/CMakeLists.txt
++++ b/host/lib/usrp/b200/CMakeLists.txt
+@@ -22,5 +22,6 @@
+         ${CMAKE_CURRENT_SOURCE_DIR}/b200_cores.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/b200_mb_eeprom.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/b200_radio_ctrl_core.cpp
++        ${CMAKE_CURRENT_SOURCE_DIR}/b2xx_probe.cpp
+     )
+ endif(ENABLE_B200)
