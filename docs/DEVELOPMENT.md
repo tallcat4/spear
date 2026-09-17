@@ -35,7 +35,7 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
 - **UI はタッチのみ・黒基調フラット・計器の文法**。キーボード/マウス前提の要素、グラデーション、SF 風装飾は不可。
   入力部品は自前(`Spear.Input`)。OS の仮想キーボードは使わない(`docs/gui/DESIGN.md`)。
 - **目的が確定した App(STD-T98 等)には LO / rate を手で変える UI を置かない**(誤設定で受信不能になる)。汎用 App
-  (SPECTRUM / RECORDER)だけが FREQ / RATE キーを持つ。装置共通の設定は GAIN(AGC 含む)のみメニューに置く。
+  (SPECTRUM / RECORDER)だけが FREQ / RATE キーを持つ。装置共通の設定は GAIN(AGC 含む)のみメニューに置く(ゲイン欄のタップ。同じ機能のソフトキーは置かない)。
 - **規格のパラメータは一次資料の値を変えない**(STD-T98: 偏移 315 Hz/level、2400 Bd、6.25 kHz、同期語…)。
   移植時は **単位** を一次資料(GR ソース等)と突き合わせる(`max_deviation` は samples/symbol、比率ではない — 実機で発覚)。
 - **受信系の検証は合成信号より実録音の抜粋を golden にする**(`~/spear/golden/`、リポジトリ外。録音・音声・個体値を

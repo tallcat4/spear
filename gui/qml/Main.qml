@@ -94,11 +94,12 @@ Window {
                     k = appPage.item.softKeys.slice(0, 7)
                     while (k.length < 7) k.push(null)
                 } else {
-                    // CENTER / RATE は各 App が決める(メニューには置かない)。GAIN だけは装置の共通設定。
+                    // メニューのソフトキーは EXIT だけ。GAIN は右のゲイン欄のタップ、DIAGNOSTICS は一覧の項目から開ける
+                    // (同じ機能のキーを 2 つ置かない)。CENTER / RATE は各 App が決める。
                     // EXIT(左端): KDE Plasma 等のデスクトップ環境で非キオスクのままフルスクリーン起動している現状では、閉じるのに
                     // ひと手間かかるための策。将来キオスク化(専用セッション、自動起動)するなら、電源操作や別の導線のほうが
                     // 適切かもしれず、EXIT という UI が最適とは限らない。そのときはここと ConfirmDialog を見直す。
-                    k = [ { label: "EXIT", action: "exit" }, { label: "GAIN", action: "mgain" }, null, null, null, null, { label: "DIAG", action: "diag" } ]
+                    k = [ { label: "EXIT", action: "exit" }, null, null, null, null, null, null ]
                 }
                 k.push((win.appOpen || win.diagOpen) ? { label: "BACK", action: "back" } : null)
                 return k
@@ -129,7 +130,6 @@ Window {
         if (!k) return
         switch (k.action) {
         case "back": back(); return
-        case "mgain": askGain(shell.draftGain, (v) => { if (v < 0) shell.draftAgc = true; else shell.draftGain = v }); return
         case "diag": shell.showDiagnostics(true); return
         case "skipwarm": shell.skipWarmUp(); return
         case "exit": exitDialog.open(); return
