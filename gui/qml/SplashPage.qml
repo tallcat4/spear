@@ -58,10 +58,10 @@ Item {
             color: Theme.gridMajor
             NumberAnimation on x { from: 2; to: progress.width - 122; duration: 1600; loops: Animation.Infinite; easing.type: Easing.InOutSine; running: progress.visible && sys.deviceProgress < 0 }
         }
-        // 文字は白。バーが文字の位置まで来たら(下地が琥珀になったら)黒に切り替える — 黒のままだと 50 % を過ぎるまで読めない
+        // 文字は常に白(琥珀の上でも読める。途中で色を変えない)
         Text { id: pct; anchors.centerIn: parent
                text: sys.deviceProgress >= 0 ? "FPGA LOAD  " + sys.deviceProgress + " %" : (sys.deviceStateCode === 1 ? "WAITING FOR DEVICE" : "PLEASE WAIT")
-               color: bar.width >= pct.x + pct.width ? "#000000" : Theme.textBright; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
+               color: Theme.textBright; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
     }
 
     // ---- 立ち上げの経過(自己診断の項目がそのまま並ぶ)----
