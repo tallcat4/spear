@@ -17,6 +17,7 @@ Item {
     // 複数マーカー: [{hz, label, color}] (多チャネル App 用。label/color は省略可)
     property var markers: []
     property bool compact: false           // 狭い場所用: 読み出し行を省き、周波数軸ラベルを間引く
+    property bool showWaterfall: true      // false: ウォーターフォールを出さずスペクトラムに全高を使う(時間変化が要らない App)
     signal askFreq()
     signal askRef()
     readonly property double dbMin: source ? source.dbMin : -110
@@ -52,7 +53,7 @@ Item {
     Item {
         id: specArea
         x: 0; y: page.compact ? 4 : readouts.y + readouts.height + 6
-        width: parent.width; height: Math.round((parent.height - y) * 0.42)
+        width: parent.width; height: page.showWaterfall ? Math.round((parent.height - y) * 0.42) : parent.height - y - 4
         readonly property int axisW: 92
         readonly property int axisH: 26
         Item {
@@ -127,6 +128,7 @@ Item {
 
     // ---- ウォーターフォール ----
     Item {
+        visible: page.showWaterfall
         x: specArea.axisW; y: specArea.y + specArea.height + 4
         width: specArea.width - specArea.axisW - Theme.pad; height: parent.height - y - 4
         Rectangle { anchors.fill: parent; color: Theme.bg; border.color: Theme.line; border.width: 1 }
@@ -138,5 +140,5 @@ Item {
         Rectangle { x: Math.round(parent.width / 2); y: 1; width: 1; height: parent.height - 2; color: Theme.gridMajor; opacity: 0.6 }
     }
     // 経過秒ラベル(左)
-    Text { x: 8; y: specArea.y + specArea.height + 8; text: "0 s"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+    Text { visible: page.showWaterfall; x: 8; y: specArea.y + specArea.height + 8; text: "0 s"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
 }

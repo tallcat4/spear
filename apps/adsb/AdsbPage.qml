@@ -1,5 +1,5 @@
 // ADS-B のページ (1920×1200)
-//   上 : radio.rx のスペクトラム(8 MHz、1090 MHz にマーカー。アンテナと利得の確認用)
+//   上 : radio.rx のスペクトラム(8 MHz、1090 MHz にマーカー。アンテナと利得の確認用。ウォーターフォールは出さない: 優先度が低い)
 //   中 : 左 航空機表(タップで選択)/ 右 ミニマップ(埋め込み地図、位置のある全機が収まるよう自動フィット。ドラッグ / ピンチで手動、FIT で戻す)
 //   下 : 最後に受理したフレームの振幅窓(プリアンブル 8 µs + データ)/ 読み出し(レート・機数・CRC・drops・DSP)
 // LO / rate は App が決める(1090 MHz − loOffset、8 Msps)ので操作キーは置かない。GPS は無いので地図は機体の位置だけから決める。
@@ -42,8 +42,8 @@ Item {
     SpectrumView {
         id: wide
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-        height: Math.round(parent.height * 0.22)
-        source: app.view; centerFreq: sys.centerFreq; centerEditable: false
+        height: Math.round(parent.height * 0.17)
+        source: app.view; centerFreq: sys.centerFreq; centerEditable: false; showWaterfall: false
         markerHz: 1090e6 - sys.centerFreq; markerLabel: "1090"
         onAskRef: ui.askRef(app.view.dbMax, (v) => { app.view.dbMin = v - 90; app.view.dbMax = v })
     }
@@ -53,7 +53,7 @@ Item {
         id: middle
         anchors.top: wide.bottom; anchors.left: parent.left; anchors.right: parent.right
         anchors.margins: Theme.pad; anchors.topMargin: 6
-        height: Math.round(page.height * 0.56)
+        height: Math.round(page.height * 0.60)
 
         // 列定義(名前, 幅, キー, 右寄せ)
         readonly property var cols: [
