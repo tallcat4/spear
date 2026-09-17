@@ -1,7 +1,7 @@
 // STD-T98 MONITOR のページ (1920×1200)
 //   上 : 30ch 俯瞰スペクトラム(std_t98.band 400 kHz、チャネルマーカー付き)
 //   中 : チャネル格子(30 ch: 電力・同期・フレーム・CSM、タップで選択)
-//   下 : 選択チャネル — アイパターン / チャネル IQ スペクトラム / フレーム読み出し / フレームログ
+//   下 : 選択チャネル — アイパターン / チャネル IQ スペクトラム / フレーム読み出し(秘話の鍵を含む)/ フレームログ
 import QtQuick
 import Spear.Theme
 import Spear.Widgets
@@ -86,6 +86,11 @@ Item {
                 }
                 Text { x: 8; y: 58; text: modelData.frames > 0 ? ("FRAMES " + modelData.frames) : (modelData.syncs > 0 ? "SYNC " + modelData.syncs : "")
                        color: modelData.frames > 0 ? Theme.green : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+                // 秘話: 呼が秘話なら右下に鍵(探索中は SEC、鍵なしで探索が外れたら SEC?)
+                Text { anchors.right: parent.right; anchors.rightMargin: 8; y: 58; visible: modelData.secret
+                       text: modelData.key > 0 ? "K " + modelData.key : (modelData.secretStatus === "miss" ? "SEC ?" : "SEC")
+                       color: modelData.key > 0 ? Theme.green : (modelData.secretStatus === "miss" ? Theme.red : Theme.amber)
+                       font.family: Theme.mono; font.pixelSize: Theme.fsSmall; font.bold: true }
                 MouseArea { anchors.fill: parent; onClicked: app.selectedChannel = index }
             }
         }
@@ -146,7 +151,14 @@ Item {
                 }
                 Row {
                     spacing: 6
-                    Readout { label: "LAST FRAME"; width: 720; height: 52
+                    // 秘話: 呼の状態と鍵。鍵は探索器(ffnn 全鍵 → hybrid)が見つけた値、呼をまたいで保持される
+                    Readout { label: "SECRET"; width: 214; height: 52
+                              value: !page.sel.secret ? (page.sel.key > 0 ? "clear  (last K " + page.sel.key + ")" : "clear")
+                                     : (page.sel.key > 0 ? "KEY " + page.sel.key + (page.sel.secretStatus === "searching" ? "  ..." : "")
+                                        : page.sel.secretStatus.toUpperCase())
+                              valueSize: page.sel.secret ? Theme.fsLarge : Theme.fsBase
+                              valueColor: !page.sel.secret ? Theme.textDim : (page.sel.key > 0 ? Theme.green : (page.sel.secretStatus === "miss" ? Theme.red : Theme.amber)) }
+                    Readout { label: "LAST FRAME"; width: 500; height: 52
                               value: page.sel.lastFrame.type !== undefined
                                      ? (page.sel.lastFrame.type + "  RICH M=" + page.sel.lastFrame.richM
                                         + (page.sel.lastFrame.msgType !== undefined ? "  msg=" + page.sel.lastFrame.msgType + " call=" + page.sel.lastFrame.callStat + " user=" + page.sel.lastFrame.userCode : "")
@@ -158,6 +170,10 @@ Item {
                 Text { text: "AUDIO  " + (app.audioError.length ? "ERROR " + app.audioError : (app.mute ? "MUTE" : (app.allChannelAudio ? "ALL CH MIX" : "CH " + (app.selectedChannel + 1) + " ONLY") + "  AMBE 8 kHz  vol " + (app.volume * 100).toFixed(0) + "%  underruns " + app.audioUnderruns.toFixed(0) + "  late " + app.audioLateFrames.toFixed(0)))
                        + "    LO " + Theme.fmtFreq(sys.centerFreq) + "  band offset " + Theme.fmtHz(app.bandCenterHz - sys.centerFreq) + "  unit err " + app.freqErrHz.toFixed(0) + " Hz"
                        color: app.audioError.length ? Theme.red : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+                Text { text: "SECRET  " + app.secretStatus
+                             + (page.sel.secretSearches > 0 ? "    ch " + page.sel.ch + ": " + page.sel.secretSource + " " + page.sel.secretSeconds.toFixed(2) + " s" : "")
+                             + (app.secretCache.length ? "    cache " + app.secretCache.slice(0, 6).join(" ") : "")
+                       color: app.secretStatus.indexOf("ERROR") === 0 ? Theme.red : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
                 Rectangle { width: 10; height: 1; color: "transparent" }
                 Text { text: "FRAME LOG"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
                 Repeater {

@@ -21,7 +21,7 @@ App(SPECTRUM / IQ RECORDER / FM-AM RX / STD-T98 MONITOR)は機能ではなく **
 
 ## ビルド・テスト・起動(この 3 行で全部)
 ```
-cmake -S . -B build -G Ninja && ninja -C build        # 依存: cmake ninja gcc≥13 fftw3f gtest Qt6 boost(UHD 用) パッチ済み libuhd
+cmake -S . -B build -G Ninja && ninja -C build        # 依存: cmake ninja gcc≥13 fftw3f gtest Qt6 boost(UHD 用) パッチ済み libuhd onnxruntime-cpu
 ctest --test-dir build -j4                            # 全テスト(ハードウェア不要。実録音 golden は無ければ skip)
 ./spear.sh                                            # 実機で全画面。--windowed / --source synthetic / --source file:<sigmf base>
 ```
@@ -39,6 +39,9 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
   移植時は **単位** を一次資料(GR ソース等)と突き合わせる(`max_deviation` は samples/symbol、比率ではない — 実機で発覚)。
 - **受信系の検証は合成信号より実録音の抜粋を golden にする**(`~/spear/golden/`、リポジトリ外。録音・音声・個体値を
   リポジトリに入れない。無ければテストは skip)。合成変調器を発明しない。
+- **学習済みモデルは C++ 再実装(safetensors 直読み)か ONNX Runtime**(§3.4)。torch / libtorch を持ち込まない。モデルはリポジトリに置いて
+  バイナリに埋め込む(実行時のパスを持たない)。推論は DSP thread の外の専用スレッドで(STD-T98 の `secret::Worker`)。Python 側を真値にした
+  golden で logits の一致を確かめる。
 - **個体・現場固有の値はコードに埋めない**。`~/spear/site.conf` の `key=value` → `spear.sh` が `--set` で App に渡す
   (例: `std_t98.freq_err_hz=<Hz>` = その B210 個体の LO 誤差)。
 - **libuhd はパッチ済みパッケージ(`packaging/libuhd`)を使う。upstream に PR は出さない。B200-only プロファイルは
@@ -54,7 +57,7 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
   → PNG を見る(App 番号はメニュー順: 0 SPECTRUM, 1 RECORDER, 2 FM/AM, 3 STD-T98)。
 - 実機: B210 の FPGA ロードは USB 2.0 で約 70 s。`--after` はそれより長く(短く切ると次回また読み込む)。
   実機の新しい表示部品・DSP 段は **既知周波数の実信号**で軸の向きと絶対値を確認する(合成トーンでは向きの誤りが出ない)。
-- 実録音: `spear-std-t98-decode <base> --freq-err <unit Hz> --squelch -50 [--wav out]` でフレーム表と音声。
+- 実録音: `spear-std-t98-decode <base> --freq-err <unit Hz> --squelch -50 [--wav out]` でフレーム表と音声(秘話呼は鍵探索して復号)。
 - 実機の事実(B210 の癖など)は `docs/STATUS.md` の「装置の事実」と `docs/diagnostics.md`。
 
 ## やらないこと

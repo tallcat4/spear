@@ -5,11 +5,14 @@
 //   * §4.5 provenance: フレーム event の sample 範囲を radio.rx index で
 //   * 個体設定(freq_err_hz)を --set / site.conf で渡す経路
 //   * TraceSource / EyeDiagram(新規の再利用部品)
+//   * 秘話(§3.4): 鍵探索は専用ワーカースレッド(secret::Worker)で走らせ、DSP thread は鍵の適用と窓の収集だけを行う
 // RF: 4 Msps、LO は帯域中心から loOffset だけ離す(ゼロ IF の DC スパイクをチャネル 16 に重ねない)。
 #pragma once
 
 #include "ambe.hpp"
 #include "receiver.hpp"
+#include "secret/tracker.hpp"
+#include "secret/worker.hpp"
 #include "spear/appfw/app.hpp"
 #include "spear/appfw/trace_source.hpp"
 #include "spear/appfw/view_source.hpp"
@@ -51,6 +54,8 @@ class StdT98App final : public appfw::GuiApp {
     Q_PROPERTY(QString audioError READ audioError NOTIFY metersChanged)
     Q_PROPERTY(double audioUnderruns READ audioUnderruns NOTIFY metersChanged)
     Q_PROPERTY(double audioLateFrames READ audioLateFrames NOTIFY metersChanged)   // ミキサに遅れて届いたフレーム数
+    Q_PROPERTY(QString secretStatus READ secretStatus NOTIFY metersChanged)         // 鍵探索器の状態(要求数 / 完了数)
+    Q_PROPERTY(QVariantList secretCache READ secretCache NOTIFY metersChanged)      // 全チャネル共通の鍵キャッシュ(新しい順)
     // ---- 観測点 ----
     Q_PROPERTY(spear::appfw::ViewSource* view READ view CONSTANT)          // radio.rx
     Q_PROPERTY(spear::appfw::ViewSource* bandView READ bandView CONSTANT)  // std_t98.band(400 kHz、30ch 俯瞰)
@@ -92,6 +97,8 @@ public:
     QString audioError() const { return audio_ ? QString::fromStdString(audio_->stats().error) : QString(); }
     double audioUnderruns() const { return audio_ ? static_cast<double>(audio_->stats().underruns) : 0; }
     double audioLateFrames() const { return static_cast<double>(audio_late_.load()); }
+    QString secretStatus() const;
+    QVariantList secretCache() const;
     appfw::ViewSource* view() { return &view_; }
     appfw::ViewSource* bandView() { return &band_view_; }
     appfw::ViewSource* channelView() { return &channel_view_; }
@@ -122,12 +129,17 @@ private:
     bool mute_ = false;
     std::atomic<bool> all_audio_{true};
     std::string audio_device_ = "default";
+    bool secret_enabled_ = true;              // std_t98.secret=0 で鍵探索を止める(切り分け用。音声は平文として復号)
     std::atomic<bool> rebuild_{true};
     double built_center_ = 0;   // Receiver を組んだときの実 LO(変われば組み直す)
 
     // 観測値(DSP thread → GUI)
     mutable std::mutex mu_;
-    struct ChanStat { double power_db = -999; bool open = false; uint64_t frames = 0, sacch_ok = 0, pich_ok = 0, syncs = 0; double best_sse = 1e9, sps = 0; std::string csm; double freq_err_est = 0; };
+    struct ChanStat {
+        double power_db = -999; bool open = false; uint64_t frames = 0, sacch_ok = 0, pich_ok = 0, syncs = 0; double best_sse = 1e9, sps = 0; std::string csm; double freq_err_est = 0;
+        bool secret = false; uint16_t key = 0; std_t98::secret::TrackerStatus secret_status = std_t98::secret::TrackerStatus::Idle;   // 秘話: 呼が秘話か / 現在鍵 / 探索状態
+        std_t98::secret::ResultSource last_source = std_t98::secret::ResultSource::None; double last_search_s = 0; uint64_t searches = 0;
+    };
     std::vector<ChanStat> stats_;
     QVariantMap last_frame_;
     QStringList frame_log_;
@@ -148,8 +160,17 @@ private:
     } mix_;
     std::vector<std::unique_ptr<std_t98::AmbeDecoder>> decoders_;   // チャネルごと(DSP thread 専用)
     std::atomic<uint64_t> audio_late_{0};
-    void mix_frame(const std_t98::Frame& f);
+    void traffic_frame(const std_t98::Frame& f);   // TCH: 秘話判定 → (音声なら)AMBE → ミキサ、秘話なら窓に積んで要求
     void mix_flush(uint64_t reached_input_index);
+    // 秘話(DSP thread 専用)。call_secret は最後に CRC OK だった SACCH の call_stat(CRC 不良のフレームでは前の値を保つ)
+    struct SecretChan { std_t98::secret::Tracker tracker; bool call_secret = false; uint16_t pn_key = 0; std_t98::secret::Pn196 pn{}; };
+    std::vector<SecretChan> secret_ch_;
+    std::unique_ptr<std_t98::secret::Worker> secret_;
+    mutable std::mutex secret_mu_;                                // worker thread → DSP thread(表示の読み出しも)
+    std::vector<std_t98::secret::Worker::Result> secret_results_;
+    std::vector<uint16_t> secret_cache_;                          // 表示用(secret_mu_)
+    void secret_clear(int ch);
+    void secret_drain_results();
     std::unique_ptr<BlockPool> band_pool_, channel_pool_;
     std::unique_ptr<Stream<cf32>> band_, channel_;
     std::shared_ptr<Subscription> sub_;

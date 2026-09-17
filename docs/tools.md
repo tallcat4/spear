@@ -19,6 +19,15 @@ RF の center / rate は各 App が決める(汎用 App は FREQ / RATE キー�
 ./build/tools/spear-std-t98-decode ~/spear/recordings/<base> --freq-err <個体の LO 誤差 Hz> --squelch -50 --wav ~/spear/audio/<base>
 ```
 30 チャネルのフレーム表(SACCH/PICH CRC、CSM、推定周波数誤差)と、チャネルごとの AMBE 音声 WAV を出す。
+秘話呼(SACCH call=1)は GUI と同じポリシーで鍵を探索し(1 ブロック約 0.6 s)、以後のフレームを復号して WAV に出す。フレーム行末に
+`SECRET key=<鍵> (<経路>, <秒>)`、以後 `[secret K <鍵>]` が付く。`--no-secret` で探索を止める(スクランブルのまま)。
+
+## 秘話モデルの更新(再学習したときだけ。通常は不要 — モデルはリポジトリに同梱しバイナリに埋め込む)
+```
+../std-t98-tools/env/bin/pip install onnx onnxruntime              # 変換用(std-t98-tools の venv、numpy は <2 のまま)
+../std-t98-tools/env/bin/python apps/std_t98/tools/export_secret_onnx.py    # → apps/std_t98/models/(safetensors をコピー、hybrid を ONNX に変換して torch と比較)
+../std-t98-tools/env/bin/python apps/std_t98/tests/gen_secret_golden.py     # → ~/spear/golden/std_t98/secret_golden.txt(テスト用、torch が真値)
+```
 
 ## 耐久試験(`spear-soak`、要件 §14 M-1)
 ```

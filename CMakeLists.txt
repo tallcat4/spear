@@ -35,6 +35,7 @@ pkg_check_modules(ALSA REQUIRED IMPORTED_TARGET alsa)
 if(SPEAR_WITH_UHD)
   find_package(UHD 4.0 REQUIRED)
 endif()
+find_package(onnxruntime CONFIG REQUIRED)   # STD-T98 秘話の hybrid モデル(要件 §3.4 道 2)。Arch: onnxruntime-cpu。最上位で探す(imported target をディレクトリ横断で見せる)
 
 add_subdirectory(core)
 add_subdirectory(dsp)

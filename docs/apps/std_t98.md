@@ -11,6 +11,7 @@ M3 の主眼(§14)は「既存 DSP を修正せず任意の中間 stream に観�
 | `ambe2_ffnn` (503 KB, input 980→128→2) | MLP 1 層 | 主力。全 32767 鍵の平文/暗号判定 | **道1(C++ 再実装)で自明** |
 | `ambe2_hybrid` (3.8 MB, Conv1d×3 + BiLSTM×2 + attn) | 大 | full search 冒頭の「そもそも平文か」1 回判定のみ | **道2(ONNX)**。両モデルとも劣化なく ONNX 変換済み(2026-09-17) |
 **判定: 道1で閉じる**(主力 ffnn は MLP)。単一プロセス・C++ 維持(§3.4)。段階 2 で実装。
+→ 実装(2026-09-17、下記「秘話」): ffnn は道1(safetensors 直読み + C++ 推論)、hybrid は道2(ONNX Runtime、必須依存)。モデルはバイナリに埋め込む。
 
 ## 段階
 - **1a(完了)**: プロトコルデコーダ純 C++ 移植。frame layout / dewhiten / RICH / SACCH・PICH(Viterbi K=5 + CRC-6/12)/ TCH 分割。
@@ -30,8 +31,54 @@ M3 の主眼(§14)は「既存 DSP を修正せず任意の中間 stream に観�
   (IMBE・SIMD・スレッドローカル・pffft なし、GPL-2.0-or-later のまま)。実録音の TCH ペイロードを pyambelib(Python)で
   復号した golden(音声を含むのでリポジトリ外 `~/spear/golden/std_t98/ambe_golden.txt`、無ければ skip)と比較:
   fec_demod 完全一致、PCM は 98.1% 一致・最大 1 LSB 差(float 演算順)。
-  秘話(ffnn 道1 / hybrid ONNX 道2)は保留。
-- **1c(次)**: UI — 30ch 俯瞰スペクトラム + 選択chアイパターン + フレーム表示 + 音声再生。
+- **1c(完了)**: UI — 30ch 俯瞰スペクトラム + 選択chアイパターン + フレーム表示 + 音声再生。
+- **3(完了、2026-09-17)**: 秘話(下記)。
+
+## 秘話(音声スクランブル解除、§3.4)
+`../std-t98-tools` の `core/crypto/*`、`core/secret/cracker.py`、`std_t98_multi_audio_service.py` の秘話部分、`std_t98_multi_secret_service.py` を
+`apps/std_t98/secret/` に移植した。tools では別プロセス + UDS だったものを **単一プロセス内のワーカースレッド 1 本** にした(§3.4)。
+
+| 部品 | 内容 | 検証 |
+|---|---|---|
+| `pn.*` | 15 bit LFSR の PN 196 bit(鍵 = 初期状態 1..32767)、ThumbDV 順 / mbelib d 順の keystream | Python `generate_pn_sequence_196` / `descramble_burst` と同値(`test_secret.cpp`) |
+| `models.*` | `apps/std_t98/models/` の `ambe2_ffnn.safetensors` と `ambe2_hybrid.onnx` を `.incbin` でバイナリに埋め込む(実行時のパス無し、read-only rootfs 可) | `EmbeddedModelsLoad` |
+| `safetensors.*` | safetensors の最小リーダ(メモリ上、F32 のみ、JSON ヘッダは自前の部分パーサ) | ffnn のロード |
+| `ffnn.*` | `AMBE2Classifier`(Linear 980→128, ReLU, Linear 128→2)の C++ 推論。入力が 0/1 なので fc1 は「立っているビットの列の総和」 | torch と logits 最大差 9.5e-6、argmax 一致(golden 64 ケース) |
+| `hybrid.*` | `AMBE2HybridClassifier`(Conv1d×3 + BN + GELU、BiLSTM×2、attention pooling)を ONNX Runtime(必須依存、`onnxruntime-cpu`)で。モデルはメモリから `Ort::Session` | torch と最大差 3.8e-6(export 時 512 乱数 + golden 64) |
+| `cracker.*` | `SecretCracker` の移植。今の鍵の検証 → 全チャネル共通キャッシュ(16、上位 2 検証)→ 全鍵探索(hybrid 平文判定 → ffnn 全 32767 鍵 → hybrid 採点 → ブロック 2 で順位) | Python と 7 ケースすべて同じ鍵・同じ経路(下記 E2E) |
+| `tracker.*` | チャネルごとの要求ポリシー(5 バーストで最初の要求、10 ごとに再確認、同時 1 要求、セッション番号で古い結果を捨てる) | 単体テスト |
+| `worker.*` | 専用スレッド。モデルのロードもこのスレッド。要求は同一チャネルの未処理分を置き換え、停止時は探索を打ち切る | 単体テスト、TSan |
+
+**データの流れ**(DSP thread): TCH フレーム → SACCH(CRC OK)の `call_stat == 1` で秘話呼と判定 → `AmbeDecoder::decode_3600(block, pcm, keystream)` が
+FEC 後の 49 bit に鍵の PN を XOR してから音声合成(`secret_voice.py` と同じ位置)→ XOR 前の 49 bit × 4 を `Tracker` の窓に積む → 要求が立てば
+`Worker::submit`。結果はワーカースレッドから mailbox に入り、DSP thread が次のブロックの先頭で取り込む(`secret_drain_results`)。
+鍵が変われば PN を作り直す。結果は Event(`secret chN key K (full search hit, 0.58 s)`)にも残す。
+
+**ビット順の事実**: Python の `THUMBDV_MAP`(keystream の並べ替え表)と C++ デコーダの `kThumbDv`(ThumbDV bit i ↔ mbelib `d[kThumbDv[i]]`)は
+同じ表。したがって **mbelib d 順では `d[j] ^= pn[frame*49 + j]` と並べ替えなしで掛かる**。モデル入力は学習時どおり ThumbDV 順のまま。
+テスト `DescrambleMatchesPythonInBothBitOrders` が両方の順で同じ結果になることを確認する。
+
+**tools との差(意図的)**:
+- SACCH CRC 不良のフレームは tools では `call_stat = 0`(平文)扱いになり秘話セッションを破棄していたが、SACCH は 2% 程度落ちる(実録音 98/100)。
+  ここでは **CRC OK の SACCH だけで秘話判定を更新し、不良フレームでは前の値を保つ**。セッションは同期バースト(PICH)、平文の SACCH、squelch 閉で終える。
+- 鍵はセッション(呼)をまたいで保持し、次の秘話呼ではまず「今の鍵」を検証する(tools と同じ)。鍵が無い間の秘話音声は tools と同じくスクランブルのまま鳴る(活動が分かる)。
+- 音声を出していないチャネルでも窓は積む(選択を切り替えた瞬間から復号できる)。FEC だけなので DSP 負荷は無視できる。
+- 秘話解読は App の主要機能なのでビルドオプションにしない。ONNX Runtime は必須依存、モデルはリポジトリ(`apps/std_t98/models/`、作者本人が学習、
+  ライセンスは本体と同じ)に置いてバイナリに埋め込む。切り分け用に `std_t98.secret=0` で探索だけ止められる。
+
+**モデル**(`apps/std_t98/models/README.md`): `ambe2_ffnn.safetensors`(C++ が直接読む)、`ambe2_hybrid.safetensors`(学習の原本)、
+`ambe2_hybrid.onnx`(`apps/std_t98/tools/export_secret_onnx.py` で変換。opset 17、入力 `input` [N, 980]、出力 `logits` [N, 2]。変換時に torch と比較し、
+512 乱数入力で最大差 5.7e-6、argmax 100%。しきい値を超えると非 0 で終わる)。モデルファイルが変わると `secret/models.cpp` が再コンパイルされる(`OBJECT_DEPENDS`)。
+
+**検証(実録音 + 自己スクランブル)**: 手元の録音に秘話呼は無い(`call=0` のみ)。そこで `~/spear/golden/std_t98/ch3_payloads.txt`(実録音の平文 TCH 12 フレーム)を
+既知の鍵でスクランブルし、Python(`gen_secret_golden.py`、torch)と C++ の両方で `resolve` させた。鍵 1 / 12345 / 32767 / 20000 / 777、窓 5 と 10、
+今の鍵あり / 別の鍵あり / 平文 — **7 ケースすべて Python と同じ鍵・同じ経路**。全鍵探索は C++ 単一スレッドで 0.58 s(1 ブロック)/ 1.08 s(2 ブロック)、
+Python(torch、マルチスレッド)は 0.37 / 0.65 s。golden は音声由来なのでリポジトリ外(無ければ skip)。
+**実機の秘話呼**: 秘話設定した無線機の送信で鍵が見つかり音声が復号できることを確認(2026-09-17)。録音の抜粋(鍵つき)を golden に加えて
+受信 → 鍵探索 → 復号の通し回帰テストにするのが次の仕事。
+
+**鍵探索の実行場所**(STATUS の宿題): DSP thread ではなく `secret::Worker` の専用スレッド。全鍵探索 0.6–1.1 s の間も DSP thread は止まらない。ORT には
+スレッドプールを作らせない(intra-op 1)— DSP thread から CPU を奪わないため、また ORT 内部の同期は TSan から見えず偽陽性を出すため。
 
 ## STD-T98 物理層メモ(移植で確定)
 - フレーム 384 bit = 192 シンボル(4値 FSK -3/-1/+1/+3、2400 baud)。SW(20) RICH(16) SACCH(60) TCH1(144) TCH2(144)。

@@ -10,7 +10,7 @@
 | M0 | Stream Bus(GUI なし) | **完了** | `tools/headless`、`tests/test_stream_bus.cpp`(Lossless 不変条件、LatestOnly の drop 計数、EOS) |
 | M1 | Recording / Playback | **完了** | SigMF + sidecar、`RecordingSource` はループ再生・retune 不可(録音条件が真値)、IQ RECORDER App |
 | M2 | 単純な RF App | **完了** | SPECTRUM(off-air 422.2 MHz で軸と絶対値を確認)、FM/AM RX(off-air FM 復調を実機で確認) |
-| M3 | STD-T98 App | **概ね完了** | 実録音・実機ともにフレーム抽出 → AMBE 音声。残: 秘話(下記) |
+| M3 | STD-T98 App | **完了** | 実録音・実機ともにフレーム抽出 → AMBE 音声。秘話は自己スクランブルした実音声で Python と等価、実機の秘話呼でも鍵が見つかり復号できた(`docs/apps/std_t98.md`) |
 
 ## コンポーネントと検証状態
 | 領域 | 内容 | 検証 |
@@ -26,12 +26,12 @@
 | `apps/spectrum` | 汎用。FREQ / RATE(再起動)/ REF / AVG / HOLD | off-air 確認済み |
 | `apps/recorder` | Lossless 録音、sidecar、録音中は FREQ 無効 | gtest(drop 0)、実機 |
 | `apps/demod` | NFM/WFM/AM、LO を RX から 250 kHz 離す、channel IQ と audio を Stream Bus に publish | 合成 FM トーン gtest、off-air FM |
-| `apps/std_t98` | 30ch 受信機(純 C++、Qt/UHD 非依存)、プロトコル、AMBE(C++ 化)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照との等価、実機で送信確認 |
-| `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード) | — |
+| `apps/std_t98` | 30ch 受信機(純 C++、Qt/UHD 非依存)、プロトコル、AMBE(C++ 化)、秘話(PN、ffnn C++ 推論、hybrid ONNX Runtime、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照との等価(プロトコル・AMBE・秘話)、実機で送信確認(平文・秘話) |
+| `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード、秘話呼は鍵探索して復号) | — |
 
 ## 未完・既知の欠陥・次の仕事
-1. **STD-T98 秘話**(§3.4): `ambe2_ffnn`(MLP、道 1 = C++ 再実装)と `ambe2_hybrid`(ONNX、道 2)。両モデルとも ONNX 変換済み。
-   `docs/apps/std_t98.md` の判定を参照。着手前に「どこで鍵探索を走らせるか(DSP thread ではない)」を決める。
+1. **STD-T98 秘話の golden**: 実機の秘話呼で動作確認済み(2026-09-17)。その録音の抜粋(鍵つき)を `~/spear/golden/std_t98/` に加え、
+   受信 → 鍵探索 → 復号を通しで回帰テストにする(現状の E2E は平文の実音声を自己スクランブルしたもの)。
 2. **ADS-B App**(§8.2、M3 の前に予定していたが後回し): 1090 MHz、event/provenance/golden の検証。受信系の検証は実録音を golden に。
 3. **STD-T98 の実機での引き込み**: `max_deviation` の単位バグ修正後、毎回の送信で即ロックすることを継続確認。
    もし再発したら FRAME LOG と SPS(26.02〜26.06 のはず)を記録。
@@ -57,6 +57,10 @@
 - **ライセンスは GPL-3.0 で公開**(2026-09-17)。GPL-2.0-or-later 由来コードの結合は問題ない。
 - **STD-T98 の LO は帯域中心 − 250 kHz**(ゼロ IF の DC スパイクを ch16 に重ねない)。回転量は Core の実 LO から導くので
   録音再生(LO 固定)と実機で同じコード経路。
+- **秘話モデルは ffnn = C++ 再実装(safetensors 直読み)、hybrid = ONNX Runtime(必須依存)、両モデルともリポジトリに置いてバイナリに埋め込む**
+  (§3.4 道 1 + 道 2、2026-09-17)。秘話解読は App の主要機能で、モデルは作者本人が学習しライセンスも本体と同じなので、ビルドオプションにも
+  外部ファイルにもしない。鍵探索は専用ワーカースレッド 1 本(DSP thread では走らせない、ORT のスレッドプールも作らせない)。tools の別プロセス + UDS は
+  採らない。SACCH CRC 不良フレームでは秘話判定を保持する(tools は平文扱いでセッション破棄)。
 
 ## 装置の事実(個体に依らないもの)
 - 開発機 = 対象機 FZ-G2(i5-10310U, 8 GB, Arch, Plasma Wayland scale 1.5 → GUI は 1920×1200 固定キャンバスを縮尺)。
@@ -67,4 +71,4 @@
   `std_t98.freq_err_hz` に置く。値の求め方: `spear-std-t98-decode` のチャネル表「est freq err」がほぼ 0 になる値。
 - Qt のログは journald に行く → `QT_FORCE_STDERR_LOGGING=1`。
 - 記録・ログ・golden・音声は `~/spear/`(`recordings / logs / golden / audio / site.conf`)。個体固有の値・録音・
-  音声由来の golden(`golden/std_t98/ch3_pich.*`, `ambe_golden.txt`)はリポジトリに入れない(golden テストは無ければ skip)。
+  音声由来の golden(`golden/std_t98/ch3_pich.*`, `ambe_golden.txt`, `ch3_payloads.txt`, `secret_golden.txt`)はリポジトリに入れない(golden テストは無ければ skip)。

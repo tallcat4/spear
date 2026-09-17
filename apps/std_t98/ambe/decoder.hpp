@@ -13,6 +13,11 @@ namespace spear::std_t98::ambe {
 using Bits49 = std::array<uint8_t, 49>;   // mbelib の ambe_d 順(b0 の MSB が [0])
 using Frame4x24 = std::array<std::array<uint8_t, 24>, 4>;
 
+// mbelib の ambe_d(49)⇔ ThumbDV/2450 ペイロードの並び: ThumbDV bit i = d[kThumbDv[i]]。
+// 秘話の PN(core/crypto/secret_voice.py の THUMBDV_MAP)も同じ表なので、PN は d 順にそのまま XOR できる(secret/pn.hpp)。
+inline constexpr std::array<int, 49> kThumbDv = {0, 18, 36, 1, 19, 37, 2, 20, 38, 3, 21, 39, 4, 22, 40, 5, 23, 41, 6, 24, 42, 7, 25, 43, 8, 26, 44,
+                                                 9, 27, 45, 10, 28, 46, 11, 29, 47, 12, 30, 48, 13, 31, 14, 32, 15, 33, 16, 34, 17, 35};
+
 // ---- 誤り訂正 ----
 int golay2312(const uint8_t in[23], uint8_t out[23]);   // 戻り値: 訂正ビット数(12 データビット部分)
 

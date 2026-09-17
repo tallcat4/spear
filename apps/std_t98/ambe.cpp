@@ -32,13 +32,16 @@ void AmbeDecoder::decode_2450(std::span<const uint8_t, 7> payload, std::span<int
     to_pcm(buf, pcm);
 }
 
-void AmbeDecoder::decode_3600(std::span<const uint8_t, 9> block, std::span<int16_t, 160> pcm) {
+AmbeDecoder::Decoded3600 AmbeDecoder::decode_3600(std::span<const uint8_t, 9> block, std::span<int16_t, 160> pcm, const uint8_t* keystream) {
     ambe::Frame4x24 fr;
     ambe::deinterleave_3600(block, fr);
-    const auto r = ambe::fec_decode(fr);
+    auto r = ambe::fec_decode(fr);
+    Decoded3600 out{ambe::pack_thumbdv(r.d), r.total_errors};
+    if (keystream) for (std::size_t i = 0; i < r.d.size(); ++i) r.d[i] = static_cast<uint8_t>(r.d[i] ^ keystream[i]);   // 秘話: FEC 後・音声復号前に XOR(secret_voice.py と同じ位置)
     std::array<float, 160> buf{};
     impl_->dec.process(r.d, r.c0_errors, r.total_errors, true, buf);
     to_pcm(buf, pcm);
+    return out;
 }
 
 } // namespace spear::std_t98

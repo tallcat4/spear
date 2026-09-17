@@ -76,7 +76,7 @@ Linux 上の SDR アプリケーションではなく、Linux を内部実装と
 | App SDK | `appfw/` | `GuiApp` 基底、レジストリ、任意の stream に付く観測点、アイパターン用トレース |
 | 部品 | `widgets/ input/ theme/` | 計器の表示部品、自前のタッチ入力、デザイントークン |
 | シェル | `gui/` | メニュー / ステータスバー / ソフトキー / 診断画面 / 数値入力 |
-| App | `apps/` | 1 ディレクトリ = 1 App。`spear_add_app()` を 1 回呼べば登録される |
+| App | `apps/` | 1 ディレクトリ = 1 App。`spear_add_app()` を 1 回呼べば登録される。学習済みモデル(STD-T98 秘話)も App の下に置き、バイナリに埋め込む |
 | ツール | `tools/` | ヘッドレス実行、録音の解析、耐久試験 |
 
 Source が B210 でも録音でも合成信号でも App のコードは同じなので、実機で録った IQ を同じ DSP に流し直せる。
@@ -92,7 +92,7 @@ App は基盤の上に載る利用者であり、同時に基盤を検証する�
 | **SPECTRUM** | スペクトラム + ウォーターフォール、タッチ選局 | SDK の最小形、既知周波数の実信号での軸と絶対値 |
 | **IQ RECORDER** | 損失なし SigMF 録音(sidecar に世代 / 不連続 / retune 履歴) | Lossless 不変条件の画面化、録音の再生 |
 | **FM / AM RX** | NFM / WFM / AM 復調、ゼロ IF の DC を避ける LO 分離、音声出力 | 共通 DSP の境界、段の規約と来歴、観測点の後付け |
-| **STD-T98 MONITOR** | ARIB STD-T98(デジタル簡易無線)30 チャネル同時受信・復号・AMBE 音声 | Qt / UHD 非依存の受信機のヘッドレス検証、実録音の真値、実機での引き込み |
+| **STD-T98 MONITOR** | ARIB STD-T98(デジタル簡易無線)30 チャネル同時受信・復号・AMBE 音声・秘話の鍵探索 | Qt / UHD 非依存の受信機のヘッドレス検証、実録音の真値、実機での引き込み、学習済みモデルの C++ / ONNX 推論をワーカースレッドで |
 
 <table><tr>
 <td><img src="docs/gui/std_t98.png" alt="STD-T98 MONITOR"></td>
@@ -109,7 +109,7 @@ App は基盤の上に載る利用者であり、同時に基盤を検証する�
 対象は Panasonic FZ-G2(1920×1200、タブレットモード)+ Ettus USRP B210(互換機を含む、USB 2.0 可)。
 他の PC や SDR への移植性は要件にしていない。
 
-- Arch Linux、GCC 13+、CMake、Ninja、Qt 6.6+、FFTW、GoogleTest、ALSA / PipeWire
+- Arch Linux、GCC 13+、CMake、Ninja、Qt 6.6+、FFTW、GoogleTest、ALSA / PipeWire、ONNX Runtime(`onnxruntime-cpu`、STD-T98 秘話)
 - **パッチ済み libuhd**([`packaging/libuhd`](packaging/libuhd/README.md))。素の UHD 4.9 は USB 切断後に `std::terminate` するため、
   再接続にはパッチを当てたパッケージが要る。公式と同じ構成でビルドし、他の UHD アプリと共存する。
 

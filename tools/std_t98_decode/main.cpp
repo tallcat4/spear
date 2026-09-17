@@ -1,12 +1,17 @@
 // spear-std-t98-decode — SigMF 録音を STD-T98 Receiver に流す headless 解析 (§11, §12.3 golden set)
-//   spear-std-t98-decode <base> [--squelch -40] [--sync-ratio 0.2] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base]
+//   spear-std-t98-decode <base> [--squelch -40] [--sync-ratio 0.2] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base] [--no-secret]
 // 出力: チャネルごとの電力/同期/フレーム統計、フレーム内容、推定周波数誤差。
+// 秘話呼(SACCH call=1)は GUI と同じポリシー(5 バーストで最初の探索、10 バーストごとに再確認)で鍵を同期的に探索し、以後のフレームを
+//   復号する(埋め込みモデル)。--no-secret で探索を止める。
 #include "ambe.hpp"
 #include "receiver.hpp"
+#include "secret/cracker.hpp"
+#include "secret/tracker.hpp"
 #include "spear/core/sigmf.hpp"
 #include "spear/dsp/fir.hpp"
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -23,10 +28,14 @@ const char* arg(int argc, char** argv, const char* key, const char* def) {
     for (int i = 2; i + 1 < argc; ++i) if (!std::strcmp(argv[i], key)) return argv[i + 1];
     return def;
 }
+bool flag(int argc, char** argv, const char* key) {   // 値を取らないオプション(末尾でも効く)
+    for (int i = 2; i < argc; ++i) if (!std::strcmp(argv[i], key)) return true;
+    return false;
+}
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) { std::puts("usage: spear-std-t98-decode <sigmf base> [--squelch dB] [--sync-ratio r] [--freq-err Hz] [--pfb N] [--dump-ch N out.f32] [--payloads f] [--wav base] [--quiet]"); return 1; }
+    if (argc < 2) { std::puts("usage: spear-std-t98-decode <sigmf base> [--squelch dB] [--sync-ratio r] [--freq-err Hz] [--pfb N] [--dump-ch N out.f32] [--payloads f] [--wav base] [--no-secret] [--quiet]"); return 1; }
     const std::string base = argv[1];
     sigmf::Meta meta;
     std::string err;
@@ -39,7 +48,7 @@ int main(int argc, char** argv) {
     cfg.sync_ratio = std::stod(arg(argc, argv, "--sync-ratio", "0.2"));
     cfg.freq_err_hz = std::stod(arg(argc, argv, "--freq-err", "0"));
     const int dump_ch = std::stoi(arg(argc, argv, "--dump-ch", "-1"));
-    const bool quiet = arg(argc, argv, "--quiet", nullptr) != nullptr;
+    const bool quiet = flag(argc, argv, "--quiet");
     std::FILE* dump = dump_ch >= 0 ? std::fopen(arg(argc, argv, "--dump-file", "ch.f32"), "wb") : nullptr;
     // --wav f: 全チャネルの音声(AMBE → 8 kHz PCM)をチャネルごとに f を基にした f.chNN.wav へ書く(耳で確認する用)
     const char* wav_base = arg(argc, argv, "--wav", nullptr);
@@ -47,6 +56,17 @@ int main(int argc, char** argv) {
     std::FILE* payloads = arg(argc, argv, "--payloads", nullptr) ? std::fopen(arg(argc, argv, "--payloads", ""), "w") : nullptr;
     std::printf("rate=%.0f pfb=%d post1=%.0f center=%.6f MHz freq_err=%+.1f Hz\n", rate, cfg.pfb_channels, cfg.pfb_channels * cfg.spacing_hz,
                 meta.captures.empty() ? 0.0 : meta.captures[0].frequency / 1e6, cfg.freq_err_hz);
+    // 秘話の鍵探索(同期、埋め込みモデル)。--no-secret なら秘話呼はスクランブルのまま
+    secret::Ffnn ffnn;
+    secret::Hybrid hybrid;
+    std::unique_ptr<secret::Cracker> cracker;
+    if (!flag(argc, argv, "--no-secret")) {
+        std::string e;
+        if (!ffnn.load_embedded(&e) || !hybrid.load_embedded(&e)) { std::fprintf(stderr, "secret: %s\n", e.c_str()); return 1; }
+        cracker = std::make_unique<secret::Cracker>(ffnn, hybrid);
+    }
+    struct SecretCh { secret::Tracker tracker; bool call_secret = false; uint16_t pn_key = 0; secret::Pn196 pn{}; };
+    std::vector<SecretCh> sec(static_cast<std::size_t>(cfg.num_channels));
     Receiver rx(cfg);
 
     // 周波数誤差推定: 開いているチャネルの discriminator 平均(Hz = 平均 × dev)
@@ -63,15 +83,37 @@ int main(int argc, char** argv) {
     std::map<int, Voice> voice;
     obs.frame = [&](const Frame& f) {
         ++frames;
-        if (wav_base && f.rich.f == 1 && f.tch_payload.size() == 36) {
-            auto& v = voice[f.channel];
-            // 欠落フレーム(192 シンボル間隔でない)は無音で埋めて時間軸を保つ
-            if (v.last_sym && f.symbol_index > v.last_sym + 192) v.pcm.resize(v.pcm.size() + 640 * ((f.symbol_index - v.last_sym) / 192 - 1), 0);
-            v.last_sym = f.symbol_index;
-            for (int k = 0; k < 4; ++k) {
-                std::array<int16_t, 160> pcm{};
-                v.dec.decode_3600(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9), pcm);
-                v.pcm.insert(v.pcm.end(), pcm.begin(), pcm.end());
+        auto& sc = sec[static_cast<std::size_t>(f.channel)];
+        if (f.rich.f == 0) { sc.call_secret = false; sc.tracker.on_clear(); }
+        std::string secret_note;
+        if (f.rich.f == 1 && f.tch_payload.size() == 36) {
+            // 秘話判定(GUI と同じ: CRC OK の SACCH だけで更新、不良フレームは前の値を保つ)
+            if (f.sacch.crc_ok) sc.call_secret = (f.sacch.call_stat == 1);
+            if (!sc.call_secret) sc.tracker.on_clear();
+            const bool keyed = sc.call_secret && sc.tracker.key() != 0;
+            if (keyed && sc.pn_key != sc.tracker.key()) { sc.pn_key = sc.tracker.key(); sc.pn = secret::pn_sequence(sc.pn_key); }
+            secret::Burst raw{};
+            for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(fec_demod_3600_to_2450(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9)));
+            if (wav_base) {
+                auto& v = voice[f.channel];
+                // 欠落フレーム(192 シンボル間隔でない)は無音で埋めて時間軸を保つ
+                if (v.last_sym && f.symbol_index > v.last_sym + 192) v.pcm.resize(v.pcm.size() + 640 * ((f.symbol_index - v.last_sym) / 192 - 1), 0);
+                v.last_sym = f.symbol_index;
+                for (int k = 0; k < 4; ++k) {
+                    std::array<int16_t, 160> pcm{};
+                    v.dec.decode_3600(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9), pcm, keyed ? secret::keystream_d(sc.pn, k) : nullptr);
+                    v.pcm.insert(v.pcm.end(), pcm.begin(), pcm.end());
+                }
+            }
+            if (sc.call_secret && cracker) {
+                secret::Tracker::Request rq;
+                if (sc.tracker.on_secret_burst(raw, &rq)) {
+                    const auto t0 = std::chrono::steady_clock::now();
+                    const auto r = cracker->resolve(rq.current_key, rq.bursts);
+                    const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    sc.tracker.on_result(rq.session, r.key);
+                    secret_note = "  SECRET key=" + std::to_string(r.key) + " (" + secret::to_string(r.source) + ", " + std::to_string(dt).substr(0, 4) + " s)";
+                }
             }
         }
         if (payloads && f.rich.f == 1 && f.sacch.crc_ok) {
@@ -84,8 +126,9 @@ int main(int argc, char** argv) {
                     (meta.captures.empty() ? 0.0 : meta.captures[0].frequency + rx.channel_offset_hz(f.channel)) / 1e6,
                     (unsigned long long)f.symbol_index, (unsigned long long)f.input_sample_index, f.sync_sse, f.rich.f, f.rich.m, f.rich.parity_ok ? "ok" : "BAD");
         if (f.rich.f == 0) std::printf("  PICH csm=%s crc=%s err=%d", f.pich.csm.c_str(), f.pich.crc_ok ? "ok" : "BAD", f.pich.bit_errors);
-        else if (f.rich.f == 1) std::printf("  SACCH msg=%d call=%d user=%d maker=%d crc=%s err=%d", f.sacch.msg_type, f.sacch.call_stat, f.sacch.user_code, f.sacch.maker_code, f.sacch.crc_ok ? "ok" : "BAD", f.sacch.bit_errors);
-        std::printf("\n");
+        else if (f.rich.f == 1) std::printf("  SACCH msg=%d call=%d user=%d maker=%d crc=%s err=%d%s%s", f.sacch.msg_type, f.sacch.call_stat, f.sacch.user_code, f.sacch.maker_code, f.sacch.crc_ok ? "ok" : "BAD", f.sacch.bit_errors,
+                                            sc.call_secret ? (sc.tracker.key() ? "  [secret K " : "  [secret") : "", sc.call_secret ? (sc.tracker.key() ? (std::to_string(sc.tracker.key()) + "]").c_str() : "]") : "");
+        std::printf("%s\n", secret_note.c_str());
     };
     rx.set_observer(obs);
 
