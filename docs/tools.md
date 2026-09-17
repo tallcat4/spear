@@ -7,7 +7,10 @@
 ./spear.sh --source synthetic   # ハードウェアなし
 ./spear.sh --source file:rec1   # 録音再生
 ```
-タップで起動するには `scripts/install-desktop.sh`(`spear.desktop.in` に絶対パスを埋めて `~/.local/share/applications/` へ)。
+タップで起動するには `scripts/install-desktop.sh`: KDE Plasma のスタートメニュー(`~/.local/share/applications/spear.desktop` + アイコン)、
+タスクバー(パネルのタスクマネージャの launchers に追加。plasmashell は終了時に設定を書き戻すので、止めてから編集して起動し直す)、
+デスクトップ(`~/Desktop/spear.desktop`、初回クリックで実行の許可を聞かれることがある)に登録する。`--remove` で外す。
+非キオスク(通常の Plasma セッション)の一時策。キオスク化(専用セッションで自動起動)したら要らなくなる。
 個体・現場固有の設定は `~/spear/site.conf`(`key=value`、例 `std_t98.freq_err_hz=<個体の LO 誤差 Hz>`)→ `spear.sh` が `--set` で各 App に渡す。
 運転状態(メニューのゲイン/AGC、各 App のスケルチ・音量・モード・REF/AVG・選択チャネル、汎用 App の周波数/レート)は `~/spear/state.conf` に
 自動保存され(変更の 0.5 s 後、原子的に書き換え)、次回起動で復元される。site.conf の値が優先。初期化したければファイルを消す。
