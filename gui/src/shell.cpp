@@ -1,5 +1,6 @@
 #include "shell.hpp"
 
+#include <QGuiApplication>
 #include <QMetaObject>
 
 namespace spear::gui {
@@ -72,6 +73,11 @@ void Shell::stopApp() {
             if (restart_index_ >= 0) { const int i = restart_index_; restart_index_ = -1; draft_.sample_rate = pending_rate_; startApp(i); }
         }, Qt::QueuedConnection);
     });
+}
+
+void Shell::quit() {
+    if (busy_) return;
+    QGuiApplication::quit();
 }
 
 void Shell::restartActiveWithRate(double sample_rate) {

@@ -94,8 +94,11 @@ Window {
                     k = appPage.item.softKeys.slice(0, 7)
                     while (k.length < 7) k.push(null)
                 } else {
-                    // CENTER / RATE は各 App が決める(メニューには置かない)。GAIN だけは装置の共通設定
-                    k = [ { label: "GAIN", action: "mgain" }, null, null, null, null, null, { label: "DIAG", action: "diag" } ]
+                    // CENTER / RATE は各 App が決める(メニューには置かない)。GAIN だけは装置の共通設定。
+                    // EXIT(左端): KDE Plasma 等のデスクトップ環境で非キオスクのままフルスクリーン起動している現状では、閉じるのに
+                    // ひと手間かかるための策。将来キオスク化(専用セッション、自動起動)するなら、電源操作や別の導線のほうが
+                    // 適切かもしれず、EXIT という UI が最適とは限らない。そのときはここと ConfirmDialog を見直す。
+                    k = [ { label: "EXIT", action: "exit" }, { label: "GAIN", action: "mgain" }, null, null, null, null, { label: "DIAG", action: "diag" } ]
                 }
                 k.push((win.appOpen || win.diagOpen) ? { label: "BACK", action: "back" } : null)
                 return k
@@ -103,6 +106,15 @@ Window {
             onPressed: (i) => win.softkey(i)
         }
 
+        // ---- EXIT の確認(モーダル)。誤タップで終了しないように必ず確認する ----
+        ConfirmDialog {
+            id: exitDialog
+            anchors.topMargin: Theme.statusBarH
+            title: "EXIT"
+            message: "Exit S.P.E.A.R.?  The radio is released and the window closes."
+            acceptLabel: "EXIT"; cancelLabel: "CANCEL"
+            onAccepted: shell.quit()
+        }
         // ---- 自前の数値入力(モーダル)。入力中もステータスバーは見せる ----
         NumericEntry {
             id: entry
@@ -120,6 +132,7 @@ Window {
         case "mgain": askGain(shell.draftGain, (v) => { if (v < 0) shell.draftAgc = true; else shell.draftGain = v }); return
         case "diag": shell.showDiagnostics(true); return
         case "skipwarm": shell.skipWarmUp(); return
+        case "exit": exitDialog.open(); return
         }
         if (win.appOpen && appPage.item && appPage.item.softKey) appPage.item.softKey(k.action)
     }
@@ -162,5 +175,6 @@ Window {
     function demoEntryError() { openFreqEntry(); entry.type("9"); entry.type("."); entry.type("5"); entry.commit(1e9, "GHz") }
     function demoRapidTune() { var a = shell.activeApp; if (a && a.stepFreq) { a.stepFreq(1e6); a.stepFreq(1e6); a.stepFreq(1e6) } }
     function demoEntryTune(mhzText) { openFreqEntry(); for (var i = 0; i < mhzText.length; ++i) entry.type(mhzText[i]); entry.commit(1e6, "MHz") }
+    function openExitDialog() { exitDialog.open() }
     function demoAppAction(action) { if (win.appOpen && appPage.item && appPage.item.softKey) appPage.item.softKey(action) }
 }

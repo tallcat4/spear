@@ -145,6 +145,11 @@ int main(int argc, char** argv) {
             }
         });
         if (const char* rr = arg(argc, argv, "--restart-rate", nullptr)) QTimer::singleShot(std::max(1000, after * 1000 - 3000), [&shell, rr] { shell.restartActiveWithRate(std::stod(rr)); });
+        // --invoke <fn>: Main.qml の関数を撮影の 1.5 s 前に呼ぶ(例: openExitDialog)
+        if (const char* fn = arg(argc, argv, "--invoke", nullptr)) QTimer::singleShot(std::max(1000, after * 1000 - 1500), [&engine, fn] {
+            if (auto* win = engine.rootObjects().first())
+                if (!QMetaObject::invokeMethod(win, fn)) std::fprintf(stderr, "%s: invoke failed\n", fn);
+        });
         if (flag(argc, argv, "--diag")) QTimer::singleShot(std::max(1000, after * 1000 - 1500), [&shell] { shell.showDiagnostics(true); });
         if (const char* act = arg(argc, argv, "--app-action", nullptr)) QTimer::singleShot(std::max(1000, after * 1000 - 2500), [&engine, act] {
             if (auto* win = engine.rootObjects().first())

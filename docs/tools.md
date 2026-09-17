@@ -14,7 +14,8 @@
 RF の center / rate は各 App が決める(汎用 App は FREQ / RATE キーを持つ)。メニューで決めるのは GAIN(AGC 可)だけ。
 `spear-gui` 単体の既定も実機(`--source b210`)。合成データは明示指定のときだけ。
 操作はタッチのみ(FZ-G2 タブレットモード専用。キーボード・マウスは考慮しない)。画面下のソフトキーと読み出し欄のタップ。
-`--screenshot out.png --after 10 --start-app 0` で実画面をキャプチャ(検証用)。設計は `docs/gui/DESIGN.md`。
+`--screenshot out.png --after 10 --start-app 0` で実画面をキャプチャ(検証用。`--invoke openExitDialog` 等で Main.qml の関数も呼べる)。設計は `docs/gui/DESIGN.md`。
+終了はメニュー左端の EXIT(確認ダイアログ)。非キオスクのデスクトップでフルスクリーン起動している間の導線。
 
 ## STD-T98 録音の解析
 ```

@@ -63,6 +63,9 @@ public:
     Q_INVOKABLE void restartActiveWithRate(double sample_rate);
     Q_INVOKABLE void showDiagnostics(bool on) { diagnostics_ = on; Q_EMIT activeChanged(); }
     Q_INVOKABLE void skipWarmUp() { core_.source().cancel_warm_up(); }   // スプラッシュの CONTINUE(装置の出現待ちを打ち切る)
+    // メニューの EXIT(確認後)。イベントループを抜け、main が App 停止と運転状態の保存をして終わる。
+    // 非キオスクのデスクトップ環境でフルスクリーン起動している現状のための導線(Main.qml のコメント参照)。
+    Q_INVOKABLE void quit();
 
     // 各 App インスタンス(起動前の設定注入などに使う)
     const std::vector<std::shared_ptr<appfw::GuiApp>>& instances() const { return instances_; }
