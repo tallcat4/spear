@@ -120,6 +120,7 @@ ctest --test-dir build -j4                         # テスト(ハードウェ�
 ./spear.sh                                         # 実機で全画面起動
 ./spear.sh --source synthetic                      # ハードウェアなし
 ./spear.sh --source file:<sigmf base>              # 録音を再生
+scripts/install-desktop.sh                         # KDE Plasma のメニュー / タスクバー / デスクトップに登録(非キオスクの一時策)
 ```
 
 個体・現場固有の値(その B210 の LO 誤差など)は `~/spear/site.conf` に置き、コードには入れない。
