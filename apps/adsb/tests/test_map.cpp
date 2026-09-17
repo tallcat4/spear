@@ -74,6 +74,15 @@ TEST(AdsbMap, FitCoversAllPointsAndEasesSmoothly) {
     // 位置なし → fallback を保つ
     const View none = fit_target({}, 1.5, cfg, cur);
     EXPECT_DOUBLE_EQ(none.span_km, cur.span_km);
+    // 日付変更線をまたぐ: 中心 179.9° から東へ 0.2° は −179.9° で、画面上は右隣
+    View dl; dl.center_lon = 179.9; dl.center_lat = 0; dl.span_km = 100; dl.aspect = 1;
+    double x, y;
+    dl.to_km(-179.9, 0, &x, &y);
+    EXPECT_NEAR(x, 0.2 * View::kKmPerDegLat, 0.01);
+    EXPECT_TRUE(dl.contains(-179.95, 0));
+    EXPECT_DOUBLE_EQ(View::wrap_lon(181), -179);
+    EXPECT_DOUBLE_EQ(View::wrap_lon(-181), 179);
+    EXPECT_DOUBLE_EQ(View::wrap_lon(180), -180);
     // 画面写像の往復
     double px, py, lon, lat;
     cur.to_px(139.9, 35.6, 800, 600, &px, &py);

@@ -20,9 +20,11 @@ struct View {
     static constexpr double kKmPerDegLat = 111.32;
     double km_per_deg_lon() const { return kKmPerDegLat * std::cos(center_lat * std::numbers::pi / 180); }
     double span_lat_km() const { return span_km / aspect; }
-    // 経緯度 → 中心からの km(x 東、y 北)
+    // 経度を [-180, 180) に畳む
+    static double wrap_lon(double lon) { return lon - 360.0 * std::floor((lon + 180.0) / 360.0); }
+    // 経緯度 → 中心からの km(x 東、y 北)。経度差は ±180° に畳むので、日付変更線をまたいで表示しても地図が続く
     void to_km(double lon, double lat, double* x, double* y) const {
-        *x = (lon - center_lon) * km_per_deg_lon();
+        *x = wrap_lon(lon - center_lon) * km_per_deg_lon();
         *y = (lat - center_lat) * kKmPerDegLat;
     }
     // 画面(幅 w、高さ h、y 下向き)への写像
@@ -33,10 +35,10 @@ struct View {
     }
     void px_to_geo(double px, double py, double w, double h, double* lon, double* lat) const {
         const double s = w / span_km;
-        *lon = center_lon + (px - w / 2) / s / km_per_deg_lon();
+        *lon = wrap_lon(center_lon + (px - w / 2) / s / km_per_deg_lon());
         *lat = center_lat - (py - h / 2) / s / kKmPerDegLat;
     }
-    // 表示範囲の経緯度 bbox(描画の間引き用)
+    // 表示範囲の経緯度 bbox(描画の間引き用)。lo0 < −180 や lo1 > 180 になり得る(日付変更線をまたぐ)
     void bbox(double* lo0, double* la0, double* lo1, double* la1) const {
         const double dl = span_km / 2 / std::max(1e-6, km_per_deg_lon()), dp = span_lat_km() / 2 / kKmPerDegLat;
         *lo0 = center_lon - dl; *lo1 = center_lon + dl; *la0 = center_lat - dp; *la1 = center_lat + dp;

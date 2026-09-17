@@ -65,7 +65,7 @@ void MapItem::pan(double dx_px, double dy_px) {
     if (width() <= 0) return;
     auto_fit_ = false;
     const double km_per_px = view_.span_km / width();
-    view_.center_lon -= dx_px * km_per_px / std::max(1e-6, view_.km_per_deg_lon());
+    view_.center_lon = map::View::wrap_lon(view_.center_lon - dx_px * km_per_px / std::max(1e-6, view_.km_per_deg_lon()));
     view_.center_lat += dy_px * km_per_px / map::View::kKmPerDegLat;
     view_.center_lat = std::clamp(view_.center_lat, -85.0, 85.0);
     base_dirty_ = true;
@@ -92,11 +92,21 @@ void MapItem::geometryChange(const QRectF& n, const QRectF& o) {
     if (n.size() != o.size()) { view_.aspect = n.height() > 0 ? n.width() / n.height() : 1.0; base_dirty_ = true; step_fit(); }
 }
 
+namespace {
+// 表示 bbox(経度は [-180,180] からはみ出し得る)と交わるか。はみ出した分は 360° ずらした写しでも見る(日付変更線をまたぐ表示)
+bool in_view(float lon_min, float lon_max, float lat_min, float lat_max, double lo0, double la0, double lo1, double la1) {
+    if (lat_max < la0 || lat_min > la1) return false;
+    for (double off : {0.0, 360.0, -360.0})
+        if (!(lon_max < lo0 + off || lon_min > lo1 + off)) return true;
+    return false;
+}
+}
+
 void MapItem::draw_lines(QPainter& p, const std::vector<map::Polyline>& lines, double lo0, double la0, double lo1, double la1, int w, int h, bool close_fill) {
     QPainterPath path;
     QPolygonF poly;
     for (const auto& pl : lines) {
-        if (!pl.intersects(static_cast<float>(lo0), static_cast<float>(la0), static_cast<float>(lo1), static_cast<float>(la1))) continue;
+        if (!in_view(pl.lon_min, pl.lon_max, pl.lat_min, pl.lat_max, lo0, la0, lo1, la1)) continue;
         poly.clear();
         poly.reserve(static_cast<int>(pl.pts.size()));
         for (const auto& q : pl.pts) { double px, py; view_.to_px(q.lon, q.lat, w, h, &px, &py); poly.append(QPointF(px, py)); }
@@ -160,14 +170,14 @@ void MapItem::render_base(int w, int h) {
         for (double lo = std::ceil(lo0 / step_lon) * step_lon; lo <= lo1; lo += step_lon) {
             double px, py; view_.to_px(lo, view_.center_lat, w, h, &px, &py);
             p.drawLine(QPointF(px, 0), QPointF(px, h));
-            p.setPen(dim_color_); p.drawText(QPointF(px + 3, h - 6), QString::number(lo, 'f', step_lon < 1 ? 2 : 0) + "°"); p.setPen(QPen(line_color_, 1, Qt::DotLine));
+            p.setPen(dim_color_); p.drawText(QPointF(px + 3, h - 6), QString::number(map::View::wrap_lon(lo), 'f', step_lon < 1 ? 2 : 0) + "°"); p.setPen(QPen(line_color_, 1, Qt::DotLine));
         }
     }
     // 滑走路(実寸の線)と空港
     if (span < 250) {
         p.setPen(QPen(airport_color_, 3));
         for (const auto& r : world.runways) {
-            if (r.a.lon < lo0 || r.a.lon > lo1 || r.a.lat < la0 || r.a.lat > la1) continue;
+            if (!in_view(r.a.lon, r.a.lon, r.a.lat, r.a.lat, lo0, la0, lo1, la1)) continue;
             double x1, y1, x2, y2;
             view_.to_px(r.a.lon, r.a.lat, w, h, &x1, &y1);
             view_.to_px(r.b.lon, r.b.lat, w, h, &x2, &y2);
@@ -177,7 +187,7 @@ void MapItem::render_base(int w, int h) {
     if (span < 1500) {
         p.setFont(small);
         for (const auto& a : world.airports) {
-            if (a.p.lon < lo0 || a.p.lon > lo1 || a.p.lat < la0 || a.p.lat > la1) continue;
+            if (!in_view(a.p.lon, a.p.lon, a.p.lat, a.p.lat, lo0, la0, lo1, la1)) continue;
             if (a.kind == 1 && span > 600) continue;
             if (a.kind == 2 && span > 200) continue;
             double px, py; view_.to_px(a.p.lon, a.p.lat, w, h, &px, &py);
@@ -193,7 +203,7 @@ void MapItem::render_base(int w, int h) {
         const uint32_t min_pop = span > 800 ? 1'000'000 : span > 300 ? 300'000 : span > 120 ? 100'000 : 0;
         p.setFont(small);
         for (const auto& c : world.places) {
-            if (c.p.lon < lo0 || c.p.lon > lo1 || c.p.lat < la0 || c.p.lat > la1 || c.pop < min_pop) continue;
+            if (c.pop < min_pop || !in_view(c.p.lon, c.p.lon, c.p.lat, c.p.lat, lo0, la0, lo1, la1)) continue;
             double px, py; view_.to_px(c.p.lon, c.p.lat, w, h, &px, &py);
             p.setPen(Qt::NoPen); p.setBrush(dim_color_);
             p.drawRect(QRectF(px - 2, py - 2, 4, 4));
