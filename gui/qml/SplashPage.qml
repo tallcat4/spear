@@ -14,7 +14,7 @@ Item {
         id: title
         x: Theme.pad * 4; y: Theme.pad * 5
         spacing: 6
-        Text { text: "S  P  E  A  R"; color: Theme.textBright; font.family: Theme.mono; font.pixelSize: 112; font.bold: true }
+        Text { text: "S.P.E.A.R."; color: Theme.textBright; font.family: Theme.mono; font.pixelSize: 112; font.bold: true }
         Text { text: "Signal Processing & Emission Analysis Receiver"; color: Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsLarge }
         Text { text: "USRP B210  ·  FZ-G2"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsBase }
     }
