@@ -191,10 +191,8 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
         {
             std::lock_guard<std::mutex> lk(mu_);
             if (f.channel == selected_) last_frame_ = m;
-            frame_log_.prepend(line);
-            while (frame_log_.size() > 10) frame_log_.removeLast();
         }
-        // フレーム event(provenance: radio.rx の index、192 シンボル = 192 × in_rate / baud サンプル)
+        // フレーム event(provenance: radio.rx の index、192 シンボル = 192 × in_rate / baud サンプル)。1 行の記録は DIAGNOSTICS のイベントログで読む
         const uint64_t span = static_cast<uint64_t>(192.0 * cfg_.in_rate / cfg_.baud);
         core.events().emit(EventKind::Info, info().id, "frame " + line.toStdString(), {0, f.input_sample_index, f.input_sample_index + span}, static_cast<int64_t>(f.channel + 1));
         // 同期バースト = 呼の区切り: 秘話セッションを閉じる(鍵は保持)
@@ -329,7 +327,6 @@ void StdT98App::on_start(Core& core) {
     {
         std::lock_guard<std::mutex> lk(mu_);
         for (auto& s : stats_) s = ChanStat{};
-        frame_log_.clear();
         last_frame_.clear();
     }
     total_frames_ = 0;

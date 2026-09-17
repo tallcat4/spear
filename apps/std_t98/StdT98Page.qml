@@ -1,7 +1,7 @@
 // STD-T98 MONITOR のページ (1920×1200)
 //   上 : 30ch 俯瞰スペクトラム(std_t98.band 400 kHz、チャネルマーカー付き)
-//   中 : チャネル格子(30 ch: 電力・同期・フレーム・CSM、タップで選択)
-//   下 : 選択チャネル — アイパターン / チャネル IQ スペクトラム / フレーム読み出し(秘話の鍵を含む)/ フレームログ
+//   中 : チャネル格子(30 ch: 電力・CSM、タップで選択。数字は増やさない)
+//   下 : 選択チャネル — アイパターン / チャネル IQ スペクトラム / 読み出し(フレーム統計・秘話の鍵)
 import QtQuick
 import Spear.Theme
 import Spear.Widgets
@@ -61,7 +61,7 @@ Item {
         id: grid
         anchors.top: band.bottom; anchors.left: parent.left; anchors.right: parent.right
         anchors.leftMargin: Theme.pad; anchors.rightMargin: Theme.pad
-        height: 2 * 86 + 6
+        height: 2 * 68 + 6
         readonly property int cols: 15
         readonly property real cw: (width - (cols - 1) * 4) / cols
         Repeater {
@@ -70,8 +70,8 @@ Item {
                 required property var modelData
                 required property int index
                 readonly property bool selectedCh: index === app.selectedChannel
-                x: (index % grid.cols) * (grid.cw + 4); y: Math.floor(index / grid.cols) * 86 + 6
-                width: grid.cw; height: 80
+                x: (index % grid.cols) * (grid.cw + 4); y: Math.floor(index / grid.cols) * 68 + 6
+                width: grid.cw; height: 62
                 color: selectedCh ? "#141414" : Theme.panel
                 border.color: selectedCh ? Theme.amber : Theme.line; border.width: selectedCh ? 2 : 1
                 Text { x: 8; y: 3; text: "CH " + modelData.ch; color: selectedCh ? Theme.amber : Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
@@ -84,13 +84,6 @@ Item {
                     Rectangle { x: 1; y: 1; height: 8; width: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (modelData.power + 100) / 80))); color: page.chColor(modelData) }
                     Rectangle { x: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (app.squelchDb + 100) / 80))); y: -2; width: 2; height: 14; color: Theme.amber; opacity: 0.8 }
                 }
-                Text { x: 8; y: 58; text: modelData.frames > 0 ? ("FRAMES " + modelData.frames) : (modelData.syncs > 0 ? "SYNC " + modelData.syncs : "")
-                       color: modelData.frames > 0 ? Theme.green : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-                // 秘話: 呼が秘話なら右下に鍵(探索中は SEC、鍵なしで探索が外れたら SEC?)
-                Text { anchors.right: parent.right; anchors.rightMargin: 8; y: 58; visible: modelData.secret
-                       text: modelData.key > 0 ? "K " + modelData.key : (modelData.secretStatus === "miss" ? "SEC ?" : "SEC")
-                       color: modelData.key > 0 ? Theme.green : (modelData.secretStatus === "miss" ? Theme.red : Theme.amber)
-                       font.family: Theme.mono; font.pixelSize: Theme.fsSmall; font.bold: true }
                 MouseArea { anchors.fill: parent; onClicked: app.selectedChannel = index }
             }
         }
@@ -167,19 +160,7 @@ Item {
                               valueSize: Theme.fsBase
                               valueColor: page.sel.lastFrame.crcOk === false ? Theme.red : Theme.text }
                 }
-                Text { text: "AUDIO  " + (app.audioError.length ? "ERROR " + app.audioError : (app.mute ? "MUTE" : (app.allChannelAudio ? "ALL CH MIX" : "CH " + (app.selectedChannel + 1) + " ONLY") + "  AMBE 8 kHz  vol " + (app.volume * 100).toFixed(0) + "%  underruns " + app.audioUnderruns.toFixed(0) + "  late " + app.audioLateFrames.toFixed(0)))
-                       + "    LO " + Theme.fmtFreq(sys.centerFreq) + "  band offset " + Theme.fmtHz(app.bandCenterHz - sys.centerFreq) + "  unit err " + app.freqErrHz.toFixed(0) + " Hz"
-                       color: app.audioError.length ? Theme.red : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-                Text { text: "SECRET  " + app.secretStatus
-                             + (page.sel.secretSearches > 0 ? "    ch " + page.sel.ch + ": " + page.sel.secretSource + " " + page.sel.secretSeconds.toFixed(2) + " s" : "")
-                             + (app.secretCache.length ? "    cache " + app.secretCache.slice(0, 6).join(" ") : "")
-                       color: app.secretStatus.indexOf("ERROR") === 0 ? Theme.red : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-                Rectangle { width: 10; height: 1; color: "transparent" }
-                Text { text: "FRAME LOG"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-                Repeater {
-                    model: app.frameLog
-                    delegate: Text { required property string modelData; text: modelData; color: Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-                }
+                Text { visible: app.audioError.length > 0; text: "AUDIO ERROR  " + app.audioError; color: Theme.red; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
             }
         }
     }

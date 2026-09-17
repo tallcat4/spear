@@ -20,7 +20,6 @@
 #include "spear/core/block.hpp"
 #include "spear/core/stream.hpp"
 
-#include <QStringList>
 #include <QVariantList>
 
 #include <atomic>
@@ -47,7 +46,6 @@ class StdT98App final : public appfw::GuiApp {
     // ---- 観測値(DSP thread が更新、timer で通知)----
     Q_PROPERTY(QVariantList channels READ channels NOTIFY metersChanged)   // 30 × {power, open, frames, sacchOk, pichOk, csm, syncs, bestSse}
     Q_PROPERTY(QVariantMap selected READ selected NOTIFY metersChanged)    // 選択 ch の詳細
-    Q_PROPERTY(QStringList frameLog READ frameLog NOTIFY metersChanged)    // 直近フレーム(新しい順)
     Q_PROPERTY(double totalFrames READ totalFrames NOTIFY metersChanged)
     Q_PROPERTY(double losslessDrops READ losslessDrops NOTIFY metersChanged)
     Q_PROPERTY(double dspLoad READ dspLoad NOTIFY metersChanged)           // DSP thread の実時間比
@@ -90,7 +88,6 @@ public:
 
     QVariantList channels() const;
     QVariantMap selected() const;
-    QStringList frameLog() const { std::lock_guard<std::mutex> lk(mu_); return frame_log_; }
     double totalFrames() const { return static_cast<double>(total_frames_.load()); }
     double losslessDrops() const { return sub_ ? static_cast<double>(sub_->stats().dropped_blocks) : 0; }
     double dspLoad() const { return dsp_load_; }
@@ -142,7 +139,6 @@ private:
     };
     std::vector<ChanStat> stats_;
     QVariantMap last_frame_;
-    QStringList frame_log_;
     std::atomic<uint64_t> total_frames_{0};
     std::atomic<double> dsp_load_{0};
 
