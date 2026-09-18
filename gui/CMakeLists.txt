@@ -7,7 +7,9 @@ qt_add_executable(spear-gui
   src/main.cpp
   src/system_model.cpp
   src/shell.cpp
+  src/ui_audio.cpp
   src/tap_sound.cpp
+  src/boot_sound.cpp
 )
 qt_add_qml_module(spear-gui
   URI Spear
@@ -26,6 +28,7 @@ qt_add_qml_module(spear-gui
     src/system_model.hpp
     src/shell.hpp
     src/tap_sound.hpp
+    src/boot_sound.hpp
 )
 target_include_directories(spear-gui PRIVATE src)
 target_compile_definitions(spear-gui PRIVATE QT_NO_KEYWORDS)

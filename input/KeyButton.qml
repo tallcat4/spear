@@ -16,7 +16,7 @@ Rectangle {
     property color accent: "transparent"  // 確定キー(ENTER)などの強調色: 枠と文字がその色、押下でその色に反転(意味のある色だけ使う)
     readonly property bool accented: accent.a > 0
     signal pressed()
-    // 受け付けた入力は必ずここを通る(タップ音 → pressed())。音を先に書くので、pressed() の先で拒否音が続いても順に鳴る
+    // 受け付けた入力は必ずここを通る(タップ音 → pressed())。pressed() の先で同じループ内に拒否音が続いたら、鳴るのは拒否音だけ(TapSound が畳む)
     function fire() { Feedback.tap(); key.pressed() }
 
     implicitWidth: 120; implicitHeight: 84

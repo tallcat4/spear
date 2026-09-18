@@ -6,7 +6,9 @@
 // --state-file: 運転状態(ゲイン/AGC、各 App のスケルチ・MUTE・表示レンジ…)の自動保存先。無ければ保存も復元もしない(検証用の起動)。
 #include "shell.hpp"
 #include "system_model.hpp"
+#include "boot_sound.hpp"
 #include "tap_sound.hpp"
+#include "ui_audio.hpp"
 #include "spear/appfw/settings_store.hpp"
 #include "spear/core/event_log.hpp"
 #include "spear/core/recording.hpp"
@@ -118,13 +120,16 @@ int main(int argc, char** argv) {
         }
         for (const auto& app : shell.instances()) app->configure(settings);
     }
-    // 操作音(タップ / 拒否)。デバイスは App 音声と同じ audio_device 設定(--set audio_device=null で無音にできる)
-    TapSound tap_sound(&core.events(), settings.value("audio_device", "default").toString().toStdString());
+    // GUI の音(操作音・起動音)。デバイスは App 音声と同じ audio_device 設定(--set audio_device=null で無音にできる)
+    UiAudio ui_audio(&core.events(), settings.value("audio_device", "default").toString().toStdString());
+    TapSound tap_sound(ui_audio);
+    BootSound boot_sound(ui_audio);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("sys", &model);
     engine.rootContext()->setContextProperty("shell", &shell);
     engine.rootContext()->setContextProperty("tapSound", &tap_sound);
+    engine.rootContext()->setContextProperty("bootSound", &boot_sound);
     engine.rootContext()->setContextProperty("startFullscreen", flag(argc, argv, "--fullscreen"));
     engine.rootContext()->setContextProperty("startWidth", std::stoi(arg(argc, argv, "--width", "1920")));
     engine.rootContext()->setContextProperty("startHeight", std::stoi(arg(argc, argv, "--height", "1200")));

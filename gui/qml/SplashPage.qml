@@ -8,6 +8,7 @@ Item {
     id: page
     readonly property bool loading: sys.deviceStateCode === 3 || sys.deviceStateCode === 4 || sys.deviceStateCode === 2   // STANDBY / INITIALIZING / NO_FIRMWARE: 書き込み中は打ち切れない
     readonly property bool canContinue: sys.warmingUp && !loading
+    property bool welcome: false   // 立ち上げ完了(シェルが起動音を鳴らしている間)。起動ログの末尾に WELCOME を出す
 
     // ---- 名前 ----
     Column {
@@ -86,6 +87,8 @@ Item {
             }
             Text { visible: sys.startupReport.length === 0; text: sys.sourceName === "b210" ? "..." : "source: " + sys.sourceName + " (no device start-up)"
                    color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsBase }
+            Text { visible: page.welcome; text: "✓ WELCOME — start-up complete"
+                   color: Theme.green; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
         }
         Text { anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: Theme.pad
                text: page.canContinue ? "CONTINUE skips the device wait; apps will keep waiting for the device" : ""

@@ -16,10 +16,16 @@ Window {
 
     readonly property bool appOpen: shell.activeApp !== null
     readonly property bool diagOpen: shell.diagnosticsOpen
-    // スプラッシュ: 立ち上げ(Source::warm_up、実機の FPGA ロード等)が終わるまで。実機でなくても名前を 1.5 s は見せる
+    // スプラッシュ: 立ち上げ(Source::warm_up、実機の FPGA ロード等)が終わるまで。実機でなくても名前を 1.5 s は見せる。
+    // 立ち上げが終わったら起動ログに WELCOME を出して起動音を鳴らし、鳴り終わるまで(約 1.2 s)待ってからメニューへ
+    // (起動ログを読む時間にもなる)。DIAG を開いて splashOpen が消えても起動音の流れは変えない
     property bool splashHold: true
-    readonly property bool splashOpen: (sys.warmingUp || splashHold) && !win.appOpen && !win.diagOpen
+    readonly property bool booted: !sys.warmingUp && !splashHold   // 立ち上げ完了(→ WELCOME + 起動音)
+    property bool bootDone: false                                  // 起動音が鳴り終わった(→ メニュー)
+    readonly property bool splashOpen: (!bootDone) && !win.appOpen && !win.diagOpen
     Timer { interval: 1500; running: true; onTriggered: win.splashHold = false }
+    Timer { id: bootTimer; interval: bootSound.durationMs + 100; onTriggered: win.bootDone = true }   // +100 ms: 出力側の遅れ
+    onBootedChanged: if (booted && !bootTimer.running && !bootDone) { bootSound.play(); bootTimer.start() }
 
     function back() {
         if (shell.diagnosticsOpen) { shell.showDiagnostics(false); return }
@@ -53,7 +59,7 @@ Window {
             id: content
             anchors.top: status.bottom; anchors.bottom: softkeys.top; width: parent.width
 
-            SplashPage { anchors.fill: parent; visible: win.splashOpen }
+            SplashPage { anchors.fill: parent; visible: win.splashOpen; welcome: win.booted }
             MenuPage {
                 anchors.fill: parent; visible: !win.appOpen && !win.diagOpen && !win.splashOpen
                 onSelected: (i) => { if (!shell.busy) { Feedback.tap(); shell.startApp(i) } }
@@ -107,7 +113,7 @@ Window {
             onPressed: (i) => win.softkey(i)
         }
 
-        // ---- 操作音: Spear.Input の Feedback singleton(信号だけ)を C++ の TapSound につなぐ。ここが唯一の接続点 ----
+        // ---- 操作音: Spear.Input の Feedback singleton(信号だけ)を C++ の TapSound につなぐ。ここが唯一の接続点(起動音は上の bootSound)----
         Connections {
             target: Feedback
             function onTapped() { tapSound.tap() }
