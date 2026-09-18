@@ -114,7 +114,7 @@ void SettingsStore::write_file() {
     QSaveFile f(path_);   // 一時ファイル → rename(途中で電源が落ちても壊れない)
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) { qWarning("SettingsStore: cannot write %s", qPrintable(path_)); return; }
     QTextStream out(&f);
-    out << "# S.P.E.A.R. state — 運転状態の自動保存(スケルチ、音量、ゲイン/AGC、表示レンジ…)。起動時に復元される。\n"
+    out << "# S.P.E.A.R. state — 運転状態の自動保存(スケルチ、MUTE、ゲイン/AGC、表示レンジ…)。起動時に復元される。\n"
            "# 手で編集するものではない(個体・現場の値は site.conf に。site.conf の --set はこのファイルより優先)。\n";
     for (const auto& [k, v] : values_) out << k << "=" << v << "\n";
     out.flush();

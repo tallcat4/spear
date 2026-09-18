@@ -3,6 +3,8 @@
 // ALSA(PipeWire の ALSA 互換層経由)。自前 thread が ring buffer から PCM へ書く。
 // 不変条件は TX と同じ (§10): 全 sample を出すか、underrun を数えて event にするか。無言の欠落は無い。
 // GUI/DSP thread は write() でブロックしない(ring が満杯なら捨てて overrun を数える)。
+// 音量は持たない(常に 100 %、MUTE のみ)。音量は OS 側(PipeWire)で調整する。将来キオスク化するときも
+// 音量はシステムで一貫して 1 か所に置く(App ごとの音量は持たない)。
 #pragma once
 
 #include "event.hpp"
@@ -35,7 +37,6 @@ public:
     bool open(std::string* err = nullptr);
     void close();
     void write(std::span<const float> mono);   // ノンブロッキング
-    void set_volume(float gain) { gain_ = gain; }
     void set_mute(bool m) { mute_ = m; }
     AudioStats stats() const;
     unsigned sample_rate() const { return rate_; }
@@ -51,7 +52,6 @@ private:
     mutable std::mutex mu_;
     std::thread th_;
     std::atomic<bool> stop_{false};
-    std::atomic<float> gain_{0.5f};
     std::atomic<bool> mute_{false};
     AudioStats st_;
 };

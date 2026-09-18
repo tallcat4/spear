@@ -3,7 +3,7 @@
 //   spear-gui [--source b210|synthetic|file:<base>] [--rate 4e6] [--freq 100e6] [--gain 30]   (既定: b210)
 //             [--record-dir ./recordings] [--event-log path] [--state-file path] [--screenshot out.png --after 5]
 //             [--fullscreen] [--width W --height H]
-// --state-file: 運転状態(ゲイン/AGC、各 App のスケルチ・音量・表示レンジ…)の自動保存先。無ければ保存も復元もしない(検証用の起動)。
+// --state-file: 運転状態(ゲイン/AGC、各 App のスケルチ・MUTE・表示レンジ…)の自動保存先。無ければ保存も復元もしない(検証用の起動)。
 #include "shell.hpp"
 #include "system_model.hpp"
 #include "spear/appfw/settings_store.hpp"

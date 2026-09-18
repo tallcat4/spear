@@ -60,7 +60,7 @@ struct DemodApp::Chain {
 
 DemodApp::DemodApp(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::move(info), parent) {
     // 再起動をまたいで残す運転状態。channelOffsetHz は loOffset から導く派生値、RX 周波数は Core(草案はシェルが残す)
-    persist({"mode", "loOffsetHz", "squelchDb", "volume", "mute", "view.dbMin", "view.dbMax", "view.manualRange", "view.averaging",
+    persist({"mode", "loOffsetHz", "squelchDb", "mute", "view.dbMin", "view.dbMax", "view.manualRange", "view.averaging",
              "channelView.dbMin", "channelView.dbMax", "channelView.manualRange", "channelView.averaging"});
 }
 DemodApp::~DemodApp() = default;
@@ -115,12 +115,6 @@ void DemodApp::cycleMode() {
     setMode(mode_ == "NFM" ? "WFM" : (mode_ == "WFM" ? "AM" : "NFM"));
 }
 
-void DemodApp::setVolume(double v) {
-    volume_ = std::clamp(v, 0.0, 1.0);
-    if (audio_) audio_->set_volume(static_cast<float>(volume_));
-    Q_EMIT audioChanged();
-}
-
 void DemodApp::setMute(bool m) {
     mute_ = m;
     if (audio_) audio_->set_mute(m);
@@ -169,7 +163,6 @@ void DemodApp::on_start(Core& core) {
 
     // ---- 音声 ----
     audio_ = std::make_unique<AudioSink>(&core.events(), audio_device_, static_cast<unsigned>(kAudioRate));
-    audio_->set_volume(static_cast<float>(volume_));
     audio_->set_mute(mute_);
     std::string err;
     if (!audio_->open(&err)) core.events().emit(EventKind::Warning, info().id, "audio disabled: " + err);

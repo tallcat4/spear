@@ -38,7 +38,6 @@ class StdT98App final : public appfw::GuiApp {
     Q_PROPERTY(double freqErrHz READ freqErrHz NOTIFY configChanged)         // 個体の LO 誤差(site.conf: std_t98.freq_err_hz)
     Q_PROPERTY(double squelchDb READ squelchDb WRITE setSquelchDb NOTIFY configChanged)
     Q_PROPERTY(int selectedChannel READ selectedChannel WRITE setSelectedChannel NOTIFY configChanged)   // 0..29
-    Q_PROPERTY(double volume READ volume WRITE setVolume NOTIFY configChanged)
     Q_PROPERTY(bool mute READ mute WRITE setMute NOTIFY configChanged)
     Q_PROPERTY(bool allChannelAudio READ allChannelAudio WRITE setAllChannelAudio NOTIFY configChanged)   // 全 30ch を同時再生(ミックス)
     Q_PROPERTY(int numChannels READ numChannels CONSTANT)
@@ -75,8 +74,6 @@ public:
     void setSquelchDb(double v) { squelch_db_ = v; Q_EMIT configChanged(); }
     int selectedChannel() const { return selected_; }
     void setSelectedChannel(int ch);
-    double volume() const { return volume_; }
-    void setVolume(double v);
     bool mute() const { return mute_; }
     void setMute(bool m);
     bool allChannelAudio() const { return all_audio_; }
@@ -122,7 +119,6 @@ private:
     double freq_err_hz_ = 0;
     std::atomic<double> squelch_db_{-40.0};   // std-t98-tools の既定。録音再生では -50 が要る場合あり(site.conf: std_t98.squelch_db)
     std::atomic<int> selected_{0};
-    double volume_ = 0.5;
     bool mute_ = false;
     std::atomic<bool> all_audio_{true};
     std::string audio_device_ = "default";

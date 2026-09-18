@@ -14,16 +14,14 @@ Item {
 
     readonly property var softKeys: [
         { label: "RX FREQ", action: "freq" }, { label: "MODE " + app.mode, action: "mode" },
-        { label: "SQUELCH", action: "sq" }, { label: "LO OFS", action: "lo" }, { label: "VOL −", action: "vol-" },
-        { label: "VOL +", action: "vol+" }, { label: "MUTE", action: "mute", active: app.mute } ]
+        { label: "SQUELCH", action: "sq" }, { label: "LO OFS", action: "lo" },
+        { label: "MUTE", action: "mute", active: app.mute } ]
     function softKey(action) {
         switch (action) {
         case "freq": ui.askFreq(page.rxFreq, (v) => app.tuneRx(v)); break
         case "lo": ui.askOffset(app.loOffsetHz, (v) => app.loOffsetHz = v); break
         case "mode": app.cycleMode(); break
         case "sq": ui.askRef(app.squelchDb, (v) => app.squelchDb = v); break
-        case "vol-": app.volume = Math.max(0, app.volume - 0.1); break
-        case "vol+": app.volume = Math.min(1, app.volume + 0.1); break
         case "mute": app.mute = !app.mute; break
         }
     }
@@ -65,7 +63,7 @@ Item {
             Readout { label: "MODE"; value: app.mode; width: 110; valueColor: Theme.textBright }
             Readout { label: "CH BW"; value: (app.channelBandwidth / 1e3).toFixed(1) + " kHz"; width: 140 }
             Readout { label: "LO / OFFSET"; value: Theme.fmtFreq(sys.centerFreq) + "  " + Theme.fmtHz(app.channelOffsetHz); width: 420 }
-            Readout { label: "AUDIO"; value: app.audioError.length ? "ERROR" : (app.mute ? "MUTE" : (app.volume * 100).toFixed(0) + "%"); width: 110
+            Readout { label: "AUDIO"; value: app.audioError.length ? "ERROR" : (app.mute ? "MUTE" : "ON"); width: 110
                       valueColor: app.audioError.length ? Theme.red : Theme.text }
             Readout { label: "UNDER/OVER"; value: app.audioUnderruns.toFixed(0) + " / " + app.audioOverruns.toFixed(0); width: 160
                       valueColor: (app.audioUnderruns > 0 || app.audioOverruns > 0) ? Theme.amber : Theme.text }

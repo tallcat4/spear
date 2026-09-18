@@ -19,14 +19,13 @@ Item {
     // 帯域中心・LO オフセットは規格と App が決める値なので操作キーは置かない(誤設定で受信できなくなる)。個体差は site.conf。
     readonly property var softKeys: [
         { label: "ALL CH AUDIO", action: "all", active: app.allChannelAudio },
-        { label: "SQUELCH", action: "sq" }, { label: "VOL " + (app.volume * 100).toFixed(0), action: "vol" },
-        { label: "MUTE", action: "mute", active: app.mute }, null, null, { label: "DIAG", action: "diag" } ]
+        { label: "SQUELCH", action: "sq" }, { label: "MUTE", action: "mute", active: app.mute },
+        null, null, null, { label: "DIAG", action: "diag" } ]
     function softKey(action) {
         switch (action) {
         case "all": app.allChannelAudio = !app.allChannelAudio; break
         case "sq": ui.askRef(app.squelchDb, (v) => app.squelchDb = v); break
         case "diag": ui.showDiagnostics(); break
-        case "vol": app.volume = app.volume >= 0.95 ? 0.1 : app.volume + 0.2; break
         case "mute": app.mute = !app.mute; break
         }
     }

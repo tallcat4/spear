@@ -124,7 +124,7 @@ scripts/install-desktop.sh                         # KDE Plasma のメニュー 
 ```
 
 個体・現場固有の値(その B210 の LO 誤差など)は `~/spear/site.conf` に置き、コードには入れない。
-運転状態(ゲイン/AGC、各 App のスケルチ・音量・モード・表示レンジ…)は `~/spear/state.conf` に自動保存され、次回起動時に復元される。
+運転状態(ゲイン/AGC、各 App のスケルチ・MUTE・モード・表示レンジ…)は `~/spear/state.conf` に自動保存され、次回起動時に復元される。
 運用の詳細は [`docs/tools.md`](docs/tools.md)。
 
 ## ドキュメント

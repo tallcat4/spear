@@ -29,7 +29,6 @@ class DemodApp final : public appfw::GuiApp {
     Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)          // "WFM" | "NFM" | "AM"
     Q_PROPERTY(double channelOffsetHz READ channelOffsetHz WRITE setChannelOffsetHz NOTIFY modeChanged)
     Q_PROPERTY(double squelchDb READ squelchDb WRITE setSquelchDb NOTIFY modeChanged)
-    Q_PROPERTY(double volume READ volume WRITE setVolume NOTIFY audioChanged)
     Q_PROPERTY(bool mute READ mute WRITE setMute NOTIFY audioChanged)
     // ---- 観測値(App の DSP thread が更新)----
     Q_PROPERTY(bool squelchOpen READ squelchOpen NOTIFY metersChanged)
@@ -57,8 +56,6 @@ public:
     void setChannelOffsetHz(double hz) { offset_hz_ = hz; rebuild_ = true; Q_EMIT modeChanged(); }
     double squelchDb() const { return squelch_db_; }
     void setSquelchDb(double v) { squelch_db_ = v; Q_EMIT modeChanged(); }
-    double volume() const { return volume_; }
-    void setVolume(double v);
     bool mute() const { return mute_; }
     void setMute(bool m);
     bool squelchOpen() const { return squelch_open_; }
@@ -109,7 +106,6 @@ private:
     std::atomic<double> offset_hz_{250e3};
     double lo_offset_hz_ = 250e3;
     std::atomic<double> squelch_db_{-70.0};
-    double volume_ = 0.5;
     bool mute_ = false;
     std::string audio_device_ = "default";
     std::atomic<bool> rebuild_{true};

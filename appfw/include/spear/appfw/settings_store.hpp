@@ -1,4 +1,4 @@
-// S.P.E.A.R. appfw — SettingsStore: 運転状態(スケルチ、音量、ゲイン/AGC、表示レンジ…)の自動保存と復元。
+// S.P.E.A.R. appfw — SettingsStore: 運転状態(スケルチ、MUTE、ゲイン/AGC、表示レンジ…)の自動保存と復元。
 //
 // 「再起動するたびにスケルチや AGC が初期化される」を、App ごとの保存コードではなく SDK の 1 つの仕組みで直す:
 //   * 状態の所有者は今までどおり App / Shell の Q_PROPERTY(docs/state-ownership.md)。ここは値の写しを持つ「日誌」で、所有者ではない。

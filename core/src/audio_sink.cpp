@@ -85,9 +85,9 @@ void AudioSink::run() {
         {
             std::lock_guard lk(mu_);
             n = std::min(period, count_);
-            const float g = mute_ ? 0.f : gain_.load();
+            const bool mute = mute_.load();
             for (std::size_t i = 0; i < n; ++i) {
-                buf[i] = std::clamp(ring_[tail_] * g, -1.f, 1.f);
+                buf[i] = mute ? 0.f : std::clamp(ring_[tail_], -1.f, 1.f);
                 tail_ = (tail_ + 1) % ring_.size();
             }
             count_ -= n;

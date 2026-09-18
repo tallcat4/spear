@@ -30,7 +30,7 @@ StdT98App::StdT98App(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::
     eye_.setCapacity(200);
     eye_.set_rate(cfg_.baud);
     // 再起動をまたいで残す運転状態(個体値 freq_err は site.conf、チャネル IQ 表示のレンジは帯域表示に追従する派生値なので宣言しない)
-    persist({"squelchDb", "selectedChannel", "volume", "mute", "allChannelAudio", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange", "bandView.averaging"});
+    persist({"squelchDb", "selectedChannel", "mute", "allChannelAudio", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange", "bandView.averaging"});
 }
 StdT98App::~StdT98App() = default;
 
@@ -72,7 +72,6 @@ void StdT98App::setSelectedChannel(int ch) {
     Q_EMIT configChanged();
 }
 
-void StdT98App::setVolume(double v) { volume_ = std::clamp(v, 0.0, 1.0); if (audio_) audio_->set_volume(static_cast<float>(volume_)); Q_EMIT configChanged(); }
 void StdT98App::setMute(bool m) { mute_ = m; if (audio_) audio_->set_mute(m); Q_EMIT configChanged(); }
 
 QVariantList StdT98App::channels() const {
@@ -319,7 +318,6 @@ void StdT98App::on_start(Core& core) {
     channel_vp_->start();
 
     audio_ = std::make_unique<AudioSink>(&core.events(), audio_device_, kAudioRate);
-    audio_->set_volume(static_cast<float>(volume_));
     audio_->set_mute(mute_);
     std::string err;
     if (!audio_->open(&err)) core.events().emit(EventKind::Warning, info().id, "audio disabled: " + err);
