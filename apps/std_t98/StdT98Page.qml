@@ -83,7 +83,7 @@ Item {
                     Rectangle { x: 1; y: 1; height: 8; width: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (modelData.power + 100) / 80))); color: page.chColor(modelData) }
                     Rectangle { x: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (app.squelchDb + 100) / 80))); y: -2; width: 2; height: 14; color: Theme.amber; opacity: 0.8 }
                 }
-                MouseArea { anchors.fill: parent; onClicked: app.selectedChannel = index }
+                MouseArea { anchors.fill: parent; onClicked: if (index !== app.selectedChannel) { Feedback.tap(); app.selectedChannel = index } }
             }
         }
     }

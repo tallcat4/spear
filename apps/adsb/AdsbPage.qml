@@ -121,7 +121,7 @@ Item {
                             }
                         }
                     }
-                    MouseArea { anchors.fill: parent; onClicked: app.selectedIcao = (app.selectedIcao === modelData.icao ? 0 : modelData.icao) }
+                    MouseArea { anchors.fill: parent; onClicked: { Feedback.tap(); app.selectedIcao = (app.selectedIcao === modelData.icao ? 0 : modelData.icao) } }
                 }
             }
             Text { anchors.centerIn: table; visible: page.list.length === 0; text: "NO AIRCRAFT"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsLarge }
@@ -142,6 +142,7 @@ Item {
                 aircraftColor: Theme.green; selectedColor: Theme.amber; airportColor: Theme.cyan; fontFamily: Theme.mono
                 onSelectedChanged: app.selectedIcao = selectedIcao
                 // タッチ: ドラッグでパン、タップで選択、ピンチでズーム(操作すると自動フィットが切れる。FIT で戻す)
+                // 操作音はタップで選択が実際に変わったときだけ(パン / ピンチ / 何もない所のタップでは鳴らさない)
                 PinchArea {
                     anchors.fill: parent
                     property real startSpan: 0
@@ -152,7 +153,12 @@ Item {
                         property real lx: 0; property real ly: 0; property real moved: 0
                         onPressed: (m) => { lx = m.x; ly = m.y; moved = 0 }
                         onPositionChanged: (m) => { if (!pressed) return; mapItem.pan(m.x - lx, m.y - ly); moved += Math.abs(m.x - lx) + Math.abs(m.y - ly); lx = m.x; ly = m.y }
-                        onReleased: (m) => { if (moved < 8) { const i = mapItem.icaoAt(m.x, m.y); app.selectedIcao = (i === app.selectedIcao ? 0 : i) } }
+                        onReleased: (m) => {
+                            if (moved >= 8) return
+                            const i = mapItem.icaoAt(m.x, m.y)
+                            const next = (i === app.selectedIcao ? 0 : i)
+                            if (next !== app.selectedIcao) { Feedback.tap(); app.selectedIcao = next }
+                        }
                     }
                 }
             }

@@ -8,8 +8,8 @@
 
 namespace spear {
 
-AudioSink::AudioSink(EventBus* events, std::string device, unsigned sample_rate, std::size_t ring_frames)
-    : events_(events), device_(std::move(device)), rate_(sample_rate), ring_(ring_frames, 0.f) {}
+AudioSink::AudioSink(EventBus* events, std::string device, unsigned sample_rate, std::size_t ring_frames, unsigned latency_us)
+    : events_(events), device_(std::move(device)), rate_(sample_rate), latency_us_(latency_us), ring_(ring_frames, 0.f) {}
 
 AudioSink::~AudioSink() { close(); }
 
@@ -23,8 +23,8 @@ bool AudioSink::open(std::string* err) {
         if (events_) events_->emit(EventKind::Error, "audio", st_.error);
         return false;
     }
-    // 32-bit float, mono, rate_。バッファ ~100 ms、period ~20 ms
-    rc = snd_pcm_set_params(pcm, SND_PCM_FORMAT_FLOAT_LE, SND_PCM_ACCESS_RW_INTERLEAVED, 1, rate_, 1, 100000);
+    // 32-bit float, mono, rate_。バッファ latency_us_(既定 ~100 ms)、period ~20 ms
+    rc = snd_pcm_set_params(pcm, SND_PCM_FORMAT_FLOAT_LE, SND_PCM_ACCESS_RW_INTERLEAVED, 1, rate_, 1, latency_us_);
     if (rc < 0) {
         st_.error = std::string("snd_pcm_set_params: ") + snd_strerror(rc);
         if (err) *err = st_.error;
@@ -77,7 +77,8 @@ AudioStats AudioSink::stats() const {
 
 void AudioSink::run() {
     auto* pcm = static_cast<snd_pcm_t*>(pcm_);
-    const std::size_t period = rate_ / 50;   // 20 ms
+    // 20 ms、ただし ALSA バッファが短いときはその 1/4(ring からの拾い上げ遅れをバッファに見合う長さに)
+    const std::size_t period = std::max<std::size_t>(64, std::min<std::size_t>(rate_ / 50, static_cast<std::size_t>(rate_) * latency_us_ / 4'000'000));
     std::vector<float> buf(period);
     uint64_t last_underrun_report = 0;
     while (!stop_) {

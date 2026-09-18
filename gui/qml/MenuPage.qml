@@ -40,7 +40,7 @@ Item {
                 Text { anchors.right: parent.right; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter
                        text: modelData.direction; color: pressedNow ? Theme.invertText : Theme.textDim
                        font.family: Theme.mono; font.pixelSize: Theme.fsBase }
-                MouseArea { id: ma; anchors.fill: parent; onClicked: page.selected(index) }
+                MouseArea { id: ma; anchors.fill: parent; onClicked: page.selected(index) }   // 操作音は Main.qml(busy で弾いたときは鳴らさない)
             }
         }
         Text { visible: shell.lastError.length > 0; width: list.width; wrapMode: Text.Wrap; topPadding: 12

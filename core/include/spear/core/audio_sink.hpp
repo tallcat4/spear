@@ -30,9 +30,10 @@ struct AudioStats {
 
 class AudioSink {
 public:
-    // device: "default" 等。mono float を渡す。
+    // device: "default" 等。mono float を渡す。latency_us は ALSA 側バッファ(復調音声は 100 ms、UI 音のような
+    // 即応が要るものは短く。再生 thread の period もこれに合わせて短くなる)。events は nullptr 可(何も報告しない)。
     AudioSink(EventBus* events, std::string device = "default", unsigned sample_rate = 48000,
-              std::size_t ring_frames = 48000 / 4);
+              std::size_t ring_frames = 48000 / 4, unsigned latency_us = 100000);
     ~AudioSink();
     bool open(std::string* err = nullptr);
     void close();
@@ -46,6 +47,7 @@ private:
     EventBus* events_;
     std::string device_;
     unsigned rate_;
+    unsigned latency_us_;
     void* pcm_ = nullptr;      // snd_pcm_t*
     std::vector<float> ring_;
     std::size_t head_ = 0, tail_ = 0, count_ = 0;   // mu_ で保護

@@ -6,6 +6,7 @@
 // --state-file: 運転状態(ゲイン/AGC、各 App のスケルチ・MUTE・表示レンジ…)の自動保存先。無ければ保存も復元もしない(検証用の起動)。
 #include "shell.hpp"
 #include "system_model.hpp"
+#include "tap_sound.hpp"
 #include "spear/appfw/settings_store.hpp"
 #include "spear/core/event_log.hpp"
 #include "spear/core/recording.hpp"
@@ -105,8 +106,8 @@ int main(int argc, char** argv) {
     }
     core.source().configure(shell.draft());   // 起動時点の宣言を適用(App 起動前でも status bar に正しい RF を出す)
     core.source().warm_up();                  // 実機: 自己診断 → 装置待ち → FPGA ロード → tune 確認 → close(スプラッシュが経過を見せる)
+    QVariantMap settings;   // App 固有・個体固有の設定(--set)。操作音のデバイス名もここから
     {
-        QVariantMap settings;
         settings["record_dir"] = QString::fromStdString(record_dir);
         // --set key=value(複数可): App 固有・個体固有の設定(例: std_t98.freq_err_hz=<Hz>)。spear.sh が site.conf から渡す
         for (int i = 1; i + 1 < argc; ++i) {
@@ -117,10 +118,13 @@ int main(int argc, char** argv) {
         }
         for (const auto& app : shell.instances()) app->configure(settings);
     }
+    // 操作音(タップ / 拒否)。デバイスは App 音声と同じ audio_device 設定(--set audio_device=null で無音にできる)
+    TapSound tap_sound(&core.events(), settings.value("audio_device", "default").toString().toStdString());
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("sys", &model);
     engine.rootContext()->setContextProperty("shell", &shell);
+    engine.rootContext()->setContextProperty("tapSound", &tap_sound);
     engine.rootContext()->setContextProperty("startFullscreen", flag(argc, argv, "--fullscreen"));
     engine.rootContext()->setContextProperty("startWidth", std::stoi(arg(argc, argv, "--width", "1920")));
     engine.rootContext()->setContextProperty("startHeight", std::stoi(arg(argc, argv, "--height", "1200")));

@@ -16,7 +16,10 @@
 ```
 1920×1200 の固定キャンバスを物理 px で設計し、窓がそれと異なる場合は等倍縮尺で収める(専用機では 1:1)。
 **操作はタッチのみ**(FZ-G2 タブレットモード専用)。キーボード・マウスは考慮せず、カーソル・フォーカス・
-ショートカット表記のような「キーボードがある前提」の要素は持たない。押下の手応えは押している間の反転だけ。
+ショートカット表記のような「キーボードがある前提」の要素は持たない。押下の手応えは押している間の反転と、**受け付けたときのタップ音**。
+音も色と同じく「意味」にだけ使う: タップ音 = 入力をアクションとして受け付けた、拒否音 = 数値入力が値を拒否した(赤で理由が出る事象と 1:1)。
+空白のタップ・モーダルの背景・無効キー・指を滑らせたキャンセル・ドラッグ/ピンチ/フリックのような連続操作では鳴らさない。
+装飾音は無し。音量は持たない(OS 側で調整、App の MUTE とは無関係)。
 
 ## 実装
 * `ViewProcessor`: Stream Bus の LatestOnly consumer(自前 thread)。FFT → spectrum frame / waterfall 行(RGBA)。
@@ -50,11 +53,12 @@ OS やデスクトップの仮想キーボードは信用しない。すべて�
 
 | 部品 | 役割 |
 |---|---|
-| `KeyButton` | フラットなキー。押下で反転、長押しリピート、`press()` で物理キーからも同じ経路 |
+| `KeyButton` | フラットなキー。押下で反転、長押しリピート。受け付けた入力は `fire()`(タップ音 → `pressed()`)を必ず通る |
 | `Keypad` | キー配列を model(`[{label, action, span, sublabel, enabled, active, repeat}]`)で与える汎用グリッド。テンキー・単位キー・将来の英数キーボードの土台 |
 | `NumericEntry` | モーダルの数値入力。計測器の文法(数字 → 単位キーで確定)、範囲検証(閉じずに赤で理由) |
 | `ValueField` | タップで入力を開く読み出し欄(編集可能の目印付き) |
 | `StepKeys` | −/+ ステップ(長押しリピート) |
+| `Feedback` | 操作音の入口(singleton、信号だけ)。自前の MouseArea でアクションを起こす所は `Feedback.tap()`、拒否は `Feedback.reject()`。シェルの `Main.qml` が C++ の `TapSound`(core の `AudioSink` を 1 つ、ALSA/PipeWire、Qt Multimedia 不使用)につなぐ。接続が無ければ無音 |
 
 使い方: `NumericEntry { id: e; title; minimum; maximum; units: [{label, factor}]; displayFactor; displayUnit; onAccepted: (v) => ... }` → `e.open(current)`。
 Main.qml の `askFreq / askRate / askGain / askRef` が典型例。入力中もステータスバーは見える。

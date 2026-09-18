@@ -56,7 +56,7 @@ Window {
             SplashPage { anchors.fill: parent; visible: win.splashOpen }
             MenuPage {
                 anchors.fill: parent; visible: !win.appOpen && !win.diagOpen && !win.splashOpen
-                onSelected: (i) => { if (!shell.busy) shell.startApp(i) }
+                onSelected: (i) => { if (!shell.busy) { Feedback.tap(); shell.startApp(i) } }
                 onAskGain: win.askGain(shell.draftGain, (v) => { if (v < 0) shell.draftAgc = true; else shell.draftGain = v })
             }
             // App のページ: レジストリの page_url を Loader で読む。ページには app / sys / ui が見える。
@@ -107,6 +107,12 @@ Window {
             onPressed: (i) => win.softkey(i)
         }
 
+        // ---- 操作音: Spear.Input の Feedback singleton(信号だけ)を C++ の TapSound につなぐ。ここが唯一の接続点 ----
+        Connections {
+            target: Feedback
+            function onTapped() { tapSound.tap() }
+            function onRejected() { tapSound.reject() }
+        }
         // ---- EXIT の確認(モーダル)。誤タップで終了しないように必ず確認する ----
         ConfirmDialog {
             id: exitDialog

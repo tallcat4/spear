@@ -48,14 +48,13 @@ Item {
         var s = (v / displayFactor).toFixed(displayDecimals)
         return s + (displayUnit.length ? " " + displayUnit : "")
     }
+    // 拒否: 赤で理由を出す事象と拒否音は 1:1(ここ以外で鳴らさない)
+    function fail(reason) { error = reason; Feedback.reject() }
     function commit(factor, unitLabel) {
-        if (text.length === 0 || text === "-" || text === "." || text === "-.") { error = "NO VALUE ENTERED"; return }
+        if (text.length === 0 || text === "-" || text === "." || text === "-.") { fail("NO VALUE ENTERED"); return }
         var v = parseFloat(text) * factor
-        if (!isFinite(v)) { error = "INVALID NUMBER"; return }
-        if (v < minimum || v > maximum) {
-            error = "OUT OF RANGE  " + fmt(minimum) + " .. " + fmt(maximum)
-            return
-        }
+        if (!isFinite(v)) { fail("INVALID NUMBER"); return }
+        if (v < minimum || v > maximum) { fail("OUT OF RANGE  " + fmt(minimum) + " .. " + fmt(maximum)); return }
         error = ""
         var out = v
         visible = false

@@ -1,6 +1,7 @@
 // 画面下のソフトキー(オシロ / MFD の文法)。タッチ専用。keys: [{label, action, enabled, active}]
 import QtQuick
 import Spear.Theme
+import Spear.Input
 
 Rectangle {
     id: bar
@@ -25,7 +26,7 @@ Rectangle {
                     Text { anchors.centerIn: parent
                            text: k ? k.label : ""; color: (k && k.active) ? Theme.invertText : (on ? Theme.text : Theme.lineDim)
                            font.family: Theme.mono; font.pixelSize: Theme.fsLarge; font.bold: true }
-                    MouseArea { id: ma; anchors.fill: parent; enabled: on; onClicked: bar.pressed(index) }
+                    MouseArea { id: ma; anchors.fill: parent; enabled: on; onClicked: { Feedback.tap(); bar.pressed(index) } }
                 }
             }
         }
