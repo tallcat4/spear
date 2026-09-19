@@ -19,6 +19,8 @@
 6. GUI が編集中の値(App 起動前の RF 宣言など)は **草案(draft)** として名前で区別する(`Shell::draftFreq` 等)。
    草案は App 起動時に `Core::run_app` → `Source::configure` で宣言になる。運転中の値は必ず `sys`(Core)から読む。
 7. 新しい状態(例: ゲイン、帯域、アンテナ)を追加するときは、1〜6 を同じ形で満たすこと。
+   装置の較正値(個体の LO 誤差 `radio.freq_err_ppm`)は Core(`RadioOptions`)が所有し、`Radio` の tune で打ち消す。App は持たず、
+   `config()` / event / `StreamMeta` に出る周波数はすべて補正後の真の周波数(`core/include/spear/core/lo_correction.hpp`)。
    回帰テスト: `tests/test_state.cpp`(retune 即時反映・event 発行・version 更新)。
 8. **再起動をまたぐ保存は所有者を増やさない**。`appfw::SettingsStore`(`~/spear/state.conf`)は所有者の Q_PROPERTY を NOTIFY で写す
    **日誌**であり、読むのは起動時の復元(`setProperty`)の 1 回だけ。App は `persist({...})` で名前を宣言するだけで、保存コードを書かない。

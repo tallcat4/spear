@@ -74,7 +74,13 @@
   地図データはリポジトリに同梱してバイナリに埋め込む(オフライン、パブリックドメインの Natural Earth + OurAirports)。
 - **高頻度の事象はフレームごとに Event にしない**(ADS-B: 新規機 / 初回位置 / 消失だけ。フレーム数は統計)。イベントログを溢れさせない。
 - **受信系の golden は実録音**。合成変調器は規格外のパラメータ合わせになるので作らない(STD-T98 で失敗して学んだ)。
-- **個体設定は `~/spear/site.conf`**(例 `std_t98.freq_err_hz=<Hz>`)。コードにも要件にも埋めない。
+- **個体設定は `~/spear/site.conf`**(例 `radio.freq_err_ppm=<ppm>`)。コードにも要件にも埋めない。
+- **個体の LO 誤差は Core の Radio が ppm で LO 側で打ち消す**(2026-09-19、`core/include/spear/core/lo_correction.hpp`)。以前は STD-T98 だけが
+  `std_t98.freq_err_hz` で IQ を回転していたが、装置の性質なので SPECTRUM の軸・DEMOD・録音の周波数ラベルもずれたままだった。B2xx は RF LO も
+  ADC クロックも同じ TCXO から作るので誤差は周波数に比例する(ppm)。`Radio` が要求を装置の目盛りに換算して tune し、読み値を真の周波数に戻すので、
+  `RfConfig` / `config()` / event / `StreamMeta` / SigMF はすべて真の周波数のまま、全 App が無変更で正しくなる。ソフト回転(Source 内 / 共通 reader)は
+  採らない(CPU、sc16 の再量子化、録音が生でなくなる)。補正前に録った録音の読み替えはしない(撮り直す)。サンプルレートの ppm 誤差(4 Msps で約 12 Hz)は
+  補正できずシンボル同期が吸収する。録音の SigMF global に `spear:lo_correction_ppm` を provenance として残す。
 - **AMBE は mbelib-neo の AMBE 経路だけを C++ で書き直し**(IMBE / SIMD / pffft なし)。pyambelib と PCM が ±1 LSB で一致。
 - **ライセンスは GPL-3.0 で公開**(2026-09-17)。GPL-2.0-or-later 由来コードの結合は問題ない。
 - **STD-T98 の LO は帯域中心 − 250 kHz**(ゼロ IF の DC スパイクを ch16 に重ねない)。回転量は Core の実 LO から導くので
@@ -89,8 +95,10 @@
 - B210(LibreSDR 互換機でも同じ)を **USB 2.0** で使う前提。FPGA ロードは約 70 s。
 - `ref_locked` は外部 10 MHz の PLL のこと(internal では unlocked が正常)。FX3 状態レジスタの読み出しはストリーム中に
   ~13 ms のバルク停止を起こす → 遷移時 / timeout 時のみ読む。
-- B2xx 個体の LO 誤差は数百 Hz〜1 kHz 程度あり得る(STD-T98 の 6.25 kHz チャネルでは無視できない)。`site.conf` の
-  `std_t98.freq_err_hz` に置く。値の求め方: `spear-std-t98-decode` のチャネル表「est freq err」がほぼ 0 になる値。
+- B2xx 個体の LO 誤差は数 ppm(351 MHz で数百 Hz〜1 kHz)あり得る(STD-T98 の 6.25 kHz チャネルでは無視できない)。`site.conf` の
+  `radio.freq_err_ppm` に置くと Radio が LO 側で打ち消す。値の求め方: 補正なし(未設定)で STD-T98 を動かし、開いているチャネルの
+  「FREQ ERR」[Hz] ÷ LO [MHz] = ppm(符号そのまま。例 +1030 Hz / 351.04 MHz = +2.93)。設定後は FREQ ERR がほぼ 0 になる。
+  DIAGNOSTICS の「LO CORR」と warm-up の tune check 行に適用中の値が出る。
 - Qt のログは journald に行く → `QT_FORCE_STDERR_LOGGING=1`。
 - 記録・ログ・golden・音声は `~/spear/`(`recordings / logs / golden / audio / site.conf`)。個体固有の値・録音・
   音声由来の golden(`golden/std_t98/ch3_pich.*`, `ambe_golden.txt`, `ch3_payloads.txt`, `secret_golden.txt`)はリポジトリに入れない(golden テストは無ければ skip)。

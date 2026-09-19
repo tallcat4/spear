@@ -160,7 +160,7 @@ TEST(Apps, StdT98LifecycleOnSynthetic) {
     sig.noise_amplitude = 0.002;
     core.set_source(std::make_unique<SyntheticSource>(&core.events(), sig));
     auto app = std::make_shared<apps::StdT98App>(appfw::AppInfo{"std_t98", "STD-T98 MONITOR", "", Direction::RX, ""});
-    QVariantMap settings; settings["audio_device"] = "null"; settings["std_t98.freq_err_hz"] = 0.0;
+    QVariantMap settings; settings["audio_device"] = "null";
     app->configure(settings);
     RfConfig c; c.center_freq = 100e6; c.sample_rate = 1e6;   // App が 4 Msps / 帯域中心 − 250 kHz に上書きする
     app->set_rf_config(c);

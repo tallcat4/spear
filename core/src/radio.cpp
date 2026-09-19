@@ -422,6 +422,7 @@ bool Radio::open(const RfConfig& cfg, std::string* err) {
 bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
     if (!usrp_) { if (err) *err = "not open"; return false; }
     std::string e;
+    const LoCorrection corr = lo_correction();   // 個体の LO 誤差: 要求は装置の目盛りへ、読み値は真の周波数へ
     try {
         // ---- 宣言 (§8.1) を装置の能力範囲と照合。範囲外は「適用不能」として失敗させる(黙って丸めない)----
         {
@@ -430,7 +431,7 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
             const auto rr = usrp_->get_rx_rates();
             const auto ants = usrp_->get_rx_antennas();
             char rb[200];
-            if (cfg.center_freq < fr.start() || cfg.center_freq > fr.stop()) {
+            if (corr.to_device(cfg.center_freq) < fr.start() || corr.to_device(cfg.center_freq) > fr.stop()) {
                 std::snprintf(rb, sizeof rb, "center_freq %.6f MHz outside [%.3f, %.3f] MHz", cfg.center_freq / 1e6, fr.start() / 1e6, fr.stop() / 1e6);
                 throw uhd::value_error(rb);
             }
@@ -450,8 +451,8 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
         }
         usrp_->set_rx_rate(cfg.sample_rate);
         actual_rate_ = usrp_->get_rx_rate();
-        const auto res = usrp_->set_rx_freq(uhd::tune_request_t(cfg.center_freq));
-        actual_freq_ = usrp_->get_rx_freq();
+        const auto res = usrp_->set_rx_freq(uhd::tune_request_t(corr.to_device(cfg.center_freq)));
+        actual_freq_ = corr.to_true(usrp_->get_rx_freq());
         usrp_->set_rx_gain(cfg.gain);
         usrp_->set_rx_agc(cfg.agc);   // AD9361 の AGC。ON なら gain は装置が決める(以後 get_rx_gain は実測値)
         const double actual_gain = usrp_->get_rx_gain();
@@ -486,9 +487,9 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
             return false;
         }
         char buf[200];
-        std::snprintf(buf, sizeof buf, "rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f) gain=%.1f%s ant=%s lo_locked",
+        std::snprintf(buf, sizeof buf, "rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f corr=%+.2fppm/%+.0fHz) gain=%.1f%s ant=%s lo_locked",
                       actual_rate_, usrp_->get_master_clock_rate(), actual_freq_ / 1e6, res.actual_rf_freq / 1e6,
-                      res.actual_dsp_freq, usrp_->get_rx_gain(), cfg.agc ? " (AGC)" : "", usrp_->get_rx_antenna().c_str());
+                      res.actual_dsp_freq, corr.ppm, corr.error_hz(cfg.center_freq), usrp_->get_rx_gain(), cfg.agc ? " (AGC)" : "", usrp_->get_rx_antenna().c_str());
         stage(4, buf, true);
         set_state(DeviceState::Ready, std::string("sensors: lo_locked=true; ") + buf, 4);
         return true;
@@ -504,10 +505,11 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
 }
 
 double Radio::retune_rx_at(double freq, const uhd::time_spec_t& at) {
+    const LoCorrection corr = lo_correction();
     usrp_->set_command_time(at);
-    usrp_->set_rx_freq(uhd::tune_request_t(freq));
+    usrp_->set_rx_freq(uhd::tune_request_t(corr.to_device(freq)));
     usrp_->clear_command_time();
-    actual_freq_ = usrp_->get_rx_freq();
+    actual_freq_ = corr.to_true(usrp_->get_rx_freq());
     return actual_freq_;
 }
 

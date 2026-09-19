@@ -3,7 +3,7 @@
 // 純 C++ の Receiver(30ch)を GUI に載せる。検証対象:
 //   * §0 観測点: Receiver の中間 stream(帯域 IQ、選択 ch の IQ / アイパターン)を DSP に触れず GUI に出す
 //   * §4.5 provenance: フレーム event の sample 範囲を radio.rx index で
-//   * 個体設定(freq_err_hz)を --set / site.conf で渡す経路
+//   * 個体設定(band_center_hz / squelch_db)を --set / site.conf で渡す経路(LO 誤差は Core が radio.freq_err_ppm で打ち消す)
 //   * TraceSource / EyeDiagram(新規の再利用部品)
 //   * 秘話(§3.4): 鍵探索は専用ワーカースレッド(secret::Worker)で走らせ、DSP thread は鍵の適用と窓の収集だけを行う
 // RF: 4 Msps、LO は帯域中心から loOffset だけ離す(ゼロ IF の DC スパイクをチャネル 16 に重ねない)。
@@ -35,7 +35,6 @@ class StdT98App final : public appfw::GuiApp {
     // 帯域中心 / LO オフセット / 個体誤差は規格・App・site.conf が決める(UI からは操作しない: 誤設定で受信不能になる)
     Q_PROPERTY(double bandCenterHz READ bandCenterHz NOTIFY configChanged)   // ch16 の周波数(規格: 351.29375 MHz)
     Q_PROPERTY(double loOffsetHz READ loOffsetHz NOTIFY configChanged)
-    Q_PROPERTY(double freqErrHz READ freqErrHz NOTIFY configChanged)         // 個体の LO 誤差(site.conf: std_t98.freq_err_hz)
     Q_PROPERTY(double squelchDb READ squelchDb WRITE setSquelchDb NOTIFY configChanged)
     Q_PROPERTY(int selectedChannel READ selectedChannel WRITE setSelectedChannel NOTIFY configChanged)   // 0..29
     Q_PROPERTY(bool mute READ mute WRITE setMute NOTIFY configChanged)
@@ -68,8 +67,6 @@ public:
     void setBandCenterHz(double hz);
     double loOffsetHz() const { return lo_offset_hz_; }
     void setLoOffsetHz(double hz);
-    double freqErrHz() const { return freq_err_hz_; }
-    void setFreqErrHz(double hz) { freq_err_hz_ = hz; rebuild_ = true; Q_EMIT configChanged(); }
     double squelchDb() const { return squelch_db_; }
     void setSquelchDb(double v) { squelch_db_ = v; Q_EMIT configChanged(); }
     int selectedChannel() const { return selected_; }
@@ -116,7 +113,6 @@ private:
     std_t98::ReceiverConfig cfg_;
     double band_center_hz_ = 351.29375e6;   // ARIB STD-T98: ch1 = 351.20000 MHz、6.25 kHz 間隔、ch16 が帯域中心
     double lo_offset_hz_ = 250e3;
-    double freq_err_hz_ = 0;
     std::atomic<double> squelch_db_{-40.0};   // std-t98-tools の既定。録音再生では -50 が要る場合あり(site.conf: std_t98.squelch_db)
     std::atomic<int> selected_{0};
     bool mute_ = false;

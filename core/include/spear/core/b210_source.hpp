@@ -73,6 +73,7 @@ public:
     bool warming_up() const override { return warming_.load(); }
     void cancel_warm_up() override { warm_cancel_ = true; }
     std::vector<std::string> startup_report() const override { std::lock_guard lk(mu_); return report_; }
+    double lo_correction_ppm() const override { return opt_.radio.freq_err_ppm; }
 
     B210RxStats stats() const;
     PoolStats pool_stats() const { return pool_.stats(); }

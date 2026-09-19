@@ -109,9 +109,10 @@ uint32_t RecordingSource::fill(BlockBuilder& b) {
 
 // ---- SigmfRecorder ---------------------------------------------------------------
 
-SigmfRecorder::SigmfRecorder(std::string base_path, const StreamMeta& sm, const RfConfig& cfg, EventBus* events)
+SigmfRecorder::SigmfRecorder(std::string base_path, const StreamMeta& sm, const RfConfig& cfg, EventBus* events, double lo_correction_ppm)
     : base_(std::move(base_path)), events_(events) {
     meta_.dtype = sm.dtype;
+    meta_.lo_correction_ppm = lo_correction_ppm;
     meta_.sample_rate = sm.sample_rate;
     meta_.description = "spear recording, stream=" + sm.id;
     initial_freq_ = cfg.center_freq;

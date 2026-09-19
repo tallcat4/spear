@@ -57,6 +57,8 @@ public:
     virtual bool warming_up() const { return false; }
     virtual void cancel_warm_up() {}                                  // 装置の出現待ちを打ち切る(open 中は打ち切れない)
     virtual std::vector<std::string> startup_report() const { return {}; }
+    // 個体の LO 誤差 [ppm](観測 − 真)。実機は tune 時に LO 側で打ち消す(lo_correction.hpp)。表示・録音の provenance 用
+    virtual double lo_correction_ppm() const { return 0; }
 };
 
 class Sink {

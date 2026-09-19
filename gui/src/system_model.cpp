@@ -96,6 +96,7 @@ void SystemModel::timerEvent(QTimerEvent*) {
     if (core_.has_source()) {
         ds_ = core_.source().device_status();
         cfg_ = core_.source().config();
+        lo_corr_ppm_ = core_.source().lo_correction_ppm();
         warming_ = core_.source().warming_up();
         report_.clear();
         for (const auto& l : core_.source().startup_report()) report_ << QString::fromStdString(l);

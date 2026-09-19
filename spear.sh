@@ -31,7 +31,7 @@ for a in "$@"; do
   esac
 done
 
-# 個体・現場固有の設定: $DATA/site.conf の key=value 行を --set で渡す(例: std_t98.freq_err_hz=<個体の LO 誤差 Hz>)
+# 個体・現場固有の設定: $DATA/site.conf の key=value 行を --set で渡す(例: radio.freq_err_ppm=<個体の LO 誤差 ppm>)
 if [ -f "$DATA/site.conf" ]; then
   while IFS= read -r line; do
     case "$line" in ''|'#'*) continue ;; esac

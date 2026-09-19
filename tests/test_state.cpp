@@ -1,5 +1,6 @@
 // State の単一所有 (§4.1): 宣言は Source が 1 か所で持ち、変更 API を通れば即座に config() に現れ、
 // state_version が進み、適用は Retune event で報告される。GUI 側のコピーに依存してはならない。
+#include "spear/core/lo_correction.hpp"
 #include "spear/core/synthetic_source.hpp"
 
 #include <gtest/gtest.h>
@@ -41,4 +42,20 @@ TEST(State, ConfigureBumpsVersionAndIsVisibleToReaders) {
     ASSERT_TRUE(src.configure(b));
     EXPECT_GT(src.state_version(), v1);
     EXPECT_DOUBLE_EQ(src.config().center_freq, 60e6);
+}
+
+// 個体の LO 誤差(ppm)は Radio が LO 側で打ち消す(lo_correction.hpp)。換算は純関数なのでここで確かめる。
+TEST(State, LoCorrectionMapsTrueAndDeviceFrequencies) {
+    // この個体: 351.04375 MHz の LO で信号が +1030 Hz 高く見えた → +2.934 ppm
+    const LoCorrection c{2.934};
+    const double f = 351.04375e6;
+    EXPECT_NEAR(c.error_hz(f), 1030.0, 1.0);
+    EXPECT_NEAR(c.to_device(f) - f, 1030.0, 1.0);          // 装置には +1030 Hz 高く要求する
+    EXPECT_NEAR(c.to_true(c.to_device(f)), f, 1e-6);        // 往復で戻る
+    EXPECT_NEAR(c.to_device(1090e6) - 1090e6, 3198.0, 1.0); // 周波数に比例(1090 MHz なら約 3.2 kHz)
+    EXPECT_TRUE(c.active());
+    const LoCorrection none{};
+    EXPECT_FALSE(none.active());
+    EXPECT_DOUBLE_EQ(none.to_device(f), f);                 // 0 ppm は恒等(Synthetic / Recording)
+    EXPECT_DOUBLE_EQ(none.to_true(f), f);
 }

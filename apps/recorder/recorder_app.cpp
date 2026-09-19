@@ -39,7 +39,7 @@ void RecorderApp::record() {
     std::filesystem::create_directories(dir_, ec);
     path_ = dir_ + "/rec_" + QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss").toStdString();
     auto& rx = core()->rx();
-    rec_ = std::make_unique<SigmfRecorder>(path_, rx.meta(), core()->source().config(), &core()->events());
+    rec_ = std::make_unique<SigmfRecorder>(path_, rx.meta(), core()->source().config(), &core()->events(), core()->source().lo_correction_ppm());
     if (!rec_->ok()) { last_error_ = "cannot open " + QString::fromStdString(path_); rec_.reset(); Q_EMIT recordingChanged(); return; }
     last_error_.clear();
     sub_ = rx.subscribe("recorder", DeliveryPolicy::Lossless, 256);

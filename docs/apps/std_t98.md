@@ -20,7 +20,9 @@ M3 の主眼(§14)は「既存 DSP を修正せず任意の中間 stream に観�
   `dsp::FirInterpolator`×10 → 直交検波 → RC/sinc 受信フィルタ(firdes.py 移植)→ Gardner symbol sync(GR symbol_sync_ff 相当)
   → 同期語 SSE 検出 → 1a のデコーダ。フレームは radio.rx の sample index まで provenance を持つ。
   - 実機録音(`~/spear/recordings/rec_20260917_035942`, 4 Msps, ch1–3 送信)で 100 フレーム、SACCH CRC OK 98/100、
-    PICH CSM 一致。**B2xx 個体の LO 誤差(この個体は約 +1 kHz)**は `ReceiverConfig.freq_err_hz`(site.conf)で打ち消す。
+    PICH CSM 一致。**B2xx 個体の LO 誤差(この個体は約 +1 kHz = +2.93 ppm)**は当初 `ReceiverConfig.freq_err_hz`(site.conf `std_t98.freq_err_hz`)で
+    打ち消していたが、装置の性質なので 2026-09-19 に Core の Radio へ移した(`radio.freq_err_ppm`、LO 側で補正)。`freq_err_hz` は帯域中心を DC へ
+    戻す回転と、録音ファイル固有の残留誤差(golden / `--freq-err`)にだけ使う。
   - 検証方針: std-t98-tools 自体が RX 専用で実機で検証されているので、規格外の合成変調器を発明せず、
     実録音の 1.2 s 抜粋(`~/spear/golden/std_t98/ch3_pich.sigmf-*` + 期待値 `ch3_pich.golden.json`、リポジトリ外、無ければ skip)を golden test にした
     (13 フレーム、PICH 1 + SACCH 12、全 CRC OK、フレーム間隔 192 シンボル = 320000 サンプル)。

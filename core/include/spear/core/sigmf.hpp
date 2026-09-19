@@ -66,6 +66,7 @@ struct Meta {
     std::string author = "spear";
     std::string time_reference = "usrp_time_spec";      // §4.4: 基準種別
     std::string time_accuracy  = "TCXO ~2ppm, no GPSDO"; // §4.4: 推定精度
+    double      lo_correction_ppm = 0;   // 録音時に Radio が LO 側で打ち消した個体誤差 [ppm](provenance。0 なら書かない)
     std::vector<Capture>       captures;
     std::vector<Discontinuity> discontinuities;
     std::vector<Tuning>        tuning;

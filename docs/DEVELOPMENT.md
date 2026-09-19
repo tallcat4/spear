@@ -43,8 +43,9 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
 - **学習済みモデルは C++ 再実装(safetensors 直読み)か ONNX Runtime**(§3.4)。torch / libtorch を持ち込まない。モデルはリポジトリに置いて
   バイナリに埋め込む(実行時のパスを持たない)。推論は DSP thread の外の専用スレッドで(STD-T98 の `secret::Worker`)。Python 側を真値にした
   golden で logits の一致を確かめる。
-- **個体・現場固有の値はコードに埋めない**。`~/spear/site.conf` の `key=value` → `spear.sh` が `--set` で App に渡す
-  (例: `std_t98.freq_err_hz=<Hz>` = その B210 個体の LO 誤差)。site.conf は自動保存された運転状態(`state.conf`)より優先。
+- **個体・現場固有の値はコードに埋めない**。`~/spear/site.conf` の `key=value` → `spear.sh` が `--set` で渡す
+  (装置の値 `radio.freq_err_ppm` = その B210 個体の LO 誤差は Core の Radio が LO 側で打ち消す。App 固有は `<id>.<name>`)。
+  site.conf は自動保存された運転状態(`state.conf`)より優先。
 - **libuhd はパッチ済みパッケージ(`packaging/libuhd`)を使う。upstream に PR は出さない。B200-only プロファイルは
   共用開発機に入れない**(他の UHD アプリを壊す)。
 - **事象(event)には radio.rx の sample 範囲(provenance)を付ける**。中間 stream には `TAP()` を置く。

@@ -11,7 +11,8 @@
 タスクバー(パネルのタスクマネージャの launchers に追加。plasmashell は終了時に設定を書き戻すので、止めてから編集して起動し直す)、
 デスクトップ(`~/Desktop/spear.desktop`、初回クリックで実行の許可を聞かれることがある)に登録する。`--remove` で外す。
 非キオスク(通常の Plasma セッション)の一時策。キオスク化(専用セッションで自動起動)したら要らなくなる。
-個体・現場固有の設定は `~/spear/site.conf`(`key=value`、例 `std_t98.freq_err_hz=<個体の LO 誤差 Hz>`)→ `spear.sh` が `--set` で各 App に渡す。
+個体・現場固有の設定は `~/spear/site.conf`(`key=value`、例 `radio.freq_err_ppm=<個体の LO 誤差 ppm>`)→ `spear.sh` が `--set` で渡す
+(`radio.*` は Core、`<id>.*` は各 App)。
 運転状態(メニューのゲイン/AGC、各 App のスケルチ・MUTE・モード・REF/AVG・選択チャネル、汎用 App の周波数/レート)は `~/spear/state.conf` に
 自動保存され(変更の 0.5 s 後、原子的に書き換え)、次回起動で復元される。site.conf の値が優先。初期化したければファイルを消す。
 RF の center / rate は各 App が決める(汎用 App は FREQ / RATE キーを持つ)。メニューで決めるのは GAIN(AGC 可)だけ(右のゲイン欄をタップ。ソフトキーは EXIT のみ)。
@@ -22,9 +23,10 @@ RF の center / rate は各 App が決める(汎用 App は FREQ / RATE キー�
 
 ## STD-T98 録音の解析
 ```
-./build/tools/spear-std-t98-decode ~/spear/recordings/<base> --freq-err <個体の LO 誤差 Hz> --squelch -50 --wav ~/spear/audio/<base>
+./build/tools/spear-std-t98-decode ~/spear/recordings/<base> --freq-err <そのファイルの残留誤差 Hz> --squelch -50 --wav ~/spear/audio/<base>
 ```
 30 チャネルのフレーム表(SACCH/PICH CRC、CSM、推定周波数誤差)と、チャネルごとの AMBE 音声 WAV を出す。
+`--freq-err` はそのファイル固有の残留誤差(`radio.freq_err_ppm` 設定後の録音なら 0。それ以前の録音は個体の誤差 Hz)。
 秘話呼(SACCH call=1)は GUI と同じポリシーで鍵を探索し(1 ブロック約 0.6 s)、以後のフレームを復号して WAV に出す。フレーム行末に
 `SECRET key=<鍵> (<経路>, <秒>)`、以後 `[secret K <鍵>]` が付く。`--no-secret` で探索を止める(スクランブルのまま)。
 

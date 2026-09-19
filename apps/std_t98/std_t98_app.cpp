@@ -29,14 +29,13 @@ StdT98App::StdT98App(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::
     stats_.resize(static_cast<std::size_t>(cfg_.num_channels));
     eye_.setCapacity(200);
     eye_.set_rate(cfg_.baud);
-    // 再起動をまたいで残す運転状態(個体値 freq_err は site.conf、チャネル IQ 表示のレンジは帯域表示に追従する派生値なので宣言しない)
+    // 再起動をまたいで残す運転状態(個体値は site.conf、チャネル IQ 表示のレンジは帯域表示に追従する派生値なので宣言しない)
     persist({"squelchDb", "selectedChannel", "mute", "allChannelAudio", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange", "bandView.averaging"});
 }
 StdT98App::~StdT98App() = default;
 
 void StdT98App::configure(const QVariantMap& settings) {
     if (settings.contains("audio_device")) audio_device_ = settings["audio_device"].toString().toStdString();
-    if (settings.contains("std_t98.freq_err_hz")) freq_err_hz_ = settings["std_t98.freq_err_hz"].toDouble();
     if (settings.contains("std_t98.band_center_hz")) band_center_hz_ = settings["std_t98.band_center_hz"].toDouble();
     if (settings.contains("std_t98.squelch_db")) squelch_db_ = settings["std_t98.squelch_db"].toDouble();
     if (settings.contains("std_t98.secret")) secret_enabled_ = settings["std_t98.secret"].toInt() != 0;
@@ -141,10 +140,11 @@ QVariantList StdT98App::secretCache() const {
 
 std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
     ReceiverConfig c = cfg_;
-    // 帯域中心を DC に戻す回転 = 個体誤差 + (帯域中心 − 実際の LO)。実際の LO は Core(単一の所有者)から読む:
-    // B210 なら band − loOffset、録音再生なら録音時の中心(retune できない)なのでオフセットは自然に 0 になる
+    // 帯域中心を DC に戻す回転 = 帯域中心 − 実際の LO。実際の LO は Core(単一の所有者)から読む:
+    // B210 なら band − loOffset、録音再生なら録音時の中心(retune できない)なのでオフセットは自然に 0 になる。
+    // 個体の LO 誤差はここでは扱わない(Core の Radio が radio.freq_err_ppm で LO 側で打ち消す。録音も補正済み)
     built_center_ = core.source().config().center_freq;
-    c.freq_err_hz = freq_err_hz_ + (band_center_hz_ - built_center_);
+    c.freq_err_hz = band_center_hz_ - built_center_;
     c.squelch_db = squelch_db_;
     auto rx = std::make_unique<Receiver>(c);
     Observer o;

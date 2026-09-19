@@ -96,8 +96,9 @@ bool write(const std::string& base, const Meta& m, std::string* err) {
       << "    \"core:hw\": " << jstr(m.hw) << ",\n"
       << "    \"core:author\": " << jstr(m.author) << ",\n"
       << "    \"core:description\": " << jstr(m.description) << ",\n"
-      << "    \"core:recorder\": \"spear\",\n"
-      << "    \"spear:sidecar\": " << jstr(std::filesystem::path(sidecar_path(base)).filename().string()) << "\n"
+      << "    \"core:recorder\": \"spear\",\n";
+    if (m.lo_correction_ppm != 0) j << "    \"spear:lo_correction_ppm\": " << jnum(m.lo_correction_ppm) << ",\n";
+    j << "    \"spear:sidecar\": " << jstr(std::filesystem::path(sidecar_path(base)).filename().string()) << "\n"
       << "  },\n  \"captures\": [\n";
     for (std::size_t i = 0; i < m.captures.size(); ++i) {
         const auto& c = m.captures[i];

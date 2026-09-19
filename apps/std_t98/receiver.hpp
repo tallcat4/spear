@@ -37,7 +37,8 @@ struct ReceiverConfig {
     int    resamp2 = 10;             // 6250 → 62500
     double baud = 2400;
     double fsk_dev_hz = 315;         // 1 level あたり
-    double freq_err_hz = 0;          // 個体の周波数誤差(受信信号を -freq_err 回転して打ち消す)。site.conf の std_t98.freq_err_hz
+    double freq_err_hz = 0;          // 入力を -freq_err 回転する量: 帯域中心を DC へ戻す分 + そのファイル固有の残留誤差(golden / --freq-err)。
+                                     // 実機の個体誤差は Core の Radio が LO 側で打ち消す(radio.freq_err_ppm)ので App は足さない
     double squelch_db = -40;         // チャネル電力 [dB]、B210 gain 30 で -40 が目安
     double sync_ratio = 0.2;         // SSE 閾値 = 同期語エネルギー × ratio
     double sym_loop_bw = 0.06, sym_damping = 1.1, sym_ted_gain = 0.1, sym_max_dev = 0.02;   // GR symbol_sync_ff の引数そのまま(max_dev は samples/symbol)

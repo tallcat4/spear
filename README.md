@@ -123,7 +123,7 @@ ctest --test-dir build -j4                         # テスト(ハードウェ�
 scripts/install-desktop.sh                         # KDE Plasma のメニュー / タスクバー / デスクトップに登録(非キオスクの一時策)
 ```
 
-個体・現場固有の値(その B210 の LO 誤差など)は `~/spear/site.conf` に置き、コードには入れない。
+個体・現場固有の値(その B210 の LO 誤差 `radio.freq_err_ppm` など)は `~/spear/site.conf` に置き、コードには入れない。
 運転状態(ゲイン/AGC、各 App のスケルチ・MUTE・モード・表示レンジ…)は `~/spear/state.conf` に自動保存され、次回起動時に復元される。
 運用の詳細は [`docs/tools.md`](docs/tools.md)。
 

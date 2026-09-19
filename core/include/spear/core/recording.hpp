@@ -41,7 +41,8 @@ private:
 
 class SigmfRecorder final : public Sink {
 public:
-    SigmfRecorder(std::string base_path, const StreamMeta& sm, const RfConfig& cfg, EventBus* events);
+    // lo_correction_ppm: Source::lo_correction_ppm()(録音時に LO 側で打ち消した個体誤差。SigMF global に provenance として残す)
+    SigmfRecorder(std::string base_path, const StreamMeta& sm, const RfConfig& cfg, EventBus* events, double lo_correction_ppm = 0);
     ~SigmfRecorder() override;
     std::string name() const override { return "sigmf_recorder"; }
     void write(const Delivery& d) override;

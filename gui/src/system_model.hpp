@@ -52,6 +52,7 @@ class SystemModel : public QObject {
     Q_PROPERTY(double appliedFreq READ appliedFreq NOTIFY changed)
     Q_PROPERTY(int stateVersion READ stateVersion NOTIFY changed)
     Q_PROPERTY(double sampleRate READ sampleRate NOTIFY changed)
+    Q_PROPERTY(double loCorrectionPpm READ loCorrectionPpm NOTIFY changed)   // 個体の LO 誤差(Radio が LO 側で打ち消している値、ppm)
     Q_PROPERTY(double gain READ gain NOTIFY changed)
     Q_PROPERTY(bool agc READ agc NOTIFY changed)
     Q_PROPERTY(QString antenna READ antenna NOTIFY changed)
@@ -103,6 +104,7 @@ public:
     double centerFreq() const { return cfg_.center_freq; }          // Source::config()(宣言。retune で即時更新)
     double appliedFreq() const { return applied_freq_; }             // Retune event の実周波数(適用済み)
     double sampleRate() const { return cfg_.sample_rate; }
+    double loCorrectionPpm() const { return lo_corr_ppm_; }
     double gain() const { return cfg_.gain; }
     bool agc() const { return cfg_.agc; }
     QString antenna() const { return QString::fromStdString(cfg_.antenna); }
@@ -154,6 +156,7 @@ private:
     HealthSnapshot h_;
     QVariantList consumers_;
     double applied_freq_ = 0;   // Retune event(実際の周波数)
+    double lo_corr_ppm_ = 0;    // Source::lo_correction_ppm()
     uint64_t state_version_ = 0;
     EventListModel events_;
     int listener_ = 0;

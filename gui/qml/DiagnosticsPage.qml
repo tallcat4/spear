@@ -34,6 +34,7 @@ Item {
             KV { k: "GENERATION"; v: sys.generation.toString() }
             KV { k: "CENTER"; v: Theme.fmtFreq(sys.centerFreq) }
             KV { k: "RATE"; v: Theme.fmtRate(sys.sampleRate) }
+            KV { k: "LO CORR"; v: sys.loCorrectionPpm !== 0 ? (sys.loCorrectionPpm > 0 ? "+" : "") + sys.loCorrectionPpm.toFixed(2) + " ppm" : "none" }
             KV { k: "GAIN / ANT"; v: sys.gain.toFixed(1) + " dB / " + sys.antenna }
             Item { width: 1; height: 8 }
             KV { k: "LO"; v: sys.sensorsValid ? (sys.loLocked ? "LOCKED" : "UNLOCKED") : "n/a"; vc: !sys.sensorsValid ? Theme.textDim : (sys.loLocked ? Theme.green : Theme.red) }

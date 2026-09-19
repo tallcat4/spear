@@ -63,6 +63,16 @@ int main(int argc, char** argv) {
     cfg.agc         = flag(argc, argv, "--agc");
     cfg.antenna     = arg(argc, argv, "--ant", "RX2");
     const std::string record_dir = arg(argc, argv, "--record-dir", "recordings");
+    // --set key=value(複数可): 個体・現場固有の設定。spear.sh が ~/spear/site.conf から渡す。
+    // 装置の値(radio.freq_err_ppm)は Source の生成に要るのでここで読む。App 固有(<id>.<name>)と audio_device は App / シェルへ配る
+    QVariantMap settings;
+    settings["record_dir"] = QString::fromStdString(record_dir);
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::strcmp(argv[i], "--set") != 0) continue;
+        const QString kv = QString::fromUtf8(argv[++i]);
+        const qsizetype eq = kv.indexOf('=');
+        if (eq > 0) settings[kv.left(eq)] = kv.mid(eq + 1);
+    }
 
     Core core(".");
     std::unique_ptr<EventLogFile> evlog;
@@ -86,6 +96,7 @@ int main(int argc, char** argv) {
         B210SourceOptions opt;
         opt.radio.expected_serial = arg(argc, argv, "--serial", "");
         opt.radio.device_args = arg(argc, argv, "--args", "");
+        opt.radio.freq_err_ppm = settings.value("radio.freq_err_ppm", 0.0).toDouble();   // 個体の LO 誤差(site.conf)。Radio が LO 側で打ち消す
         src = std::make_unique<B210LiveSource>(&core.events(), opt);
     }
 #endif
@@ -108,18 +119,7 @@ int main(int argc, char** argv) {
     }
     core.source().configure(shell.draft());   // 起動時点の宣言を適用(App 起動前でも status bar に正しい RF を出す)
     core.source().warm_up();                  // 実機: 自己診断 → 装置待ち → FPGA ロード → tune 確認 → close(スプラッシュが経過を見せる)
-    QVariantMap settings;   // App 固有・個体固有の設定(--set)。操作音のデバイス名もここから
-    {
-        settings["record_dir"] = QString::fromStdString(record_dir);
-        // --set key=value(複数可): App 固有・個体固有の設定(例: std_t98.freq_err_hz=<Hz>)。spear.sh が site.conf から渡す
-        for (int i = 1; i + 1 < argc; ++i) {
-            if (std::strcmp(argv[i], "--set") != 0) continue;
-            const QString kv = QString::fromUtf8(argv[++i]);
-            const int eq = kv.indexOf('=');
-            if (eq > 0) settings[kv.left(eq)] = kv.mid(eq + 1);
-        }
-        for (const auto& app : shell.instances()) app->configure(settings);
-    }
+    for (const auto& app : shell.instances()) app->configure(settings);   // 保存値の復元より後(site.conf が勝つ)
     // GUI の音(操作音・起動音)。デバイスは App 音声と同じ audio_device 設定(--set audio_device=null で無音にできる)
     UiAudio ui_audio(&core.events(), settings.value("audio_device", "default").toString().toStdString());
     TapSound tap_sound(ui_audio);
@@ -141,7 +141,15 @@ int main(int argc, char** argv) {
         const int after = std::stoi(arg(argc, argv, "--after", "5"));
         const QString path = QString::fromUtf8(shot);
         const int start_app = std::stoi(arg(argc, argv, "--start-app", "-1"));
-        if (start_app >= 0) QTimer::singleShot(200, [&shell, start_app] { shell.startApp(start_app); });
+        // --start-app は立ち上げ(warm_up: 実機なら FPGA ロード〜tune 確認)が終わってから。--after はそれより長く取る
+        if (start_app >= 0) {
+            auto* t = new QTimer(&app);
+            QObject::connect(t, &QTimer::timeout, [&core, &shell, start_app, t] {
+                if (core.source().warming_up()) return;
+                t->stop(); shell.startApp(start_app);
+            });
+            t->start(200);
+        }
         if (flag(argc, argv, "--open-entry")) QTimer::singleShot(std::max(1000, after * 1000 - 1500), [&engine, argc, argv] {
             if (auto* win = engine.rootObjects().first()) {
                 if (const char* mhz = arg(argc, argv, "--entry-tune", nullptr)) {

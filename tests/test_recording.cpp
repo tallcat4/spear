@@ -207,3 +207,25 @@ TEST(Recording, ProvenanceCutAndReplayMatches) {
     ASSERT_TRUE(f);
     EXPECT_EQ(std::memcmp(cut.data(), original.data() + frame.begin, cut.size() * sizeof(sc16)), 0);
 }
+
+TEST(Recording, SigmfCarriesLoCorrectionProvenance) {
+    // 録音時に Radio が LO 側で打ち消した個体誤差は SigMF global に残す(読み戻しはしない。provenance のみ)
+    EventBus ev;
+    SyntheticSignal sig; sig.max_samples = 2048;
+    RfConfig cfg; cfg.sample_rate = 1e6; cfg.center_freq = 351.04375e6;
+    const auto base = tmp_base("locorr");
+    SyntheticSource src(&ev, sig, 2048);
+    ASSERT_TRUE(src.configure(cfg));
+    src.set_realtime(false);
+    {
+        SigmfRecorder rec(base, src.output().meta(), cfg, &ev, 2.93);
+        drain(src, [&](const Delivery& d) { rec.write(d); });
+        rec.close();
+    }
+    std::ifstream f(sigmf::meta_path(base));
+    std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    EXPECT_NE(s.find("\"spear:lo_correction_ppm\": 2.93"), std::string::npos);
+    EXPECT_NE(s.find("\"core:frequency\": 351043750"), std::string::npos);   // ラベルは真の周波数のまま
+    sigmf::Meta m;
+    ASSERT_TRUE(sigmf::read(base, m));   // 未知キーがあっても読める
+}

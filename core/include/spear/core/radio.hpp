@@ -9,6 +9,7 @@
 #pragma once
 
 #include "event.hpp"
+#include "lo_correction.hpp"
 #include "types.hpp"
 
 #include <memory>
@@ -35,6 +36,8 @@ struct RadioOptions {
     double      rate_tolerance_rel = 1e-6;
     double      freq_tolerance_hz  = 1.0;
     double      gain_tolerance_db  = 0.5;
+    // 個体の LO 誤差 [ppm](観測 − 真)。site.conf の radio.freq_err_ppm。tune 時に LO 側で打ち消す(lo_correction.hpp)
+    double      freq_err_ppm = 0;
 };
 
 // 起動時の最小自己診断 (§12.1) の結果。stage 0。
@@ -108,7 +111,8 @@ public:
     const RadioInfo& info() const { return info_; }
     const RadioOptions& options() const { return opt_; }
     double actual_rx_rate() const { return actual_rate_; }
-    double actual_rx_freq() const { return actual_freq_; }
+    double actual_rx_freq() const { return actual_freq_; }   // 真の周波数(LO 補正を戻した値)
+    LoCorrection lo_correction() const { return LoCorrection{opt_.freq_err_ppm}; }
 
 private:
     bool wait_sensor(const std::string& sensor, bool mboard, std::string* err);
