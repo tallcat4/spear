@@ -55,7 +55,8 @@ class SystemModel : public QObject {
     Q_PROPERTY(double loCorrectionPpm READ loCorrectionPpm NOTIFY changed)   // 個体の LO 誤差(Radio が LO 側で打ち消している値、ppm)
     Q_PROPERTY(double gain READ gain NOTIFY changed)
     Q_PROPERTY(bool agc READ agc NOTIFY changed)
-    Q_PROPERTY(QString antenna READ antenna NOTIFY changed)
+    Q_PROPERTY(QString port READ port NOTIFY changed)          // 受信端子(装置パネルの名前: TRXA / RXA / RXB / TRXB)
+    Q_PROPERTY(QString portUhd READ portUhd NOTIFY changed)    // その UHD 表現("A:A TX/RX")
     // ---- センサ ----
     Q_PROPERTY(bool sensorsValid READ sensorsValid NOTIFY changed)
     Q_PROPERTY(bool loLocked READ loLocked NOTIFY changed)
@@ -107,7 +108,8 @@ public:
     double loCorrectionPpm() const { return lo_corr_ppm_; }
     double gain() const { return cfg_.gain; }
     bool agc() const { return cfg_.agc; }
-    QString antenna() const { return QString::fromStdString(cfg_.antenna); }
+    QString port() const { return QString::fromUtf8(rf_port_name(cfg_.port).data(), static_cast<qsizetype>(rf_port_name(cfg_.port).size())); }
+    QString portUhd() const { const auto& i = rf_port_info(cfg_.port); return QString::fromUtf8(i.subdev.data(), static_cast<qsizetype>(i.subdev.size())) + " " + QString::fromUtf8(i.uhd_antenna.data(), static_cast<qsizetype>(i.uhd_antenna.size())); }
     bool sensorsValid() const { return ds_.sensors.valid; }
     bool loLocked() const { return ds_.sensors.lo_locked; }
     double rxTemp() const { return ds_.sensors.rx_temp_c; }

@@ -9,6 +9,8 @@
 #include <string>
 #include <string_view>
 
+#include "spear/core/rf_port.hpp"
+
 namespace spear {
 
 // ---- サンプル型 ------------------------------------------------------------
@@ -181,7 +183,7 @@ struct RfConfig {
     double      bandwidth   = 0.0;   // 0 = sample_rate 準拠
     double      gain        = 30.0;  // dB(agc のときは AGC を切ったときに戻る値)
     bool        agc         = false; // 受信 AGC(AD9361)。true なら gain は装置が決める
-    std::string antenna     = "RX2";
+    RfPort      port        = RfPort::RxA;   // 装置パネルの端子(§8.1 の antenna)。UHD の frontend/antenna への分解は Radio(rf_port.hpp)
     std::string clock_source = "internal";
 };
 

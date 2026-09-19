@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
     cfg.center_freq = std::stod(arg(argc, argv, "--freq", "100e6"));
     cfg.gain        = std::stod(arg(argc, argv, "--gain", "30"));
     cfg.agc         = flag(argc, argv, "--agc");
-    cfg.antenna     = arg(argc, argv, "--ant", "RX2");
+    if (!parse_rf_port(arg(argc, argv, "--port", "RXA"), &cfg.port)) { std::fprintf(stderr, "unknown --port (TRXA / RXA / RXB / TRXB)\n"); return 1; }
     const std::string record_dir = arg(argc, argv, "--record-dir", "recordings");
     // --set key=value(複数可): 個体・現場固有の設定。spear.sh が ~/spear/site.conf から渡す。
     // 装置の値(radio.freq_err_ppm)は Source の生成に要るのでここで読む。App 固有(<id>.<name>)と audio_device は App / シェルへ配る
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
         QString err;
         if (!store.load(&err)) std::fprintf(stderr, "state: %s\n", qPrintable(err));
         // シェルの草案: ゲイン/AGC はどの Source でも(setDraftGain は AGC を切るので AGC を後に復元)。周波数/レートは録音再生では録音条件が真値なので残さない
-        QStringList shell_props = {"draftGain", "draftAgc"};
+        QStringList shell_props = {"draftGain", "draftAgc", "draftPort"};
         if (source.rfind("file:", 0) != 0) shell_props << "draftFreq" << "draftRate";
         store.bind(&shell, "shell", shell_props);
         for (const auto& app : shell.instances()) store.bind(app.get(), app->appId(), app->persistedProperties());

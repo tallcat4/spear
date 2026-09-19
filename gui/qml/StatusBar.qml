@@ -38,6 +38,7 @@ Rectangle {
         Cell { text: Theme.fmtFreq(sys.centerFreq); bright: true }
         Cell { text: Theme.fmtRate(sys.sampleRate) }
         Cell { text: sys.agc ? "AGC" : "G" + sys.gain.toFixed(0) }
+        Cell { text: sys.port }   // 受信端子。運転中にどの端子で受けているかを常時見せる(端子の LED と一致するはず)
         Sep {}
         Cell { text: "OVF " + sys.overflowCount; warn: sys.overflowCount > 0 }
         Cell { text: "OOS " + sys.oosCount; warn: sys.oosCount > 0 }

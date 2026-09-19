@@ -10,7 +10,7 @@
 
 ## 構成
 ```
-┌ StatusBar (44 px): [STATE] serial gen | freq rate gain | OVF OOS TMO DISC | LO temp | CPU temp AC disk | app  clock ┐
+┌ StatusBar (44 px): [STATE] serial gen | freq rate gain port | OVF OOS TMO DISC | LO temp | CPU temp AC disk | app  clock ┐
 │ Page: MenuPage / SpectrumPage / DiagnosticsPage                                                                 │
 └ SoftKeyBar (76 px): 8 個のソフトキー(文脈依存)                                                                   ┘
 ```
@@ -30,7 +30,7 @@
   スクロール(memmove もフル再アップロードも無し, §9.4)。
 * `SystemModel`: DeviceState / evidence / センサ / rx 統計 / consumer 統計 / host / event log を 250 ms で QML へ。
 * `Shell`: App 一覧・選択・実行・戻る。`Core::run_app` は装置適用を待つので worker thread で呼ぶ。
-  RF の草案は GAIN(AGC 可)だけをメニューで編集し、center / rate は各 App が決める(汎用 App は FREQ / RATE キー、
+  RF の草案は GAIN(AGC 可)と RX PORT(受信端子 TRXA / RXA / RXB / TRXB、`ChoiceEntry` で選ぶ)だけをメニューで編集し、center / rate は各 App が決める(汎用 App は FREQ / RATE キー、
   rate 変更は `Shell::restartActiveWithRate()` で App を再起動)。App 停止時に草案は Core の実 RF に追従する。
 * `TraceSource` / `EyeDiagramItem`: App の DSP が切り出した固定長トレース(アイパターン)を任意スレッドから push、
   `DrawLines` で重ね描き(古いトレースは薄く、直近は明るく)。目盛・判定点は `EyeDiagram.qml`。
@@ -39,7 +39,7 @@
 * DIAG のイベント行は 1 行固定(複数行の detail は ` | ` で畳む)。
 
 ## 検証
-`spear-gui --screenshot out.png --after N [--start-app I] [--diag] [--open-entry] [--app-action key] [--restart-rate R] [--agc]`
+`spear-gui --screenshot out.png --after N [--start-app I] [--diag] [--open-entry] [--invoke openPortEntry] [--app-action key] [--restart-rate R] [--agc] [--port TRXA]`
 で実画面をキャプチャして目視確認する(`--source file:<base>` で録音を流せば実信号の画面が撮れる)。
 
 | | |
@@ -57,14 +57,18 @@ OS やデスクトップの仮想キーボードは信用しない。すべて�
 | `KeyButton` | フラットなキー。押下で反転、長押しリピート。受け付けた入力は `fire()`(タップ音 → `pressed()`)を必ず通る |
 | `Keypad` | キー配列を model(`[{label, action, span, sublabel, enabled, active, repeat}]`)で与える汎用グリッド。テンキー・単位キー・将来の英数キーボードの土台 |
 | `NumericEntry` | モーダルの数値入力。計測器の文法(数字 → 単位キーで確定)、範囲検証(閉じずに赤で理由) |
+| `ChoiceEntry` | モーダルの選択入力(少数の選択肢を大きなキーで並べ、現在値は反転。押した瞬間に確定。拒否が無いので拒否音も無い)。受信端子の選択 |
 | `ValueField` | タップで入力を開く読み出し欄(編集可能の目印付き) |
 | `StepKeys` | −/+ ステップ(長押しリピート) |
 | `Feedback` | 操作音の入口(singleton、信号だけ)。自前の MouseArea でアクションを起こす所は `Feedback.tap()`、拒否は `Feedback.reject()`。シェルの `Main.qml` が C++ の `TapSound` につなぐ(出力は `UiAudio`: core の `AudioSink` を 1 つ、ALSA/PipeWire、Qt Multimedia 不使用)。接続が無ければ無音 |
 
 使い方: `NumericEntry { id: e; title; minimum; maximum; units: [{label, factor}]; displayFactor; displayUnit; onAccepted: (v) => ... }` → `e.open(current)`。
 Main.qml の `askFreq / askRate / askGain / askRef` が典型例。入力中もステータスバーは見える。
+選択は `ChoiceEntry { id: c; title; choices: [{label, sublabel, value}]; onAccepted: (v) => ... }` → `c.open(current)`(`askPort`)。
 
-![entry](numeric_entry.png)
+| | |
+|---|---|
+| ![entry](numeric_entry.png) | ![choice](choice_entry.png) |
 
 ## 検証メモ
 この開発機では Qt のログ(QML の警告・console.log)が journald へ行く。`QT_FORCE_STDERR_LOGGING=1` を付けて実行すること。

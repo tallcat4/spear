@@ -22,8 +22,8 @@
 | `core/` その他 | `EventBus`(履歴、dispatch thread)、`TAP()`、`HealthMonitor`、`EventLogFile`、`AudioSink`(ALSA/PipeWire) | gtest、実機 |
 | `dsp/` 共通 | `design_lowpass`、`FirDecimator` / `FirInterpolator`(ベクトル化カーネル)、`PfbChannelizer`、`SpectrumEstimator`、`stage.hpp`(StageInfo / Provenance)、FFTW プランナ mutex | gtest(参照ベクトル) |
 | `appfw/` App SDK | `GuiApp`(on_start/on_stop は GUI thread 保証、`configure(QVariantMap)`、`persist({...})`)、`SettingsStore`(運転状態の復元・自動保存 `~/spear/state.conf`)、ビルド時レジストリ、`ViewProcessor/ViewSource`(任意の複素 stream → spectrum/waterfall、手動レンジは再起動をまたぐ)、`TraceSource` + `EyeDiagramItem`、`SpectrumItem` / `WaterfallItem`(自前 QRhiTexture リング) | `apps/tests/test_apps.cpp`(全 App のライフサイクル)、`test_settings.cpp`(往復・全 App の宣言解決) |
-| `widgets/ input/ theme/` | `SpectrumView`(markers / compact)、`EyeDiagram`、`Readout`、`LevelMeter`、`Spear.Input`(KeyButton / Keypad / StepKeys / ValueField / NumericEntry / Feedback(操作音の入口)、タッチ専用)、`Theme` | スクリーンショットで目視(`docs/gui/*.png`) |
-| `gui/` シェル | スプラッシュ(起動時の立ち上げ: 自己診断 → 装置待ち → FPGA ロード(進捗)→ tune 確認。完了まで App を始めない)/ メニュー(GAIN のみ、center/rate は App が決める)/ ステータスバー / ソフトキー / DIAGNOSTICS / 数値入力モーダル / 操作音(`TapSound`: タップ音・拒否音)/ 起動音(`BootSound`、鳴り終わるまでスプラッシュに留まる)、`--set key=value`、`--screenshot` 検証ハーネス | 実機・合成。FPGA 進捗バーは未構成からの起動でまだ未確認 |
+| `widgets/ input/ theme/` | `SpectrumView`(markers / compact)、`EyeDiagram`、`Readout`、`LevelMeter`、`Spear.Input`(KeyButton / Keypad / StepKeys / ValueField / NumericEntry / ChoiceEntry / Feedback(操作音の入口)、タッチ専用)、`Theme` | スクリーンショットで目視(`docs/gui/*.png`) |
+| `gui/` シェル | スプラッシュ(起動時の立ち上げ: 自己診断 → 装置待ち → FPGA ロード(進捗)→ tune 確認。完了まで App を始めない)/ メニュー(装置共通の GAIN と RX PORT(受信端子 TRXA / RXA / RXB / TRXB)、center/rate は App が決める)/ ステータスバー(端子も常時表示)/ ソフトキー / DIAGNOSTICS / 数値入力・選択モーダル / 操作音(`TapSound`: タップ音・拒否音)/ 起動音(`BootSound`、鳴り終わるまでスプラッシュに留まる)、`--set key=value`、`--screenshot` 検証ハーネス | 実機・合成。FPGA 進捗バーは未構成からの起動でまだ未確認 |
 | `apps/spectrum` | 汎用。FREQ / RATE(再起動)/ REF / AVG / HOLD | off-air 確認済み |
 | `apps/recorder` | Lossless 録音、sidecar、録音中は FREQ 無効 | gtest(drop 0)、実機 |
 | `apps/demod` | NFM/WFM/AM、LO を RX から 250 kHz 離す、channel IQ と audio を Stream Bus に publish | 合成 FM トーン gtest、off-air FM |
@@ -39,7 +39,7 @@
 3. **STD-T98 の実機での引き込み**: `max_deviation` の単位バグ修正後、毎回の送信で即ロックすることを継続確認。
    もし再発したら FRAME LOG と SPS(26.02〜26.06 のはず)を記録。
 4. **IQ RECORDER**: 録音一覧 / 再生元選択(`Spear.Input` に ListPicker が要る)、ディスク残量による自動停止。
-5. **Source API**: 運転中の gain / bandwidth / antenna 変更(現状は `retune` のみ、rate 変更は App 再起動)。
+5. **Source API**: 運転中の gain / bandwidth / 受信端子の変更(現状は `retune` のみ。gain / 端子はメニューで決めて App 起動時に適用、rate 変更は App 再起動)。
 6. **性能の余裕**: STD-T98 は 4 Msps で DSP thread 約 25–30 %(1 コア)。B210 の FPGA ロードが USB 2.0 で約 70 s。
    FZ-G2 は熱スロットリングが頻発する(79 °C)— 損失には直結しないことを M-1 で確認済みだが、DSP 負荷表示を見る。
 7. **要件との差分**(要件書は書き換えない):
@@ -47,6 +47,7 @@
      「最後に Core が運転していた RF」に追従し、汎用 App の初期値にだけ使う。
    - `RecordingSource` は `configure/retune` で録音条件を変えない(要求は Warning で無視)。
    - M3 の順序: ADS-B を飛ばして STD-T98 を先行。
+   - §8.1 の宣言項目 `antenna` は `RfConfig::port`(装置パネルの端子名)。UHD の frontend(subdev)と antenna への分解は Radio だけが行う。
 
 ## 決定の記録(理由つき、覆すなら理由を書く)
 - **libuhd を改造**(0001: USB 消失時に deleter から throw しない、0002: b2xx probe + fx3_state 公開)。upstream PR は出さない。
@@ -81,6 +82,15 @@
   `RfConfig` / `config()` / event / `StreamMeta` / SigMF はすべて真の周波数のまま、全 App が無変更で正しくなる。ソフト回転(Source 内 / 共通 reader)は
   採らない(CPU、sc16 の再量子化、録音が生でなくなる)。補正前に録った録音の読み替えはしない(撮り直す)。サンプルレートの ppm 誤差(4 Msps で約 12 Hz)は
   補正できずシンボル同期が吸収する。録音の SigMF global に `spear:lo_correction_ppm` を provenance として残す。
+- **受信端子(RX PORT)は装置共通の設定としてメニューに置き、GAIN と同じ形で App 起動時に適用する**(2026-09-19、`core/include/spear/core/rf_port.hpp`)。
+  B210 の 4 端子(TRXA / RXA / RXB / TRXB)は UHD では frontend(subdev spec `A:A` / `A:B`)× antenna(`TX/RX` / `RX2`)の 2 段で指定するが、
+  Spear の外(`RfConfig::port` / 保存 `shell.draftPort` / GUI / SigMF `spear:rx_port`)は装置パネルの名前 1 つで扱い、分解は `Radio::tune_rx` だけが表を見て行う。
+  subdev spec は tune の最初の装置呼び出し(能力照合もセンサも channel 0 → spec 経由で解決される)。frontend の存在は tree で先に確かめる —
+  libuhd の `coerce_subdev_spec` は B200 / B20xmini で `B` を黙って `A` に書き換えるので、例外待ちだと RXB が RXA になる(黙って丸めない)。
+  既定は UHD の既定と同じ RXA。運転中の変更 API は作らない(メニューは App 停止中にしか見えない。GAIN と同じ)。
+  実機確認(2026-09-19、5IWG5D5): 4 端子とも stage 4 で `port=… lo_locked`、12 s ストリームで Lossless drop 0(`spear-headless --port`)。GUI でも
+  warm-up の tune check と App 起動が選んだ端子で通る(`--port TRXB` / `RXB` で SPECTRUM 運転、ステータスバーに端子名)。端子 LED による対応の目視確認は
+  App 運転中に行う(起動時には点かない)。
 - **AMBE は mbelib-neo の AMBE 経路だけを C++ で書き直し**(IMBE / SIMD / pffft なし)。pyambelib と PCM が ±1 LSB で一致。
 - **ライセンスは GPL-3.0 で公開**(2026-09-17)。GPL-2.0-or-later 由来コードの結合は問題ない。
 - **STD-T98 の LO は帯域中心 − 250 kHz**(ゼロ IF の DC スパイクを ch16 に重ねない)。回転量は Core の実 LO から導くので
@@ -99,6 +109,9 @@
   `radio.freq_err_ppm` に置くと Radio が LO 側で打ち消す。値の求め方: 補正なし(未設定)で STD-T98 を動かし、開いているチャネルの
   「FREQ ERR」[Hz] ÷ LO [MHz] = ppm(符号そのまま。例 +1030 Hz / 351.04 MHz = +2.93)。設定後は FREQ ERR がほぼ 0 になる。
   DIAGNOSTICS の「LO CORR」と warm-up の tune check 行に適用中の値が出る。
+- 受信端子と UHD の対応(`rf_port.hpp` が唯一の真値): TRXA = `A:A` `TX/RX`、RXA = `A:A` `RX2`、RXB = `A:B` `RX2`、TRXB = `A:B` `TX/RX`。
+  選んだ端子の LED は **App 運転中(rx streamer が生きている間)だけ**点く(ATR が streamer の有無で RX 状態を決める)。起動時の warm-up の tune check
+  (open → tune → close)では点かない。対応を目で確かめるには App を起動して LED を見る。B200 系(frontend A のみ)で RXB / TRXB を選ぶと stage 4 FAULT。
 - Qt のログは journald に行く → `QT_FORCE_STDERR_LOGGING=1`。
 - 記録・ログ・golden・音声は `~/spear/`(`recordings / logs / golden / audio / site.conf`)。個体固有の値・録音・
   音声由来の golden(`golden/std_t98/ch3_pich.*`, `ambe_golden.txt`, `ch3_payloads.txt`, `secret_golden.txt`)はリポジトリに入れない(golden テストは無ければ skip)。

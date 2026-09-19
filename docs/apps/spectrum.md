@@ -9,7 +9,7 @@
 * ページへの `app / ui` 注入(`Loader.setSource` の required property)
 
 **残った課題**
-* 周波数以外(gain / bandwidth / antenna)の運転中変更 API が無い(Source::retune のみ)
+* 周波数以外(gain / bandwidth / 受信端子)の運転中変更 API が無い(Source::retune のみ。gain / 端子はメニューで決めて App 起動時に適用)
 
 **Off-air 検証(2026-09-17)**
 center 422.000 MHz、特定小電力トランシーバー(422.200 MHz)を送信 → +200 kHz に正しくピーク。

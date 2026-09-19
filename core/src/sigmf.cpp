@@ -98,6 +98,7 @@ bool write(const std::string& base, const Meta& m, std::string* err) {
       << "    \"core:description\": " << jstr(m.description) << ",\n"
       << "    \"core:recorder\": \"spear\",\n";
     if (m.lo_correction_ppm != 0) j << "    \"spear:lo_correction_ppm\": " << jnum(m.lo_correction_ppm) << ",\n";
+    if (!m.rx_port.empty()) j << "    \"spear:rx_port\": " << jstr(m.rx_port) << ",\n";
     j << "    \"spear:sidecar\": " << jstr(std::filesystem::path(sidecar_path(base)).filename().string()) << "\n"
       << "  },\n  \"captures\": [\n";
     for (std::size_t i = 0; i < m.captures.size(); ++i) {

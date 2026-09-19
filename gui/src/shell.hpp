@@ -33,6 +33,7 @@ class Shell : public QObject {
     Q_PROPERTY(double draftRate READ draftRate WRITE setDraftRate NOTIFY draftChanged)
     Q_PROPERTY(double draftGain READ draftGain WRITE setDraftGain NOTIFY draftChanged)
     Q_PROPERTY(bool draftAgc READ draftAgc WRITE setDraftAgc NOTIFY draftChanged)
+    Q_PROPERTY(QString draftPort READ draftPort WRITE setDraftPort NOTIFY draftChanged)   // 受信端子(TRXA / RXA / RXB / TRXB)。GAIN と同じ装置共通の設定
 public:
     Shell(Core& core, RfConfig draft, QObject* parent = nullptr);
     ~Shell() override;
@@ -54,6 +55,9 @@ public:
     void setDraftGain(double v) { draft_.gain = v; draft_.agc = false; Q_EMIT draftChanged(); }   // 数値を入れたら AGC は切れる
     bool draftAgc() const { return draft_.agc; }
     void setDraftAgc(bool on) { draft_.agc = on; Q_EMIT draftChanged(); }
+    QString draftPort() const { const auto n = rf_port_name(draft_.port); return QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())); }
+    // 未知の名前(古い state.conf 等)は黙って無視する(既定に落とさない、emit もしない)
+    void setDraftPort(const QString& name) { RfPort p; if (!parse_rf_port(name.toStdString(), &p)) return; draft_.port = p; Q_EMIT draftChanged(); }
     const RfConfig& draft() const { return draft_; }   // 復元後の草案を起動時の宣言に使う(main)
 
     Q_INVOKABLE void startApp(int index);   // 非同期。結果は activeChanged

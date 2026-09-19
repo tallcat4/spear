@@ -212,7 +212,7 @@ TEST(Recording, SigmfCarriesLoCorrectionProvenance) {
     // 録音時に Radio が LO 側で打ち消した個体誤差は SigMF global に残す(読み戻しはしない。provenance のみ)
     EventBus ev;
     SyntheticSignal sig; sig.max_samples = 2048;
-    RfConfig cfg; cfg.sample_rate = 1e6; cfg.center_freq = 351.04375e6;
+    RfConfig cfg; cfg.sample_rate = 1e6; cfg.center_freq = 351.04375e6; cfg.port = RfPort::TrxA;
     const auto base = tmp_base("locorr");
     SyntheticSource src(&ev, sig, 2048);
     ASSERT_TRUE(src.configure(cfg));
@@ -226,6 +226,7 @@ TEST(Recording, SigmfCarriesLoCorrectionProvenance) {
     std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     EXPECT_NE(s.find("\"spear:lo_correction_ppm\": 2.93"), std::string::npos);
     EXPECT_NE(s.find("\"core:frequency\": 351043750"), std::string::npos);   // ラベルは真の周波数のまま
+    EXPECT_NE(s.find("\"spear:rx_port\": \"TRXA\""), std::string::npos);        // 受信に使った端子も provenance
     sigmf::Meta m;
     ASSERT_TRUE(sigmf::read(base, m));   // 未知キーがあっても読める
 }

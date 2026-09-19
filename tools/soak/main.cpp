@@ -58,14 +58,14 @@ int main(int argc, char** argv) {
     if (flag(argc, argv, "--help")) {
         std::puts("spear-soak [--rate 10e6] [--freq 100e6] [--gain 30] [--minutes 30] [--out soak.csv]\n"
                   "           [--serial S] [--args 'num_recv_frames=128'] [--block 16384] [--mlock] [--no-rt]\n"
-                  "           [--ant RX2] [--bw 0] [--event-log path.jsonl]");
+                  "           [--port RXA|TRXA|RXB|TRXB] [--bw 0] [--event-log path.jsonl]");
         return 0;
     }
     RfConfig cfg;
     cfg.sample_rate = std::stod(arg(argc, argv, "--rate", "10e6"));
     cfg.center_freq = std::stod(arg(argc, argv, "--freq", "100e6"));
     cfg.gain        = std::stod(arg(argc, argv, "--gain", "30"));
-    cfg.antenna     = arg(argc, argv, "--ant", "RX2");
+    if (!parse_rf_port(arg(argc, argv, "--port", "RXA"), &cfg.port)) { std::fprintf(stderr, "unknown --port (TRXA / RXA / RXB / TRXB)\n"); return 1; }
     cfg.bandwidth   = std::stod(arg(argc, argv, "--bw", "0"));
     const double minutes = std::stod(arg(argc, argv, "--minutes", "30"));
     const std::string out = arg(argc, argv, "--out", "soak.csv");

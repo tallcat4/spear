@@ -35,7 +35,7 @@ Item {
             KV { k: "CENTER"; v: Theme.fmtFreq(sys.centerFreq) }
             KV { k: "RATE"; v: Theme.fmtRate(sys.sampleRate) }
             KV { k: "LO CORR"; v: sys.loCorrectionPpm !== 0 ? (sys.loCorrectionPpm > 0 ? "+" : "") + sys.loCorrectionPpm.toFixed(2) + " ppm" : "none" }
-            KV { k: "GAIN / ANT"; v: sys.gain.toFixed(1) + " dB / " + sys.antenna }
+            KV { k: "GAIN / PORT"; v: sys.gain.toFixed(1) + " dB / " + sys.port + " (" + sys.portUhd + ")" }
             Item { width: 1; height: 8 }
             KV { k: "LO"; v: sys.sensorsValid ? (sys.loLocked ? "LOCKED" : "UNLOCKED") : "n/a"; vc: !sys.sensorsValid ? Theme.textDim : (sys.loLocked ? Theme.green : Theme.red) }
             KV { k: "AD9361 TEMP"; v: sys.sensorsValid ? sys.rxTemp.toFixed(1) + " °C" : "n/a" }

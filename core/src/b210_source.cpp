@@ -107,10 +107,10 @@ void B210LiveSource::warm_run() {
     const auto& info = radio_.info();
     report("open ok: " + info.product + " serial=" + info.serial + "  fw=" + info.fw_version + "  fpga=" + info.fpga_version + "  USB " + std::to_string(info.usb_version));
     // tune 確認(LO ロック)。運転の RF は App が決めるので、ここは草案での動作確認だけ
-    char buf[128];
+    char buf[160];
     const LoCorrection corr = radio_.lo_correction();
-    std::snprintf(buf, sizeof buf, "tune check: %.6f MHz @ %.3f Msps gain %.1f dB (LO corr %+.2f ppm = %+.0f Hz)", cfg.center_freq / 1e6, cfg.sample_rate / 1e6, cfg.gain,
-                  corr.ppm, corr.error_hz(cfg.center_freq));
+    std::snprintf(buf, sizeof buf, "tune check: %.6f MHz @ %.3f Msps gain %.1f dB port %s (LO corr %+.2f ppm = %+.0f Hz)", cfg.center_freq / 1e6, cfg.sample_rate / 1e6, cfg.gain,
+                  std::string(rf_port_name(cfg.port)).c_str(), corr.ppm, corr.error_hz(cfg.center_freq));
     if (!radio_.tune_rx(cfg, &err)) report(std::string(buf) + " FAILED: " + err);
     else report(std::string(buf) + " lo_locked");
     radio_.close();

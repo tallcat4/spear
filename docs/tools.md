@@ -15,7 +15,7 @@
 (`radio.*` は Core、`<id>.*` は各 App)。
 運転状態(メニューのゲイン/AGC、各 App のスケルチ・MUTE・モード・REF/AVG・選択チャネル、汎用 App の周波数/レート)は `~/spear/state.conf` に
 自動保存され(変更の 0.5 s 後、原子的に書き換え)、次回起動で復元される。site.conf の値が優先。初期化したければファイルを消す。
-RF の center / rate は各 App が決める(汎用 App は FREQ / RATE キーを持つ)。メニューで決めるのは GAIN(AGC 可)だけ(右のゲイン欄をタップ。ソフトキーは EXIT のみ)。
+RF の center / rate は各 App が決める(汎用 App は FREQ / RATE キーを持つ)。メニューで決めるのは装置共通の GAIN(AGC 可)と RX PORT(受信端子)だけ(右の欄をタップ。ソフトキーは EXIT のみ)。
 `spear-gui` 単体の既定も実機(`--source b210`)。合成データは明示指定のときだけ。
 操作はタッチのみ(FZ-G2 タブレットモード専用。キーボード・マウスは考慮しない)。画面下のソフトキーと読み出し欄のタップ。
 `--screenshot out.png --after 10 --start-app 0` で実画面をキャプチャ(検証用。`--invoke openExitDialog` 等で Main.qml の関数も呼べる)。設計は `docs/gui/DESIGN.md`。
@@ -57,7 +57,7 @@ overflow(host 読み遅れ)と out_of_sequence(USB パケット欠落)は区別�
 
 ## Stream Bus のヘッドレス確認(`spear-headless`、要件 §14 M0)
 ```
-./build/tools/spear-headless --source synthetic --seconds 20 --record rec1
+./build/tools/spear-headless --source synthetic --seconds 20 --record rec1      # 実機は --source b210 [--port TRXA|RXA|RXB|TRXB](受信端子。既定 RXA)
 ./build/tools/spear-headless --source file:rec1 --seconds 10     # 同じ App に録音を流す
 ./build/tools/spear-headless --source b210 --rate 4e6 --freq 100e6 --record rec2
 ```

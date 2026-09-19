@@ -423,7 +423,24 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
     if (!usrp_) { if (err) *err = "not open"; return false; }
     std::string e;
     const LoCorrection corr = lo_correction();   // 個体の LO 誤差: 要求は装置の目盛りへ、読み値は真の周波数へ
+    const RfPortInfo& port = rf_port_info(cfg.port);
     try {
+        // ---- 端子 → frontend(subdev spec)。以下の get_rx_*(能力照合・センサ)はすべて channel 0 → subdev spec 経由で frontend に
+        // 解決されるので、最初の装置呼び出しでなければならない。既定の spec は B210 で "A:A A:B"(2 ch)なので毎回明示する。
+        // frontend の存在は先に tree で確かめる: libuhd の b200 coerce_subdev_spec は B200/B20xmini で B を黙って A に書き換えるため、
+        // 例外待ちでは RXB が RXA になってしまう(黙って丸めない)----
+        {
+            const auto fes = usrp_->get_tree()->list("/mboards/0/dboards/A/rx_frontends");
+            if (std::find(fes.begin(), fes.end(), std::string(port.frontend)) == fes.end()) {
+                std::string list;
+                for (const auto& f : fes) list += (list.empty() ? "" : ",") + f;
+                throw uhd::value_error("port " + std::string(port.name) + " needs frontend " + std::string(port.frontend) + "; device has {" + list + "}");
+            }
+            usrp_->set_rx_subdev_spec(uhd::usrp::subdev_spec_t(std::string(port.subdev)));
+            const std::string got = usrp_->get_rx_subdev_spec().to_string();
+            if (got != std::string(port.subdev))
+                throw uhd::value_error("subdev spec coerced: requested " + std::string(port.subdev) + ", actual " + got);
+        }
         // ---- 宣言 (§8.1) を装置の能力範囲と照合。範囲外は「適用不能」として失敗させる(黙って丸めない)----
         {
             const auto fr = usrp_->get_rx_freq_range();
@@ -443,10 +460,10 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
                 std::snprintf(rb, sizeof rb, "sample_rate %.6g outside [%.6g, %.6g]", cfg.sample_rate, rr.start(), rr.stop());
                 throw uhd::value_error(rb);
             }
-            if (!cfg.antenna.empty() && std::find(ants.begin(), ants.end(), cfg.antenna) == ants.end()) {
+            if (std::find(ants.begin(), ants.end(), std::string(port.uhd_antenna)) == ants.end()) {
                 std::string list;
                 for (const auto& a : ants) list += (list.empty() ? "" : ",") + a;
-                throw uhd::value_error("antenna " + cfg.antenna + " not in {" + list + "}");
+                throw uhd::value_error("port " + std::string(port.name) + ": antenna " + std::string(port.uhd_antenna) + " not in {" + list + "}");
             }
         }
         usrp_->set_rx_rate(cfg.sample_rate);
@@ -456,7 +473,7 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
         usrp_->set_rx_gain(cfg.gain);
         usrp_->set_rx_agc(cfg.agc);   // AD9361 の AGC。ON なら gain は装置が決める(以後 get_rx_gain は実測値)
         const double actual_gain = usrp_->get_rx_gain();
-        if (!cfg.antenna.empty()) usrp_->set_rx_antenna(cfg.antenna);
+        usrp_->set_rx_antenna(std::string(port.uhd_antenna));
         usrp_->set_rx_bandwidth(cfg.bandwidth > 0 ? cfg.bandwidth : cfg.sample_rate);
         const double actual_bw = usrp_->get_rx_bandwidth();
         // ---- coercion 検出: 要求と実際の差が許容を超えたら失敗(provenance の前提が崩れる)----
@@ -486,10 +503,11 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
             if (err) *err = e;
             return false;
         }
-        char buf[200];
-        std::snprintf(buf, sizeof buf, "rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f corr=%+.2fppm/%+.0fHz) gain=%.1f%s ant=%s lo_locked",
+        char buf[240];
+        std::snprintf(buf, sizeof buf, "rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f corr=%+.2fppm/%+.0fHz) gain=%.1f%s port=%s (%s %s) lo_locked",
                       actual_rate_, usrp_->get_master_clock_rate(), actual_freq_ / 1e6, res.actual_rf_freq / 1e6,
-                      res.actual_dsp_freq, corr.ppm, corr.error_hz(cfg.center_freq), usrp_->get_rx_gain(), cfg.agc ? " (AGC)" : "", usrp_->get_rx_antenna().c_str());
+                      res.actual_dsp_freq, corr.ppm, corr.error_hz(cfg.center_freq), usrp_->get_rx_gain(), cfg.agc ? " (AGC)" : "",
+                      std::string(port.name).c_str(), usrp_->get_rx_subdev_spec().to_string().c_str(), usrp_->get_rx_antenna().c_str());
         stage(4, buf, true);
         set_state(DeviceState::Ready, std::string("sensors: lo_locked=true; ") + buf, 4);
         return true;

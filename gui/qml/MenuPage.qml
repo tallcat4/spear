@@ -8,6 +8,7 @@ Item {
     id: page
     signal selected(int index)
     signal askGain()
+    signal askPort()
 
     // ---- 左: App 一覧 ----
     Column {
@@ -70,7 +71,7 @@ Item {
             Readout { label: "STAGE"; value: sys.stage + " / 6"; width: 220 }
             Readout { label: "GENERATION"; value: sys.generation.toString(); width: 220 }
         }
-        // CENTER / RATE は各 App が決めるのでここには置かない(誤設定で App が動かなくなる)。GAIN だけは装置の共通設定
+        // CENTER / RATE は各 App が決めるのでここには置かない(誤設定で App が動かなくなる)。GAIN と RX PORT(受信端子)が装置の共通設定
         Text { text: "RF  (center / rate are set by each application)"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsBase; topPadding: 12 }
         Grid {
             columns: 2; columnSpacing: Theme.pad; rowSpacing: Theme.pad
@@ -90,9 +91,11 @@ Item {
                     }
                 }
             }
-            ValueField { label: "SOURCE"; value: sys.sourceName; width: 220; editable: false; valueColor: Theme.text }
-            Readout { label: "LAST CENTER"; value: Theme.fmtFreq(shell.draftFreq); width: 300 }
+            // 受信端子。選ぶと App 起動時に適用され、運転中はその端子の LED が点く
+            ValueField { label: "RX PORT"; value: shell.draftPort; width: 220; onActivated: page.askPort() }
+            ValueField { label: "SOURCE"; value: sys.sourceName; width: 300; editable: false; valueColor: Theme.text }
             Readout { label: "LAST RATE"; value: Theme.fmtRate(shell.draftRate); width: 220 }
+            Readout { label: "LAST CENTER"; value: Theme.fmtFreq(shell.draftFreq); width: 300 }
         }
     }
 }

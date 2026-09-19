@@ -39,7 +39,16 @@ Window {
         function askRate(current, cb) { win.askRate(current, cb) }
         function askGain(current, cb) { win.askGain(current, cb) }
         function askRef(current, cb) { win.askRef(current, cb) }
-        function askOffset(current, cb) { win.askOffset(current, cb) }
+        // 受信端子(装置パネルの名前)。対応する UHD の frontend / antenna を補助表示に出す。運転中はその端子の LED が点く
+    function askPort(current, cb) {
+        choice.title = "RX PORT  (applied when an application starts)"
+        choice.note = "The LED of the selected port lights while an application is receiving."
+        choice.columns = 2
+        choice.choices = [ { label: "TRXA", sublabel: "A:A  TX/RX", value: "TRXA" }, { label: "RXA", sublabel: "A:A  RX2", value: "RXA" },
+                           { label: "TRXB", sublabel: "A:B  TX/RX", value: "TRXB" }, { label: "RXB", sublabel: "A:B  RX2", value: "RXB" } ]
+        choice.callback = cb; choice.open(current)
+    }
+    function askOffset(current, cb) { win.askOffset(current, cb) }
         function showDiagnostics() { shell.showDiagnostics(true) }
         function restartWithRate(v) { shell.restartActiveWithRate(v) }   // 汎用 App のレート変更(App を再起動する)
     }
@@ -64,6 +73,7 @@ Window {
                 anchors.fill: parent; visible: !win.appOpen && !win.diagOpen && !win.splashOpen
                 onSelected: (i) => { if (!shell.busy) { Feedback.tap(); shell.startApp(i) } }
                 onAskGain: win.askGain(shell.draftGain, (v) => { if (v < 0) shell.draftAgc = true; else shell.draftGain = v })
+                onAskPort: win.askPort(shell.draftPort, (v) => shell.draftPort = v)
             }
             // App のページ: レジストリの page_url を Loader で読む。ページには app / sys / ui が見える。
             Loader {
@@ -135,6 +145,13 @@ Window {
             property var callback: null
             onAccepted: (v) => { if (callback) callback(v) }
         }
+        // ---- 自前の選択入力(モーダル)。受信端子など少数の選択肢用 ----
+        ChoiceEntry {
+            id: choice
+            anchors.topMargin: Theme.statusBarH
+            property var callback: null
+            onAccepted: (v) => { if (callback) callback(v) }
+        }
     }
 
     function softkey(i) {
@@ -169,6 +186,15 @@ Window {
         entry.displayFactor = 1; entry.displayUnit = "dB"; entry.displayDecimals = 1; entry.allowNegative = false
         entry.callback = cb; entry.open(current)
     }
+    // 受信端子(装置パネルの名前)。対応する UHD の frontend / antenna を補助表示に出す。運転中はその端子の LED が点く
+    function askPort(current, cb) {
+        choice.title = "RX PORT  (applied when an application starts)"
+        choice.note = "The LED of the selected port lights while an application is receiving."
+        choice.columns = 2
+        choice.choices = [ { label: "TRXA", sublabel: "A:A  TX/RX", value: "TRXA" }, { label: "RXA", sublabel: "A:A  RX2", value: "RXA" },
+                           { label: "TRXB", sublabel: "A:B  TX/RX", value: "TRXB" }, { label: "RXB", sublabel: "A:B  RX2", value: "RXB" } ]
+        choice.callback = cb; choice.open(current)
+    }
     function askOffset(current, cb) {
         entry.title = "LO OFFSET (channel position relative to LO)"; entry.minimum = -900e3; entry.maximum = 900e3
         entry.units = [ { label: "kHz", factor: 1e3 }, { label: "Hz", factor: 1 } ]
@@ -188,5 +214,6 @@ Window {
     function demoRapidTune() { var a = shell.activeApp; if (a && a.stepFreq) { a.stepFreq(1e6); a.stepFreq(1e6); a.stepFreq(1e6) } }
     function demoEntryTune(mhzText) { openFreqEntry(); for (var i = 0; i < mhzText.length; ++i) entry.type(mhzText[i]); entry.commit(1e6, "MHz") }
     function openExitDialog() { exitDialog.open() }
+    function openPortEntry() { askPort(shell.draftPort, (v) => shell.draftPort = v) }
     function demoAppAction(action) { if (win.appOpen && appPage.item && appPage.item.softKey) appPage.item.softKey(action) }
 }

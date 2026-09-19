@@ -76,7 +76,7 @@ public:
     void close();
     bool is_open() const;
 
-    // 手順 4。rate/freq/gain/antenna/bandwidth を適用し lo_locked を確認する。
+    // 手順 4。端子(subdev spec + antenna)→ rate/freq/gain/bandwidth を適用し lo_locked を確認する。
     bool tune_rx(const RfConfig& cfg, std::string* err = nullptr);
 
     // timed retune (§17.1): at(hardware time) から新周波数。実際の周波数を返す。

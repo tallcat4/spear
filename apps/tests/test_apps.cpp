@@ -39,6 +39,19 @@ TEST(Apps, RegistryListsSpectrumAndRecorder) {
     EXPECT_NE(apps[0].info.page_url.find("SpectrumPage.qml"), std::string::npos);
 }
 
+// 受信端子はシェルの草案で決まり、App はそのまま Core へ宣言する。center / rate を自分で決める App(DEMOD / STD-T98 / ADS-B)も
+// 端子を落としてはならない(落とすと選んだ端子と違う端子で受ける)。
+TEST(Apps, EveryAppDeclaresTheDraftPortUnchanged) {
+    for (const auto& e : appfw::registered_apps()) {
+        auto app = e.make();
+        for (const auto& i : all_rf_ports()) {
+            RfConfig c; c.sample_rate = 2e6; c.center_freq = 100e6; c.port = i.port;
+            app->set_rf_config(c);
+            EXPECT_EQ(app->declare_rf_config().port, i.port) << e.info.id << " " << i.name;
+        }
+    }
+}
+
 TEST(Apps, SpectrumProducesViewFrames) {
     Rig rig;
     auto app = std::make_shared<apps::SpectrumApp>(appfw::AppInfo{"spectrum", "SPECTRUM", "", Direction::RX, ""});

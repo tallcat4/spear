@@ -39,7 +39,7 @@ bool RecordingSource::configure(const RfConfig& cfg, std::string* err) {
                       c.sample_rate, c.center_freq / 1e6, cfg.sample_rate, cfg.center_freq / 1e6);
         if (events_) events_->emit(EventKind::Warning, name_, msg);
     }
-    c.gain = cfg.gain; c.agc = cfg.agc; c.antenna = cfg.antenna;   // 無意味だが害もない(表示用)
+    c.gain = cfg.gain; c.agc = cfg.agc; c.port = cfg.port;   // 無意味だが害もない(表示用)
     return ThreadedSource::configure(c, err);
 }
 
@@ -113,6 +113,7 @@ SigmfRecorder::SigmfRecorder(std::string base_path, const StreamMeta& sm, const 
     : base_(std::move(base_path)), events_(events) {
     meta_.dtype = sm.dtype;
     meta_.lo_correction_ppm = lo_correction_ppm;
+    meta_.rx_port = std::string(rf_port_name(cfg.port));
     meta_.sample_rate = sm.sample_rate;
     meta_.description = "spear recording, stream=" + sm.id;
     initial_freq_ = cfg.center_freq;

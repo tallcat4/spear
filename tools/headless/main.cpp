@@ -136,7 +136,7 @@ private:
 
 int main(int argc, char** argv) {
     if (flag(argc, argv, "--help")) {
-        std::puts("spear-headless --source b210|synthetic|file:<base> [--rate 4e6] [--freq 100e6] [--gain 30]\n"
+        std::puts("spear-headless --source b210|synthetic|file:<base> [--rate 4e6] [--freq 100e6] [--gain 30] [--port RXA|TRXA|RXB|TRXB]\n"
                   "               [--seconds 20] [--record <base>] [--wf-delay-ms 50] [--serial S] [--args UHD_ARGS]");
         return 0;
     }
@@ -145,6 +145,7 @@ int main(int argc, char** argv) {
     cfg.sample_rate = std::stod(arg(argc, argv, "--rate", "4e6"));
     cfg.center_freq = std::stod(arg(argc, argv, "--freq", "100e6"));
     cfg.gain        = std::stod(arg(argc, argv, "--gain", "30"));
+    if (!parse_rf_port(arg(argc, argv, "--port", "RXA"), &cfg.port)) { std::fprintf(stderr, "unknown --port (TRXA / RXA / RXB / TRXB)\n"); return 1; }
     const double seconds = std::stod(arg(argc, argv, "--seconds", "20"));
     const std::string record = arg(argc, argv, "--record", "");
     const int wf_delay = std::stoi(arg(argc, argv, "--wf-delay-ms", "50"));

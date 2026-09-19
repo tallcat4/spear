@@ -19,7 +19,7 @@
 | 1 | device 列挙 → serial 確認 | `uhd::device::find`(FW 書き込みの副作用あり。存在確認には使わない) | DISCONNECTED |
 | 2 | FW/FPGA version、FX3 running 確認、USB link 帯域照合 | tree `fw_version` `fpga_version` `fx3_state_code` `link_max_rate` | version 不一致 → Warning / 帯域 > 95 % → FAULT |
 | 3 | clock source → ref_locked | `get_mboard_sensor("ref_locked")`(external/gpsdo のみ必須。B2xx では internal で unlocked が正常) | FAULT |
-| 4 | tune: 宣言を能力範囲と照合 → 設定 → coercion 検出 → lo_locked | `get_rx_freq_range/gain_range/rates/antennas`、設定後の `get_rx_*` と要求の差、`get_rx_sensor("lo_locked")` | FAULT(§8.1: App 起動失敗) |
+| 4 | tune: 端子 → frontend(subdev spec)→ 宣言を能力範囲と照合 → 設定 → coercion 検出 → lo_locked | tree `dboards/A/rx_frontends`(選んだ端子の frontend が無い機種 = B200 系で B を選ぶと FAULT。libuhd は黙って A に丸めるので先に確かめる)、`set/get_rx_subdev_spec`、`get_rx_freq_range/gain_range/rates/antennas`、設定後の `get_rx_*` と要求の差、`get_rx_sensor("lo_locked")` | FAULT(§8.1: App 起動失敗) |
 | 5 | stream 開始、settling、時刻基準の記録 | `get_time_now()` 往復中点 ↔ host monotonic ↔ UTC | — |
 | 6 | 定常監視 | 下記 | — |
 

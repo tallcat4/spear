@@ -10,6 +10,7 @@ qt_add_qml_module(spear_input
     StepKeys.qml
     ValueField.qml
     NumericEntry.qml
+    ChoiceEntry.qml
     Feedback.qml
   RESOURCE_PREFIX /qt/qml
   OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/qml/Spear/Input
