@@ -3,7 +3,7 @@
 // 純 C++ の Receiver(30ch)を GUI に載せる。検証対象:
 //   * §1.1 観測点: Receiver の中間 stream(帯域 IQ、選択 ch の IQ / アイパターン)を DSP に触れず GUI に出す
 //   * §3.6 provenance: フレーム event の sample 範囲を radio.rx index で
-//   * 個体設定(band_center_hz / squelch_db)を --set / site.conf で渡す経路(LO 誤差は Core が radio.freq_err_ppm で打ち消す)
+//   * 個体設定(band_center_hz / squelch_margin_db)を --set / site.conf で渡す経路(LO 誤差は Core が radio.freq_err_ppm で打ち消す)
 //   * TraceSource / EyeDiagram(新規の再利用部品)
 //   * 秘話(§2.5): 鍵探索は専用ワーカースレッド(secret::Worker)で走らせ、DSP thread は鍵の適用と窓の収集だけを行う
 // RF: 4 Msps、LO は帯域中心から loOffset だけ離す(ゼロ IF の DC スパイクをチャネル 16 に重ねない)。
@@ -35,7 +35,7 @@ class StdT98App final : public appfw::GuiApp {
     // 帯域中心 / LO オフセット / 個体誤差は規格・App・site.conf が決める(UI からは操作しない: 誤設定で受信不能になる)
     Q_PROPERTY(double bandCenterHz READ bandCenterHz NOTIFY configChanged)   // ch16 の周波数(規格: 351.29375 MHz)
     Q_PROPERTY(double loOffsetHz READ loOffsetHz NOTIFY configChanged)
-    Q_PROPERTY(double squelchDb READ squelchDb WRITE setSquelchDb NOTIFY configChanged)
+    Q_PROPERTY(double squelchMarginDb READ squelchMarginDb WRITE setSquelchMarginDb NOTIFY configChanged)   // 床(全 ch 中央値)からの余裕 [dB]
     Q_PROPERTY(int selectedChannel READ selectedChannel WRITE setSelectedChannel NOTIFY configChanged)   // 0..29
     Q_PROPERTY(bool mute READ mute WRITE setMute NOTIFY configChanged)
     Q_PROPERTY(bool allChannelAudio READ allChannelAudio WRITE setAllChannelAudio NOTIFY configChanged)   // 全 30ch を同時再生(ミックス)
@@ -67,8 +67,8 @@ public:
     void setBandCenterHz(double hz);
     double loOffsetHz() const { return lo_offset_hz_; }
     void setLoOffsetHz(double hz);
-    double squelchDb() const { return squelch_db_; }
-    void setSquelchDb(double v) { squelch_db_ = v; Q_EMIT configChanged(); }
+    double squelchMarginDb() const { return squelch_margin_db_; }
+    void setSquelchMarginDb(double v) { squelch_margin_db_ = std::clamp(v, 0.0, 40.0); Q_EMIT configChanged(); }
     int selectedChannel() const { return selected_; }
     void setSelectedChannel(int ch);
     bool mute() const { return mute_; }
@@ -113,7 +113,7 @@ private:
     std_t98::ReceiverConfig cfg_;
     double band_center_hz_ = 351.29375e6;   // ARIB STD-T98: ch1 = 351.20000 MHz、6.25 kHz 間隔、ch16 が帯域中心
     double lo_offset_hz_ = 250e3;
-    std::atomic<double> squelch_db_{-40.0};   // std-t98-tools の既定。録音再生では -50 が要る場合あり(site.conf: std_t98.squelch_db)
+    std::atomic<double> squelch_margin_db_{8.0};   // 床 + 8 dB で開く(ReceiverConfig の既定と同じ。site.conf: std_t98.squelch_margin_db)
     std::atomic<int> selected_{0};
     bool mute_ = false;
     std::atomic<bool> all_audio_{true};
@@ -125,7 +125,7 @@ private:
     // 観測値(DSP thread → GUI)
     mutable std::mutex mu_;
     struct ChanStat {
-        double power_db = -999; bool open = false; uint64_t frames = 0, sacch_ok = 0, pich_ok = 0, syncs = 0; double best_sse = 1e9, sps = 0; std::string csm; double freq_err_est = 0;
+        double power_db = -999, floor_db = -999, threshold_db = -999; bool open = false; uint64_t frames = 0, sacch_ok = 0, pich_ok = 0, syncs = 0; double best_sse = 1e9, sps = 0; std::string csm; double freq_err_est = 0;
         bool secret = false; uint16_t key = 0; std_t98::secret::TrackerStatus secret_status = std_t98::secret::TrackerStatus::Idle;   // 秘話: 呼が秘話か / 現在鍵 / 探索状態
         std_t98::secret::ResultSource last_source = std_t98::secret::ResultSource::None; double last_search_s = 0; uint64_t searches = 0;
     };

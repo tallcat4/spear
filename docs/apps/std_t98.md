@@ -27,7 +27,8 @@ M3(§12)では、既存の DSP を変えずに任意の中間 stream に観測�
     (13 フレーム、PICH 1 + SACCH 12、全 CRC OK、フレーム間隔 192 シンボル = 320000 サンプル)。
   - `dsp::PfbChannelizer`(共通、critically-sampled polyphase)。単一トーン分離を参照ベクトルで検証(channel c ↔ c·fs/M)。
   - FFTW プランナは dsp 全体で 1 mutex に統一(spectrum と channelizer が別 mutex だと危険だった)。
-  - headless: `spear-std-t98-decode <sigmf base> --freq-err <Hz> --squelch -50 [--wav base] [--payloads f]`。
+  - headless: `spear-std-t98-decode <sigmf base> --freq-err <Hz> [--squelch-margin 8] [--wav base] [--payloads f] [--log f]`。
+    **App の録音(LO = 帯域中心 − 250 kHz)には `--freq-err 250000`** が要る(tool は録音中心を帯域中心と見なす。GUI は `band_center − LO` を自分で渡す)。
 - **2(完了)**: AMBE 3600x2450 → PCM 8 kHz。`apps/std_t98/ambe/` に mbelib-neo の AMBE 経路だけを C++ で書き直した
   (IMBE・SIMD・スレッドローカル・pffft なし、GPL-2.0-or-later のまま)。実録音の TCH ペイロードを pyambelib(Python)で
   復号した golden(音声を含むのでリポジトリ外 `~/spear/golden/std_t98/ambe_golden.txt`、無ければ skip)と比較:
@@ -86,6 +87,29 @@ Python(torch、マルチスレッド)は 0.37 / 0.65 s。golden は音声由来�
 - ビットマップ: +1→00 +3→01 -1→10 -3→11。dewhiten は 9-bit LFSR、先頭 10 シンボル(SW)を除く 182 シンボルに乗算。
 - SACCH/PICH 共通トレリス K=5: g1=x⊕x3⊕x4, g2=x⊕x1⊕x2⊕x4。SACCH depuncture 6/8、PICH 2/4。
 - レート(std-t98-tools 既定): 1.2 Msps → resamp1 → 300k → PFB 48ch → 6.25k/ch → resamp2 ×10 → 62.5k → demod、sps≈26。
+
+## スケルチ — 床相対・出力ゲート(2026-09-21、実地での不安定さから)
+2026-09-20 のアマチュアイベント(`~/spear/recordings/rec_20260920_014553` / `rec_20260920_021454`、ch23 の交信)で「遠い局が不規則に途切れる、
+空きチャネルが開く」症状。録音を解析した結果:
+- **AGC が全チャネルの床を一斉に揺らしていた**。会場に ADC フルスケールに達する広帯域のバースト雑音(サンプルの 1.5 % がクリップ)があり、
+  AGC(UHD 既定の AD9361 slow AGC)が ~0.3 ms ごとにゲインを階段状に変える。30 ch のブロック電力の相関 0.95、中央値 −41 dB、ブロック間で
+  3〜4 dB(p90 で 7〜10 dB)動く。自宅(gain 30 固定)では床 −85 dB、±2 dB。
+- 旧スケルチ(絶対 −40 dB)はその床の真上: 空きチャネルが 16 ms ブロックの 40 % で開き毎秒 27 回開閉、弱い送信(床 + 3〜10 dB)は
+  1 回の送信で 10〜140 回開閉してフレームの 30〜75 % を落とした。閉で IQ を 0 にしていたので、開くたびにシンボル同期の再引き込み。
+- シンボル同期そのものは正常: Gardner ループを Python で再現し総当たりの最良位相と比べると、強・中信号で 0.1〜0.3 s で収束し判定点の質は
+  最良位相と同等。弱信号(SNR ≈ 10 dB)で ±6 sample ふらつくのは SNR の限界(多値用 TED 修正・loop_bw 0.03 でも改善なし)。
+  アイが「ふらふら」見えたのはスケルチの開閉のたびにアイがリセットされ引き込み過渡を見せていたため。
+
+対策(`ReceiverConfig`):
+- **閾値 = そのブロックの床 + margin**(既定 8 dB、`std_t98.squelch_margin_db` / GUI の SQUELCH)。床 = 全チャネルのブロック電力の中央値
+  (全チャネル共通。半数以上が同時送信なら床を過大に見るが、実用上起きない)。ヒステリシス 3 dB、閉じるのは 120 ms 下回り続けたとき。
+- **DSP は止めない**。閉でも復調・シンボル同期・同期語検出は回し(CPU は以前と同じ: 補間は元から全 ch で回っていた)、出すものだけをゲートする:
+  フレームは開いているとき、または **CRC が通ったとき**(床 + margin に届かない遠い局の確かな証拠。閉のまま CRC 不良は捨てる = 雑音の偽同期を
+  音にしない)。CRC OK で開き、hold を延ばす。アイは開いているときだけ出す(履歴は途切れさせない)。
+- 実録音での前後: 空きチャネルの開放 40 % → 0.1〜0.7 %、開閉 27/s → <1/s、偽フレーム 0。ch23(強)181/89 vs 177/87(フレーム / SACCH OK)、
+  ch24(弱)78/48 vs 94/40 — CRC 不良の雑音フレームが減り、CRC OK が増えた。
+- 会場のような環境では **AGC を切って手動ゲイン**にすれば床の揺れ自体が消える(録音からは検証できないので次の実地で)。
+- 平均周期がクランプ端(26.04 ± 0.02)に張り付く傾向は残っている(復号には影響しない)。
 
 ## 実機で見つかった移植バグ
 - **symbol sync の max_deviation の単位**(2026-09-17、実機で発覚): GR `symbol_sync_ff` の `max_deviation` は「平均クロック周期の

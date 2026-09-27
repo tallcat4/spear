@@ -25,6 +25,7 @@ struct Receiver::Channel {
     uint64_t symbol_index = 0;            // 出力シンボルの通し番号
     uint64_t sample_index = 0;            // 62.5 kHz sample の通し番号(このチャネル)
     bool open = false;
+    double closing_s = 0;                 // 閉じる閾値を下回り続けている時間(hold)
 };
 
 Receiver::Receiver(ReceiverConfig cfg) : cfg_(cfg) {
@@ -92,25 +93,43 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
     // 2) PFB
     for (auto& b : bins_) b.clear();
     pfb_->process(std::span<const cf32>(buf1_.data(), n1), bins_);
-    // 3) チャネルごと
+    // 3a) 全チャネルのブロック電力と床(中央値)。床は全チャネル共通 — AGC のゲイン変化や広帯域雑音は全チャネルに同じだけ乗る
+    bool any = false;
+    for (int c = 0; c < cfg_.num_channels; ++c) {
+        const auto& bin = bins_[static_cast<std::size_t>(channel_to_bin(c))];
+        if (bin.empty()) continue;
+        double pw = 0;
+        for (auto x : bin) pw += std::norm(x);
+        metrics_[static_cast<std::size_t>(c)].power_db = 10.0 * std::log10(pw / static_cast<double>(bin.size()) + 1e-20);
+        any = true;
+    }
+    if (!any) return;
+    floor_tmp_.clear();
+    for (const auto& m : metrics_) floor_tmp_.push_back(m.power_db);
+    std::nth_element(floor_tmp_.begin(), floor_tmp_.begin() + static_cast<long>(floor_tmp_.size() / 2), floor_tmp_.end());
+    const double floor_db = floor_tmp_[floor_tmp_.size() / 2];
+    const double thr_open = floor_db + cfg_.squelch_margin_db, thr_close = thr_open - cfg_.squelch_hyst_db;
+    // 3b) チャネルごと
     for (int c = 0; c < cfg_.num_channels; ++c) {
         auto& ch = *ch_[c];
         auto& m = metrics_[static_cast<std::size_t>(c)];
         const auto& bin = bins_[static_cast<std::size_t>(channel_to_bin(c))];
         if (bin.empty()) continue;
-        // squelch(ブロック電力)
-        double pw = 0;
-        for (auto x : bin) pw += std::norm(x);
-        m.power_db = 10.0 * std::log10(pw / static_cast<double>(bin.size()) + 1e-20);
-        m.open = ch.open = m.power_db >= cfg_.squelch_db;
-        // 補間 ×10。観測点(channel_iq)には squelch に関係なく実際のチャネル IQ を出す(閉じているときに 0 を出すと
-        // 観測側の dB レンジが −∞ に張り付く)。squelch は復調以降だけをゲートする(GR の squelch ブロックと同じ効果)。
+        // squelch: 開くのは即時、閉じるのは hold_s の間 thr_close を下回り続けたとき(フェードや AGC の一瞬の落ち込みで切らない)
+        const double dt = static_cast<double>(bin.size()) / cfg_.spacing_hz;
+        if (m.power_db >= thr_open) { ch.open = true; ch.closing_s = 0; }
+        else if (ch.open && m.power_db < thr_close) { ch.closing_s += dt; if (ch.closing_s >= cfg_.squelch_hold_s) { ch.open = false; ch.closing_s = 0; } }
+        else ch.closing_s = 0;
+        m.open = ch.open;
+        m.floor_db = floor_db;
+        m.threshold_db = thr_open;
+        // 補間 ×10。以降の復調・シンボル同期は squelch に関係なく回す(閉で 0 を入れると同期ループが凍り、開くたびに再引き込みになる)。
+        // squelch がゲートするのはフレームとアイの出力だけ
         ch.iq_up.resize(bin.size() * static_cast<std::size_t>(cfg_.resamp2) + 2);
         const std::size_t n2 = ch.up.process(bin, ch.iq_up);
         const uint64_t iq_first = ch.sample_index;
         ch.sample_index += n2;
         if (obs_.channel_iq) obs_.channel_iq(c, std::span<const cf32>(ch.iq_up.data(), n2), iq_first);
-        if (!ch.open) std::fill_n(ch.iq_up.begin(), n2, cf32{0.f, 0.f});   // 閉: 以降は無音で状態を進める
         // 4) quadrature demod
         ch.disc.resize(n2);
         for (std::size_t i = 0; i < n2; ++i) {
@@ -132,8 +151,9 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
         for (auto& s : ch.syms) s *= cfg_.post_sync_gain;
         m.sps = ch.sync.period();
         // アイパターン: symbol sync の判定点 p を基準に [p − sps/2, p + 1.5 sps] の 2 シンボル幅を切り出す
-        // (判定点がトレースの 1/4 と 3/4 に来る)。振幅はシンボルと同じ ±1/±3 スケール。
-        if (obs_.eye && ch.open) {
+        // (判定点がトレースの 1/4 と 3/4 に来る)。振幅はシンボルと同じ ±1/±3 スケール。履歴は squelch に関係なく進め、
+        // トレースを出すのは開いているときだけ(閉でバッファを捨てると開くたびに先頭が欠ける)
+        if (obs_.eye) {
             const double sps = ch.sync.period();
             if (ch.eye_buf.empty()) ch.eye_base = ch.eye_fed;
             ch.eye_buf.insert(ch.eye_buf.end(), ch.filt.begin(), ch.filt.begin() + static_cast<long>(n3));
@@ -151,7 +171,7 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
                     const double mu = t - static_cast<double>(i0);
                     trace[static_cast<std::size_t>(k)] = (ch.eye_buf[i0] + static_cast<float>(mu) * (ch.eye_buf[i0 + 1] - ch.eye_buf[i0])) * cfg_.post_sync_gain;
                 }
-                obs_.eye(c, trace);
+                if (ch.open) obs_.eye(c, trace);
             }
             // 未処理の判定点より前は捨てる(4 シンボル分は残す)
             const double keep_from = (ch.eye_pending.empty() ? avail : ch.eye_pending.front()) - 2.0 * sps - 2.0;
@@ -180,15 +200,22 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
             f.raw = quantize(raw);
             f.fields = parse_frame(dewhiten(f.raw));
             f.rich = decode_rich(f.fields.rich);
-            m.frames++;
+            bool crc_ok = false;
             if (f.rich.valid && f.rich.f == 0) {
                 f.pich = decode_pich(f.fields.tch1);
-                if (f.pich.crc_ok) { m.pich_ok++; m.csm = f.pich.csm; }
+                crc_ok = f.pich.crc_ok;
             } else if (f.rich.valid && f.rich.f == 1) {
                 f.sacch = decode_sacch(f.fields.sacch);
-                if (f.sacch.crc_ok) m.sacch_ok++;
+                crc_ok = f.sacch.crc_ok;
                 f.tch_payload = traffic_blocks_to_payload(split_traffic_blocks(f.fields));
             }
+            // squelch のゲート: 閉じていても CRC が通ったフレームは信号の確かな証拠なので開く(床 + margin に届かない遠い局を拾う。
+            // 偽同期が CRC を通る確率は 1/4096 × 数回/時 で無視できる)。CRC 不良のフレームは開いているときだけ出す(雑音上の偽同期を音にしない)
+            if (crc_ok) { ch.open = true; ch.closing_s = 0; m.open = true; }
+            else if (!ch.open) { ++m.gated_frames; return; }
+            m.frames++;
+            if (f.rich.valid && f.rich.f == 0 && f.pich.crc_ok) { m.pich_ok++; m.csm = f.pich.csm; }
+            if (f.rich.valid && f.rich.f == 1 && f.sacch.crc_ok) m.sacch_ok++;
             m.last_frame_symbol_index = sym_idx;
             if (obs_.frame) obs_.frame(f);
         });

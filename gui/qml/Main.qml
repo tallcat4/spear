@@ -39,6 +39,7 @@ Window {
         function askRate(current, cb) { win.askRate(current, cb) }
         function askGain(current, cb) { win.askGain(current, cb) }
         function askRef(current, cb) { win.askRef(current, cb) }
+        function askLevel(title, unit, minimum, maximum, current, cb) { win.askLevel(title, unit, minimum, maximum, current, cb) }   // 汎用の dB 入力(スケルチ等)
         // 受信端子(装置パネルの名前)。対応する UHD の frontend / antenna を補助表示に出す。運転中はその端子の LED が点く
     function askPort(current, cb) {
         choice.title = "RX PORT  (applied when an application starts)"
@@ -205,6 +206,12 @@ Window {
         entry.title = "REFERENCE LEVEL (TOP OF SCALE)"; entry.minimum = -150; entry.maximum = 20
         entry.units = [ { label: "dBFS", factor: 1 } ]
         entry.displayFactor = 1; entry.displayUnit = "dBFS"; entry.displayDecimals = 0; entry.allowNegative = true
+        entry.callback = cb; entry.open(current)
+    }
+    function askLevel(title, unit, minimum, maximum, current, cb) {
+        entry.title = title; entry.minimum = minimum; entry.maximum = maximum
+        entry.units = [ { label: unit, factor: 1 } ]
+        entry.displayFactor = 1; entry.displayUnit = unit; entry.displayDecimals = 0; entry.allowNegative = minimum < 0
         entry.callback = cb; entry.open(current)
     }
 

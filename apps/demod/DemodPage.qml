@@ -21,7 +21,7 @@ Item {
         case "freq": ui.askFreq(page.rxFreq, (v) => app.tuneRx(v)); break
         case "lo": ui.askOffset(app.loOffsetHz, (v) => app.loOffsetHz = v); break
         case "mode": app.cycleMode(); break
-        case "sq": ui.askRef(app.squelchDb, (v) => app.squelchDb = v); break
+        case "sq": ui.askLevel("SQUELCH LEVEL", "dBFS", -150, 0, app.squelchDb, (v) => app.squelchDb = v); break
         case "mute": app.mute = !app.mute; break
         }
     }

@@ -68,7 +68,7 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
   App 番号はメニュー順(0 SPECTRUM, 1 RECORDER, 2 FM/AM, 3 STD-T98, 4 ADS-B)。`--state-file` を付けなければ運転状態の復元・保存はしない(再現性のため)。
 - 実機: B210 の FPGA ロードは USB 2.0 で約 70 s かかる。`--after` はそれより長くする(途中で切ると次回また読み込む)。
   新しい表示部品や DSP 段は、周波数が既知の実信号で軸の向きと絶対値を確認する(合成トーンでは向きの誤りが分からない)。
-- 実録音: `spear-std-t98-decode <base> --squelch -50 [--freq-err <Hz>] [--wav out]` でフレーム表と音声を出す(秘話呼は鍵を探索して復号する。`--freq-err` は `docs/tools.md`)。
+- 実録音: `spear-std-t98-decode <base> --freq-err <Hz> [--wav out]` でフレーム表と音声を出す(秘話呼は鍵を探索して復号する)。App の録音(LO = 帯域中心 − 250 kHz)は `--freq-err 250000`(`docs/tools.md`)。
 - 装置の既知の挙動(B210 の癖など)は `docs/STATUS.md` の「装置の事実」と `docs/diagnostics.md` にある。
 
 ## 方針
