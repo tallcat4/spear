@@ -1,4 +1,4 @@
-// S.P.E.A.R. core — RecordingSource / SigmfRecorder (要件 §7, §8.4, M1)
+// S.P.E.A.R. core — RecordingSource / SigmfRecorder (要件 §6, §7.4, M1)
 //
 // RecordingSource: SigMF 録音の再生。B210LiveSource と同一 API。
 // SigmfRecorder:   Sink。IQ Recorder App が用いる。Lossless consumer の出力を SigMF + sidecar へ書く。

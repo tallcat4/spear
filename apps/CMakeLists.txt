@@ -1,6 +1,6 @@
 # ---- App の登録 (docs/app-development.md) ----
 # 各 App は apps/<id>/CMakeLists.txt で spear_add_app() を 1 回呼ぶ。ここで並べた順がメニューの順。
-# レジストリ(app_registry.cpp)はビルド時に生成する。実行時の discovery は持たない (§3.1)。
+# レジストリ(app_registry.cpp)はビルド時に生成する。実行時の discovery は持たない (§2.2)。
 
 set_property(GLOBAL PROPERTY SPEAR_APP_IDS "")
 

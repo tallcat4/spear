@@ -172,7 +172,7 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
             f.channel = c;
             f.symbol_index = sym_idx;
             f.sync_sse = ch.corr.stats().last_metric;
-            // provenance (§4.5): フレーム先頭シンボルの判定点(62.5 kHz sample)→ 段の宣言から radio.rx の index へ
+            // provenance (§3.6): フレーム先頭シンボルの判定点(62.5 kHz sample)→ 段の宣言から radio.rx の index へ
             double ch_sample = static_cast<double>(sym_idx) * (ch.rrc.info().in_rate / cfg_.baud);
             for (const auto& [si, pos] : ch.pos_hist) if (si == sym_idx) { ch_sample = pos; break; }
             f.input_sample_index = in0_ + static_cast<uint64_t>(std::max(0.0, prov_chan_.input_index(ch_sample)));

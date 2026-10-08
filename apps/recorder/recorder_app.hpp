@@ -1,4 +1,4 @@
-// App: IQ RECORDER — spectrum + Lossless consumer による SigMF 録音 (§8.2: 録音はただの App)。
+// App: IQ RECORDER — spectrum + Lossless consumer による SigMF 録音 (§7.2: 録音はただの App)。
 // 検証対象(docs/apps/recorder.md): App 固有 State の所有(録音状態)、Lossless 不変条件の画面化、SigMF sidecar。
 #pragma once
 

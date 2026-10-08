@@ -1,17 +1,16 @@
 # App 開発ガイド(App SDK)
 
-S.P.E.A.R. の成果物は **RF バックエンド + フレームワーク + 再利用部品**であり、App はそれを検証する手段である。
-App は機能追加のためではなく「S.P.E.A.R. が App の実装に必要なものを提供できているか」を確かめるために作る。
-各 App の完了時に `docs/apps/<id>.md` に**プラットフォーム欠陥レポート**(足りなかった API・部品、書きにくかった箇所、性能)を残す。
+App の作り方と、App SDK との契約をまとめる。
+App を作り終えたら `docs/apps/<id>.md` に実装メモ(基盤に足りなかった API・部品、書きにくかった箇所、性能)を残す。
 
 ## 構成
 ```
 apps/<id>/
-  CMakeLists.txt     spear_add_app(...) を 1 回。これで登録される(レジストリはビルド時生成 §3.1)
+  CMakeLists.txt     spear_add_app(...) を 1 回。これで登録される(レジストリはビルド時生成 §2.2)
   <id>_app.hpp/.cpp  spear::appfw::GuiApp の派生
   <Id>Page.qml       ページ(QML)。見えるもの: app / sys / ui
   test_*.cpp         SyntheticSource / RecordingSource で回る回帰テスト(apps/tests/ に追加)
-docs/apps/<id>.md    欠陥レポート
+docs/apps/<id>.md    実装メモ
 ```
 新しい App は `apps/template/` をコピーして始める。`apps/CMakeLists.txt` に `add_subdirectory(<id>)` を足した順がメニュー順。
 大きい App(STD-T98)は Qt 非依存の受信機ライブラリ(`receiver.*`、`protocol/`、`dsp/`)と GUI App(`<id>_app.*`)を分け、
@@ -28,13 +27,13 @@ docs/apps/<id>.md    欠陥レポート
 | 項目 | 内容 |
 |---|---|
 | メタデータ | `spear_add_app(ID NAME DESCRIPTION DIRECTION CLASS HEADER PAGE SOURCES [LIBS] [UNLISTED])` |
-| RF 宣言 | シェルの草案が `set_rf_config()` で渡され、`declare_rf_config()` で Core へ。適用不能なら App 起動失敗(§8.1) |
+| RF 宣言 | シェルの草案が `set_rf_config()` で渡され、`declare_rf_config()` で Core へ。適用不能なら App 起動失敗(§7.1) |
 | `on_start(Core&)` | `core.rx()` に subscribe、DSP チェーンを静的に構成、DSP 用 thread を起動。**GUI thread で呼ばれる**(基底が保証) |
 | `on_stop()` | consumer / thread を全て解放。stop 後に `core.rx().consumer_count()` が 0 になること(テストで確認) |
 | App 固有 State | `Q_PROPERTY`(NOTIFY 付き)として App が所有。変更は App のメソッドだけ(`docs/state-ownership.md`) |
 | Core の State | コピーしない。ページは `sys.*`(SystemModel)を読む。周波数変更は `core()->source().retune()` |
-| Event | 事象は `core()->events().emit(kind, source, detail, range)` に **元 sample index 範囲**を付ける (§4.5) |
-| TAP | 中間 stream に `TAP("<id>.<point>", ptr, n)` (§5.3) |
+| Event | 事象は `core()->events().emit(kind, source, detail, range)` に **元 sample index 範囲**を付ける (§3.6) |
+| TAP | 中間 stream に `TAP("<id>.<point>", ptr, n)` (§4.4) |
 | ページ | `required property var app / ui`、`softKeys`(7 個まで、8 個目 BACK はシェル)、`softKey(action)`。部品は `Spear.Widgets` / `Spear.Input` |
 | 操作音 | `Spear.Input` の部品(KeyButton / ValueField)とソフトキーは自動で鳴る。自前の MouseArea でアクションを起こすなら、**実際に何かが変わる分岐の中で** `Feedback.tap()`(例: 格子の選択が変わったとき)。ドラッグ / ピンチ / フリックには入れない。`Feedback.reject()` は数値入力の拒否専用 |
 | 入力 | `ui.askFreq / askRate / askGain / askRef / askOffset(current, callback)`、`ui.restartWithRate(v)`、`ui.showDiagnostics()`。自前の数値入力(タッチ専用) |
@@ -52,8 +51,8 @@ docs/apps/<id>.md    欠陥レポート
 * [ ] ユーザーが操作する State を `persist({...})` で宣言した(`spear_settings_tests` が名前を確認する)
 * [ ] Event に provenance が付いている
 * [ ] 中間 stream に TAP がある
-* [ ] `docs/apps/<id>.md` に欠陥レポートを書いた(共通に欲しかった部品は `docs/dsp-boundary.md` の基準で判定)
+* [ ] `docs/apps/<id>.md` に実装メモを書いた(共通に欲しかった部品は `docs/dsp-boundary.md` の基準で判定)
 * [ ] `apps/tests/test_apps.cpp` にライフサイクルのテストを足した(SyntheticSource で start → 観測点が動く → stop で consumer 0)
 * [ ] 規格のパラメータは一次資料の値・**単位**のまま(移植元のパラメータの単位を確認した)
-* [ ] `--screenshot` で実画面を撮って `docs/gui/` か欠陥レポートに残した
+* [ ] `--screenshot` で実画面を撮って `docs/gui/` か実装メモに残した
 * [ ] `docs/STATUS.md` の表を更新した

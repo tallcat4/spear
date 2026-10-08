@@ -1,4 +1,4 @@
-# IQ RECORDER — 欠陥レポート(2026-09-17、SDK への移植時)
+# IQ RECORDER — 実装メモ(2026-09-17、SDK への移植時)
 
 **検証対象**: App 固有 State の所有(録音状態)、Lossless 不変条件の画面化、SigMF sidecar、`configure()` による設定注入。
 

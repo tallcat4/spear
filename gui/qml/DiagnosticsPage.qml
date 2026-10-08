@@ -1,4 +1,4 @@
-// 装置上の可観測性 (要件 §12.1): 装置 / Stream Bus / host / イベント履歴を 1 画面で
+// 装置上の可観測性 (要件 §10.1): 装置 / Stream Bus / host / イベント履歴を 1 画面で
 import QtQuick
 import Spear.Theme
 import Spear.Widgets

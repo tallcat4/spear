@@ -1,9 +1,9 @@
-// S.P.E.A.R. core — Radio (要件 §2, §17)
+// S.P.E.A.R. core — Radio (要件 §2.1, §9)
 //
 // B210 を所有し UHD を扱う唯一の主体。App はこれに触れない(App が触るのは Source/Stream のみ)。
-// SoapySDR 等の抽象化層は挟まない (§17.1): 異常報告の情報量を最大化する。
+// SoapySDR 等の抽象化層は挟まない (§9.1): 異常報告の情報量を最大化する。
 //
-// 起動シーケンス (§17.2) の各段を区別して報告する:
+// 起動シーケンス (§9.2) の各段を区別して報告する:
 //   1. device 列挙 → serial 確認   2. FPGA/FW version 確認   3. clock source → ref_locked
 //   4. tune → lo_locked (timeout 付き)   5. stream 開始 → settling   6. 定常監視
 #pragma once
@@ -25,7 +25,7 @@ struct RadioOptions {
     std::string expected_serial;         // 空なら任意の B2xx を受け入れる(Appliance では固定すること)
     std::string device_args;             // 追加 UHD args。例 "num_recv_frames=128" (M-1 で overflow が出たら最初に触る)
     double      lock_timeout_s = 3.0;    // ref_locked / lo_locked 待ち
-    std::size_t settle_blocks  = 8;      // stream 開始直後に捨てる block 数 (§17.2 手順5)
+    std::size_t settle_blocks  = 8;      // stream 開始直後に捨てる block 数 (§9.2 手順5)
     // 期待する FW / FPGA version(空なら照合しない)。不一致は Warning(動作は続ける)
     std::string expected_fw_version;
     std::string expected_fpga_version;
@@ -40,7 +40,7 @@ struct RadioOptions {
     double      freq_err_ppm = 0;
 };
 
-// 起動時の最小自己診断 (§12.1) の結果。stage 0。
+// 起動時の最小自己診断 (§10.1) の結果。stage 0。
 struct SelfCheck {
     bool ok = true;                      // false = 装置を開く前に分かる致命的欠陥(image 欠落等)
     std::string uhd_version;
@@ -79,7 +79,7 @@ public:
     // 手順 4。端子(subdev spec + antenna)→ rate/freq/gain/bandwidth を適用し lo_locked を確認する。
     bool tune_rx(const RfConfig& cfg, std::string* err = nullptr);
 
-    // timed retune (§17.1): at(hardware time) から新周波数。実際の周波数を返す。
+    // timed retune (§9.1): at(hardware time) から新周波数。実際の周波数を返す。
     // 呼び出しは B210LiveSource の RX thread からのみ。
     double retune_rx_at(double freq, const uhd::time_spec_t& at);
 
@@ -96,7 +96,7 @@ public:
     const TimeReference& time_reference() const { return time_ref_; }
     void set_time_reference(const TimeReference& t);
 
-    // ---- 装置状態 (§12.1) ----
+    // ---- 装置状態 (§10.1) ----
     // 副作用なしで USB 上の B2xx を調べ、状態を更新して返す(device を open していない間に呼ぶ)。
     ProbeSummary probe();
     // open 中: FX3 状態レジスタを tree (/mboards/0/fx3_state_code) から読む。running でなければ false。

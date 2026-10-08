@@ -2,7 +2,7 @@
 //
 // 純 C++ の Receiver + AircraftTable を GUI に載せる。検証対象:
 //   * radio.rx を 8 Msps のままフルレートで Lossless 消費する初めての App(間引かない。DSP 負荷と drops を見る)
-//   * §4.5 provenance: フレーム event の sample 範囲を radio.rx index で(高頻度なので event は新規機 / 初回位置 / 消失だけ)
+//   * §3.6 provenance: フレーム event の sample 範囲を radio.rx index で(高頻度なので event は新規機 / 初回位置 / 消失だけ)
 //   * 現場固有値(基準位置 adsb.ref_lat / ref_lon、LO オフセット)を site.conf で渡す経路
 //   * 表とミニマップ(埋め込み地図 + 自動フィット、map/)という新しい表示(App 内に置き、2 つ目の利用者が出たら部品へ)
 // RF: 8 Msps(4 サンプル/チップ)、LO = 1090 MHz − loOffset(ゼロ IF の DC スパイクを信号帯域の外へ)。振幅復調なので LO 誤差は無関係。

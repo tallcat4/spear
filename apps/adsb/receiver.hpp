@@ -34,7 +34,7 @@ struct ReceiverConfig {
 };
 
 struct Frame {
-    uint64_t input_sample_index = 0; // radio.rx の index に逆算したプリアンブル先頭(provenance §4.5)
+    uint64_t input_sample_index = 0; // radio.rx の index に逆算したプリアンブル先頭(provenance §3.6)
     uint64_t input_sample_end = 0;   // フレーム末尾(exclusive)
     double   t_s = 0;                // 受信機の時間軸(入力 sample / in_rate)
     FrameBytes bytes{};

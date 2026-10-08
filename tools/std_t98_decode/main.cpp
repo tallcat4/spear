@@ -1,4 +1,4 @@
-// spear-std-t98-decode — SigMF 録音を STD-T98 Receiver に流す headless 解析 (§11, §12.3 golden set)
+// spear-std-t98-decode — SigMF 録音を STD-T98 Receiver に流す headless 解析 (§10.4, §10.3 golden set)
 //   spear-std-t98-decode <base> [--squelch -40] [--sync-ratio 0.2] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base] [--no-secret]
 // 出力: チャネルごとの電力/同期/フレーム統計、フレーム内容、推定周波数誤差。
 // 秘話呼(SACCH call=1)は GUI と同じポリシー(5 バーストで最初の探索、10 バーストごとに再確認)で鍵を同期的に探索し、以後のフレームを

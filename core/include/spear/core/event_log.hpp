@@ -1,4 +1,4 @@
-// S.P.E.A.R. core — Event log file (要件 §12.1 の補助)
+// S.P.E.A.R. core — Event log file (要件 §10.1 の補助)
 //
 // 画面を見ていなかった間の事象を残す。EventBus の全 event を JSON lines で追記し、
 // サイズ上限でローテーションする(<path>, <path>.1, <path>.2 ...)。

@@ -1,6 +1,6 @@
-// S.P.E.A.R. appfw — App SDK (要件 §8, docs/app-development.md)
+// S.P.E.A.R. appfw — App SDK (要件 §7, docs/app-development.md)
 //
-// App は「装置の 1 機能」。排他実行され、固定画面を持つ (§3.2, §9.3)。
+// App は「装置の 1 機能」。排他実行され、固定画面を持つ (§2.3, §8.3)。
 // App が実装するもの:
 //   * AppInfo: id / 名前 / 説明 / 方向
 //   * RF 宣言: シェルの草案(draft)を set_rf_config() で受け取り、declare_rf_config() で Core へ返す
@@ -10,7 +10,7 @@
 //   * App 固有の State: この QObject の Q_PROPERTY として App 自身が所有する(docs/state-ownership.md)
 //   * 再起動をまたいで残す State: コンストラクタで persist({"squelchDb", "view.dbMax", ...}) と宣言する。シェルの SettingsStore が
 //     起動時に書き戻し、NOTIFY のたびに保存する(App に保存コードは要らない)。観測値・派生値・個体値(site.conf)は宣言しない。
-// 登録は apps/CMakeLists.txt の spear_add_app() 1 行。レジストリはビルド時に生成される(§3.1 静的配線)。
+// 登録は apps/CMakeLists.txt の spear_add_app() 1 行。レジストリはビルド時に生成される(§2.2 静的配線)。
 #pragma once
 
 #include "spear/core/app.hpp"

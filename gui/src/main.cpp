@@ -1,4 +1,4 @@
-// spear-gui — エントリ。Core + Source を組み、QML シェルを起動する (要件 §9)
+// spear-gui — エントリ。Core + Source を組み、QML シェルを起動する (要件 §8)
 //
 //   spear-gui [--source b210|synthetic|file:<base>] [--rate 4e6] [--freq 100e6] [--gain 30]   (既定: b210)
 //             [--record-dir ./recordings] [--event-log path] [--state-file path] [--screenshot out.png --after 5]
@@ -44,7 +44,7 @@ bool flag(int argc, char** argv, const char* key) {
 } // namespace
 
 int main(int argc, char** argv) {
-    // 専用機の固定パネル (1920x1200) 前提: デスクトップの HiDPI 倍率を無視し、物理 px でレイアウトする (§1)
+    // 専用機の固定パネル (1920x1200) 前提: デスクトップの HiDPI 倍率を無視し、物理 px でレイアウトする (§1.2)
     qputenv("QT_ENABLE_HIGHDPI_SCALING", "0");
     qputenv("QT_SCALE_FACTOR", "1");
     QGuiApplication app(argc, argv);

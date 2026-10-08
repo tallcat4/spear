@@ -1,16 +1,15 @@
-# STD-T98 モニタ — 移植と欠陥レポート (§14 M3)
+# STD-T98 モニタ — 移植と実装メモ (§12 M3)
 
 `../std-t98-tools`(Python/GNU Radio, 30ch デジタル簡易無線受信)の S.P.E.A.R. 移植。
-M3 の主眼(§14)は「既存 DSP を修正せず任意の中間 stream に観測点(Scope/Waterfall/Constellation)を足せること」。
-機能追加ではなくプラットフォーム検証が目的。
+M3(§12)では、既存の DSP を変えずに任意の中間 stream に観測点(Scope/Waterfall/Constellation)を追加できることも確認する。
 
-## 秘話モデルの規模判定 (§3.4 / §14 M3 の前提条件)
+## 秘話モデルの規模判定 (§2.5 / §12 M3 の前提条件)
 `core/secret/cracker.py` を読んだ結果:
-| モデル | 構造 | 用途 | §3.4 |
+| モデル | 構造 | 用途 | §2.5 |
 |---|---|---|---|
 | `ambe2_ffnn` (503 KB, input 980→128→2) | MLP 1 層 | 主力。全 32767 鍵の平文/暗号判定 | **道1(C++ 再実装)で自明** |
 | `ambe2_hybrid` (3.8 MB, Conv1d×3 + BiLSTM×2 + attn) | 大 | full search 冒頭の「そもそも平文か」1 回判定のみ | **道2(ONNX)**。両モデルとも劣化なく ONNX 変換済み(2026-09-17) |
-**判定: 道1で閉じる**(主力 ffnn は MLP)。単一プロセス・C++ 維持(§3.4)。段階 2 で実装。
+**判定: 道1で閉じる**(主力 ffnn は MLP)。単一プロセス・C++ 維持(§2.5)。段階 2 で実装。
 → 実装(2026-09-17、下記「秘話」): ffnn は道1(safetensors 直読み + C++ 推論)、hybrid は道2(ONNX Runtime、必須依存)。モデルはバイナリに埋め込む。
 
 ## 段階
@@ -36,9 +35,9 @@ M3 の主眼(§14)は「既存 DSP を修正せず任意の中間 stream に観�
 - **1c(完了)**: UI — 30ch 俯瞰スペクトラム + 選択chアイパターン + フレーム表示 + 音声再生。
 - **3(完了、2026-09-17)**: 秘話(下記)。
 
-## 秘話(音声スクランブル解除、§3.4)
+## 秘話(音声スクランブル解除、§2.5)
 `../std-t98-tools` の `core/crypto/*`、`core/secret/cracker.py`、`std_t98_multi_audio_service.py` の秘話部分、`std_t98_multi_secret_service.py` を
-`apps/std_t98/secret/` に移植した。tools では別プロセス + UDS だったものを **単一プロセス内のワーカースレッド 1 本** にした(§3.4)。
+`apps/std_t98/secret/` に移植した。tools では別プロセス + UDS だったものを **単一プロセス内のワーカースレッド 1 本** にした(§2.5)。
 
 | 部品 | 内容 | 検証 |
 |---|---|---|
@@ -109,6 +108,6 @@ S.P.E.A.R. 本体は **GPL-3.0 で公開する方針**(2026-09-17)なので、GP
 - 30ch 受信機は 4 Msps 入力で実時間の約 1 倍(1.2 s を 1.2 s で処理、-O2 単スレッド)。GUI ではワーカースレッド 1 本で足りるが
   余裕は小さい。FirInterpolator ×10 を 30 本回す部分が支配的 → 必要なら PFB 出力 6.25 kHz のまま demod する案(sps≈2.6 は
   Gardner には厳しい)か、×4 に落とす案。
-- `Provenance` の連鎖(resamp1 → PFB → 補間 → シンボル判定点)でフレーム先頭を radio.rx sample index に戻せた(§4.5)。
+- `Provenance` の連鎖(resamp1 → PFB → 補間 → シンボル判定点)でフレーム先頭を radio.rx sample index に戻せた(§3.6)。
   PFB の provenance は「M 入力 → 1 出力」の整数比で表せるので StageInfo で十分だった。
 - AMBE の float 経路は ±4447 でソフトクリップされる(mbelib の short 経路は ×7)。AudioSink に出すときは ×7 して 16 bit に。

@@ -6,7 +6,7 @@ namespace spear::apps {
 using namespace std::chrono_literals;
 
 void TemplateApp::on_start(Core& core) {
-    // decoder のように全 sample が要るなら Lossless、表示だけなら LatestOnly (§10)
+    // decoder のように全 sample が要るなら Lossless、表示だけなら LatestOnly (§4.3)
     sub_ = core.rx().subscribe(info().id, DeliveryPolicy::Lossless, 64);
     stop_ = false;
     th_ = std::thread([this] { run(); });
@@ -25,10 +25,10 @@ void TemplateApp::run() {
         auto d = sub_->pop(100ms);
         if (!d) continue;
         auto iq = d->block.as<sc16>();
-        // ここに DSP。中間結果は TAP() で観測できるようにする (§5.3)
+        // ここに DSP。中間結果は TAP() で観測できるようにする (§4.4)
         TAP(std::string(info().id + ".input").c_str(), iq.data(), iq.size());
         blocks_++;
-        // 事象を見つけたら Event に provenance(元 sample index 範囲)を付けて発行する (§4.5)
+        // 事象を見つけたら Event に provenance(元 sample index 範囲)を付けて発行する (§3.6)
         // core()->events().emit(EventKind::Info, info().id, "something", d->block.range());
     }
 }

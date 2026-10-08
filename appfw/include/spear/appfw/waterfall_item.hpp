@@ -1,8 +1,8 @@
-// spear-gui — Waterfall (要件 §9.3, §9.4)
+// spear-gui — Waterfall (要件 §8.3, §8.4)
 //
 // 自前の QSGTexture(QRhiTexture)を持つ scene graph node。view processor が生成した行を
 // render thread で行単位に部分アップロードし、リング状のテクスチャ座標でスクロールする。
-// 標準の QML Image 更新(毎フレーム全面再アップロード)はタブレット級 GPU で破綻する (§9.4)。
+// 標準の QML Image 更新(毎フレーム全面再アップロード)はタブレット級 GPU で破綻する (§8.4)。
 #pragma once
 
 #include "view_source.hpp"

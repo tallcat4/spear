@@ -1,4 +1,4 @@
-# Spear.Widgets: 再利用可能な描画部品 (要件 §9.3)。App のページはこれらを静的に組み合わせる。
+# Spear.Widgets: 再利用可能な描画部品 (要件 §8.3)。App のページはこれらを静的に組み合わせる。
 qt_add_library(spear_widgets STATIC)
 qt_add_qml_module(spear_widgets
   URI Spear.Widgets

@@ -1,10 +1,10 @@
-// S.P.E.A.R. core — B210LiveSource (要件 §7, §17.2)
+// S.P.E.A.R. core — B210LiveSource (要件 §6, §9.2)
 //
 // 実機 RX source。障害時の再接続責務を持つ:
 //   * device 消失時、例外で App を落とさず再接続を試みる。成功したら generation を進め、
 //     Discontinuity を打って継続する(記録を止めるより「切れたと明示して続ける」)。
 //   * watchdog: recv() が timeout を返し続ける状態を検出し、能動的に再初期化する。
-// UHD の rx_metadata_t を「区別したまま」Flags と Event に写す (§4.3, §17.1)。
+// UHD の rx_metadata_t を「区別したまま」Flags と Event に写す (§3.3, §9.1)。
 // sample_index は time_spec の tick から導く: 欠落は index の飛びとして現れ、provenance が保たれる。
 #pragma once
 
@@ -35,7 +35,7 @@ struct B210RxStats {
 struct B210SourceOptions {
     RadioOptions radio;
     double   recv_timeout_s = 0.5;
-    int      watchdog_timeouts = 6;     // 連続 timeout 回数 → 再初期化 (§17.2 watchdog)
+    int      watchdog_timeouts = 6;     // 連続 timeout 回数 → 再初期化 (§9.2 watchdog)
     double   reconnect_backoff_s = 1.0;
     double   probe_period_s = 0.5;      // device 不在時の probe 周期(副作用なし)
     double   fault_retry_s = 5.0;       // Fault 状態からの再試行間隔
@@ -43,7 +43,7 @@ struct B210SourceOptions {
     // 注: 受信中に FX3 状態レジスタを周期的に読むことはしない。EP0 ベンダ要求はバルク転送を
     // 約 13 ms 止める(USB 2.0 で実測、= 毎回 overflow)。受信中の一次ソースはデータ経路そのもので、
     // レジスタは遷移時と異常時(recv timeout)にのみ読んで原因を分類する。
-    bool     realtime_priority = true;  // uhd::set_thread_priority_safe (§13.1 #3)
+    bool     realtime_priority = true;  // uhd::set_thread_priority_safe (§11.1 #3)
     std::size_t block_samples = kDefaultBlockSamples;
     std::size_t pool_blocks   = kDefaultPoolBlocks;
 };

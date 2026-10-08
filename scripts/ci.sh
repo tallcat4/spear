@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ハードウェアなしで回る CI (要件 §12.3, §11)。TSan を常設 (§12.2)。
+# ハードウェアなしで回る CI (要件 §10.3, §10.4)。TSan を常設 (§10.2)。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSPEAR_WITH_UHD=OFF

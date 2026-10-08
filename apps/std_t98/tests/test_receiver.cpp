@@ -3,7 +3,7 @@
 //   2) symbol sync: 公称 26.04 sps の階段波からシンボルが回復できること
 //   3) golden: 実機録音の抜粋(~/spear/golden/std_t98/ch3_pich.sigmf-*)を丸ごと通し、CSM/CRC が一致すること
 // 合成 RF 変調器は持たない — std-t98-tools 自体が RX 専用で実信号で検証されており、規格外の送信モデルを
-// 発明するより実録音を golden にするほうが正しい(§12.3)。
+// 発明するより実録音を golden にするほうが正しい(§10.3)。
 #include "receiver.hpp"
 #include "dsp/sync_correlator.hpp"
 #include "dsp/symbol_sync.hpp"

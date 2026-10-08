@@ -1,5 +1,5 @@
 // 鍵探索ワーカー — 専用スレッド 1 本でモデルをロードし、要求を順に Cracker で解く(DSP thread では走らせない)。
-// tools では別プロセス(std_t98_multi_secret_service.py)+ UDS だったものを、単一プロセス内のキュー + コールバックにした(要件 §3.4)。
+// tools では別プロセス(std_t98_multi_secret_service.py)+ UDS だったものを、単一プロセス内のキュー + コールバックにした(要件 §2.5)。
 // 要求は同じチャネルの未処理分を置き換える(古い窓を解いても意味がない)。結果コールバックはワーカースレッド上で呼ばれる。
 #pragma once
 #include "cracker.hpp"

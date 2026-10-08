@@ -1,4 +1,4 @@
-# S.P.E.A.R. 用 libuhd (要件 §17.2 再接続の前提)
+# S.P.E.A.R. 用 libuhd (要件 §9.2 再接続の前提)
 # Arch 公式 libuhd 4.9.0.1-8 の PKGBUILD をベースに、device 消失時に shared_ptr deleter から
 # 例外が投げられて std::terminate する UHD のバグを直すパッチを当てる。
 # docs / python-uhd は作らない(公式パッケージをそのまま使う。ABI は同一)。
@@ -7,7 +7,7 @@
 #   デフォルト        : 公式と同じフル構成 + パッチ。共用の開発機はこちら(gnuradio / soapyuhd /
 #                       python-uhd / sdrangel など UHD を使う他アプリを壊さない)。
 #   SPEAR_B200_ONLY=1 : B200 (USB) 以外の全 device / MPMD / DPDK / C API を無効化(libuhd.so 13 MB → 5.3 MB、
-#                       共有ライブラリ依存 45 → 14)。Appliance 用 OS image (§13) 専用。共用機に入れないこと。
+#                       共有ライブラリ依存 45 → 14)。Appliance 用 OS image (§11) 専用。共用機に入れないこと。
 # Maintainer (upstream Arch): Carl Smedstad <carsme@archlinux.org>
 
 pkgbase=libuhd

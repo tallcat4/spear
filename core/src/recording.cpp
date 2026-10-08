@@ -86,7 +86,7 @@ uint32_t RecordingSource::fill(BlockBuilder& b) {
     std::size_t got = static_cast<std::size_t>(data_.gcount()) / esz;
     if (got == 0) {
         if (!loop_) return 0;
-        // loop: 時間軸が巻き戻る → generation を進める (§4.4.1)
+        // loop: 時間軸が巻き戻る → generation を進める (§3.5)
         if (!reopen_data()) return 0;
         next_generation();
         b.header().flags.set(Flag::Discontinuity);

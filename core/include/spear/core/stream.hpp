@@ -1,11 +1,11 @@
-// S.P.E.A.R. core — Stream Bus (要件 §5, §10)
+// S.P.E.A.R. core — Stream Bus (要件 §4, §4.3)
 //
-// 静的配線された fan-out 層。registry も discovery も動的 attach も持たない (§3.1)。
+// 静的配線された fan-out 層。registry も discovery も動的 attach も持たない (§2.2)。
 //
-// 不変原則 (§5.2): Producer は consumer の具体的な存在を知らない。
+// 不変原則 (§4.2): Producer は consumer の具体的な存在を知らない。
 //   producer は Stream::publish() を呼ぶだけ。誰が subscribe しているかは知らないし知れない。
 //
-// 不変条件 (§10): RX Lossless stream は、全 sample を配送するか discontinuity を発行するかの
+// 不変条件 (§4.3): RX Lossless stream は、全 sample を配送するか discontinuity を発行するかの
 //   いずれかである。無言の欠落は存在しない。
 //   → Lossless consumer のキューが溢れた場合、producer は block を捨てる(止まらない)が、
 //     (a) ConsumerOverflow event を発行し、(b) 次に配送する block に Discontinuity flag を立て、
@@ -112,7 +112,7 @@ public:
     // producer: block を全 consumer へ配布(参照のみ、コピーなし)。ブロックしない。
     void publish(const BlockRef& block);
 
-    // lifecycle (§5.1)
+    // lifecycle (§4.1)
     void end();                            // EOS を全 consumer へ
     bool ended() const;
 
@@ -144,8 +144,8 @@ public:
     }
 };
 
-// consumer 側で sample index の連続性を検査する補助 (§4.5)。
-// generation が変われば比較せず「新しい時間軸」として受け入れる (§4.4.1)。
+// consumer 側で sample index の連続性を検査する補助 (§3.6)。
+// generation が変われば比較せず「新しい時間軸」として受け入れる (§3.5)。
 class ContinuityChecker {
 public:
     // 欠落があれば {generation, expected, actual} を返す(actual > expected)。

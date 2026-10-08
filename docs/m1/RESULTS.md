@@ -1,4 +1,4 @@
-# M-1: 前提の健全性確認 — 結果 (要件 §14 M-1)
+# M-1: 前提の健全性確認 — 結果 (要件 §12 M-1)
 
 ## 条件 (a): AC + governor=performance + USB autosuspend 無効 — 2026-09-15
 
@@ -22,7 +22,7 @@
 
 補足(同日の予備走行、修正前バイナリ): 走行中に 8 並列のビルドを重ね package 温度 100 °C・
 熱スロットリング(throttle count 533→1151)が 5 秒間発生したが、その間も overflow / out_of_sequence は 0。
-40 MB/s は CPU 性能の問題ではない(§13.1)ことの傍証。
+40 MB/s は CPU 性能の問題ではない(§11.1)ことの傍証。
 
 予備走行で `discontinuity` が約 130 回/秒出たのは `time_spec.to_ticks(sample_rate)` の丸めジッタによる
 計測バグ(B210LiveSource 側)。master clock tick で index を計算する形に修正済み。
@@ -46,23 +46,23 @@ AC を抜き、`scripts/tune-power.sh restore` でデフォルトへ戻した状
 
 ## 総合判定
 
-(a)(b) とも 30 分ゼロ。§14 の分岐で最良のケース。§13.1 が主敵と想定した電源管理の介入は、この個体
+(a)(b) とも 30 分ゼロ。§12 の分岐で最良のケース。§11.1 が主敵と想定した電源管理の介入は、この個体
 (LibreSDR_B220mini)・この USB 構成・UHD 4.9 デフォルトの transport buffer では 10 Msps に対して顕在化しなかった。
 CPU が 456 MHz まで落ちても USB 割り込み応答は間に合っている。
 
 方針への反映:
-* §13.1 の調整(performance 固定 / autosuspend 無効 / SCHED_FIFO / mlockall)は「必須」ではなく Appliance 化時の保険とする。
+* §11.1 の調整(performance 固定 / autosuspend 無効 / SCHED_FIFO / mlockall)は「必須」ではなく Appliance 化時の保険とする。
   Development 段階では OS 設定を触らない。
 * バッテリー消費 ~14 % / 30 min → フィールドでの連続運用はおよそ 1.5〜2 時間が目安。
-* 再接続パス(§17.2)は両条件とも発火しなかった。USB 抜き差しによる意図的な切断試験を別途行う。
+* 再接続パス(§9.2)は両条件とも発火しなかった。USB 抜き差しによる意図的な切断試験を別途行う。
 
 ## 未解決
-* rtprio 未設定のため `set_thread_priority_safe` が失敗する(§13.1 の 3 番)。今回の結果からは不要だが、
+* rtprio 未設定のため `set_thread_priority_safe` が失敗する(§11.1 の 3 番)。今回の結果からは不要だが、
   `/etc/security/limits.d/spear.conf` に `<user> - rtprio 99` / `memlock unlimited` を置けば有効化できる。
 * B2xx の `ref_locked` は外部 10 MHz 基準 PLL のロック状態。`internal` では unlocked が正常なので
   起動シーケンス stage 3 は external/gpsdo のときのみ必須条件とした。
 
-# USB 切断・再接続試験 (要件 §17.2) — 2026-09-15
+# USB 切断・再接続試験 (要件 §9.2) — 2026-09-15
 
 10 Msps 受信中に B210 の USB ケーブルを抜き、約 10 秒後に挿し直す。`spear-soak --minutes 2`。
 
@@ -77,13 +77,13 @@ CPU が 456 MHz まで落ちても USB 割り込み応答は間に合ってい�
 根本原因は `libusb1_zero_copy.cpp` の `release()` → `enqueue_buffer()` が deleter 文脈で `submit_what_we_can()` の
 例外を伝播させること(upstream master でも未修正)。**`packaging/libuhd` のパッチで UHD 側を直す**(interpose は削除)。
 
-| 5 | **パッチ済み libuhd 4.9.0.1-8.1**(interpose 削除)。`tear_down` は 0 ms で完了、挿し直し後 `reconnected: generation advanced (1)`、10 Msps 再開、drop 0 | **§17.2 の再接続が成立** |
+| 5 | **パッチ済み libuhd 4.9.0.1-8.1**(interpose 削除)。`tear_down` は 0 ms で完了、挿し直し後 `reconnected: generation advanced (1)`、10 Msps 再開、drop 0 | **§9.2 の再接続が成立** |
 
 観察: 挿し直し直後の FW 書き込みで USB が接続→切断→再接続する挙動は UHD の通常動作(FX3 が新 FW で再起動)。
 その後の FPGA イメージ転送は USB 2.0 では 60 秒前後かかる。B210 は本機では **USB 2.0 で意図的に運用**している
 (10 Msps sc16 = 40 MB/s は USB 2.0 実効帯域の上限付近だが、M-1 の 2 条件で 30 分ゼロ欠落)。
 
-# 装置状態の一次ソース化 (要件 §12.1) — 2026-09-15
+# 装置状態の一次ソース化 (要件 §10.1) — 2026-09-15
 
 「rate が 0 だから書き込み中だろう」式の推定を排し、状態を一次ソースから判定する。
 

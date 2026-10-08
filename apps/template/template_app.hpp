@@ -6,7 +6,7 @@
 //   3. on_stop(): consumer と thread を全て解放する(次の App が Radio を使う)
 //   4. App 固有の State は Q_PROPERTY として App が所有し、変更は App のメソッドだけを通る(state-ownership)
 //   5. on_start / on_stop は GUI thread で呼ばれる(基底が保証)。DSP は自前 thread で回す
-//   6. 中間 stream には TAP() を置く (§5.3)
+//   6. 中間 stream には TAP() を置く (§4.4)
 #pragma once
 
 #include "spear/appfw/app.hpp"

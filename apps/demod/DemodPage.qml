@@ -34,7 +34,7 @@ Item {
         markerHz: app.channelOffsetHz; markerLabel: "RX"
         onAskRef: ui.askRef(app.view.dbMax, (v) => { app.view.dbMin = v - 90; app.view.dbMax = v })
     }
-    // 観測点 2: App 内部の channel IQ(240 kHz)。DSP コードに触れずに Stream Bus から取っている (§0)
+    // 観測点 2: App 内部の channel IQ(240 kHz)。DSP コードに触れずに Stream Bus から取っている (§1.1)
     Item {
         id: chanBox
         anchors.top: wide.bottom; anchors.left: parent.left; anchors.right: parent.right

@@ -1,8 +1,8 @@
-// spear-gui — View processor (要件 §9.2)
+// spear-gui — View processor (要件 §8.2)
 //
 // IQ → FFT / view processor → lightweight view frame → QML。
 // Stream Bus の LatestOnly consumer として自前 thread で動く。GUI thread でも DSP thread でもない。
-// GUI が遅ければ自分の stream が drop するだけで、他 consumer に波及しない (§10)。
+// GUI が遅ければ自分の stream が drop するだけで、他 consumer に波及しない (§4.3)。
 #pragma once
 
 #include "spear/core/stream.hpp"

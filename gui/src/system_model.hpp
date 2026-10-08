@@ -1,4 +1,4 @@
-// spear-gui — SystemModel: Core の State / Event を QML へ (要件 §12.1 装置上の可観測性)
+// spear-gui — SystemModel: Core の State / Event を QML へ (要件 §10.1 装置上の可観測性)
 //
 // 250 ms ごとに Core を読んで property を更新する(GUI が止まっても Core には影響しない)。
 // Event は EventBus の listener から GUI thread へ queued で渡す。

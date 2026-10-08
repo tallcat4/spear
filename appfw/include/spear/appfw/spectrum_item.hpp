@@ -1,4 +1,4 @@
-// spear-gui — Spectrum trace (要件 §9.3 Spectrum widget)
+// spear-gui — Spectrum trace (要件 §8.3 Spectrum widget)
 // QSGGeometryNode の line strip。live trace + max hold。グリッド・目盛は QML 側(Rectangle/Text)。
 #pragma once
 

@@ -223,7 +223,7 @@ void B210LiveSource::run() {
             continue;
         }
         if (!first_up) {
-            // 再接続成功: 時間軸が切れたので generation を進める (§4.4.1)
+            // 再接続成功: 時間軸が切れたので generation を進める (§3.5)
             ++generation_;
             std::lock_guard lk(mu_);
             st_.reconnects++;
@@ -391,7 +391,7 @@ void B210LiveSource::run() {
             pending |= f;
             if (n == 0) continue;
 
-            // ---- settling: 最初の N block は捨てる(§17.2 手順5)----
+            // ---- settling: 最初の N block は捨てる(§9.2 手順5)----
             if (settle > 0) { --settle; continue; }
             if (!stage6) {
                 stage6 = true;
@@ -410,7 +410,7 @@ void B210LiveSource::run() {
                     have_base = true;
                     base_ticks = ticks;
                     pending.set(Flag::StartOfBurst);
-                    // 時刻基準 (§4.4): hardware time ↔ host monotonic ↔ UTC の対応を 1 点記録。
+                    // 時刻基準 (§3.4): hardware time ↔ host monotonic ↔ UTC の対応を 1 点記録。
                     // block の time_spec は USB バッファ遅延分だけ host 受信時刻より古いので、
                     // get_time_now() の往復中点で対応付ける(1 回だけ、~1 ms の EP4 要求。転送は止めない)。
                     try {

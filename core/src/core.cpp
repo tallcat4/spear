@@ -25,7 +25,7 @@ bool Core::set_source(std::unique_ptr<Source> source) {
 bool Core::run_app(std::shared_ptr<App> app, std::string* err) {
     stop_app();
     if (!source_) { if (err) *err = "no source"; return false; }
-    // 宣言をそのまま適用。適用不能なら App 起動を失敗させる (§8.1)。
+    // 宣言をそのまま適用。適用不能なら App 起動を失敗させる (§7.1)。
     const RfConfig cfg = app->declare_rf_config();
     if (!source_->configure(cfg, err)) {
         events_.emit(EventKind::Error, "core", "rf config rejected for app " + app->name() + (err ? ": " + *err : ""));

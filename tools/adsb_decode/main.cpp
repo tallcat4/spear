@@ -1,4 +1,4 @@
-// spear-adsb-decode — SigMF 録音を ADS-B Receiver に流す headless 解析 (§11, §12.3 golden set)
+// spear-adsb-decode — SigMF 録音を ADS-B Receiver に流す headless 解析 (§10.4, §10.3 golden set)
 //   spear-adsb-decode <base> [--lo-offset Hz] [--cutoff Hz] [--taps N] [--ratio dB] [--no-fix] [--ref lat,lon] [--golden out.txt] [--quiet]
 // 出力: 受理フレームの行(index DF ICAO hex 解読内容)、最後に統計と航空機一覧。
 // --golden f: 受理フレームを "index hex" で 1 行ずつ書く(apps/adsb/tests の golden、CRC OK の DF17 は自己検証的)。

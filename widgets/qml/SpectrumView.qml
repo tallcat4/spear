@@ -1,4 +1,4 @@
-// Spear.Widgets — SpectrumView: Spectrum + Waterfall の再利用部品 (要件 §9.3)
+// Spear.Widgets — SpectrumView: Spectrum + Waterfall の再利用部品 (要件 §8.3)
 // 任意の ViewSource(= 任意の stream の view processor)に接続できる。App のページはこれを置くだけ。
 // 上: 読み出し行、中: スペクトラム(グリッド付き)、下: ウォーターフォール。
 import QtQuick

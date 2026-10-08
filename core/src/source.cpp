@@ -27,7 +27,7 @@ bool ThreadedSource::configure(const RfConfig& cfg, std::string* err) {
         cfg_ = cfg;
     }
     bump_state();
-    // stream metadata は生成時に確定 (§4.2)。source の再構成 = stream の作り直し。
+    // stream metadata は生成時に確定 (§3.2)。source の再構成 = stream の作り直し。
     StreamMeta m = stream_->meta();
     m.sample_rate = cfg.sample_rate;
     m.center_freq = cfg.center_freq;

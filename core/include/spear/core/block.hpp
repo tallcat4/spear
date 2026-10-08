@@ -1,9 +1,9 @@
-// S.P.E.A.R. core — Sample Block / BlockRef / BlockPool (要件 §6)
+// S.P.E.A.R. core — Sample Block / BlockRef / BlockPool (要件 §5)
 //
-// 守るべき1点 (§6.2): Block 参照は opaque handle。
+// 守るべき1点 (§5.2): Block 参照は opaque handle。
 //   BlockRef の内部表現(現在は heap pool + shared_ptr<const>)は公開 API から見えない。
 //   将来 shared memory / zero-copy 化しても利用側は変わらない。
-// immutability: commit 後の block は const でしか触れない (§12.2)。
+// immutability: commit 後の block は const でしか触れない (§10.2)。
 #pragma once
 
 #include "types.hpp"
@@ -105,7 +105,7 @@ struct PoolStats {
 };
 
 // 固定 slot 数の buffer pool。枯渇時は heap fallback(無言で失敗しない: 統計に出す)。
-// 40 MB/s では素朴な mutex 実装で足りる (§6.1)。lock-free 化は要件で固定しない。
+// 40 MB/s では素朴な mutex 実装で足りる (§5.1)。lock-free 化は要件で固定しない。
 class BlockPool {
 public:
     BlockPool(std::size_t slot_bytes, std::size_t slots);

@@ -1,4 +1,4 @@
-// Spear.Widgets — LevelMeter: dB スケールの横バー(Numeric monitor の一種、§9.3)。閾値マーカー付き。
+// Spear.Widgets — LevelMeter: dB スケールの横バー(Numeric monitor の一種、§8.3)。閾値マーカー付き。
 import QtQuick
 import Spear.Theme
 

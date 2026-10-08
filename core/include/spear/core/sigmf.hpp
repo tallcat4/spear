@@ -1,10 +1,10 @@
-// S.P.E.A.R. core — 記録フォーマット (要件 §8.4): SigMF 互換 + 独自 sidecar
+// S.P.E.A.R. core — 記録フォーマット (要件 §7.4): SigMF 互換 + 独自 sidecar
 //
 // 二層構成:
 //   <name>.sigmf-data   raw samples (ci16_le / cf32_le)
 //   <name>.sigmf-meta   SigMF (interop 可能な部分: datatype, sample_rate, captures[frequency, sample_start])
 //   <name>.spear.json   sidecar (SigMF で表現できないもの: generation, discontinuity, flags,
-//                       tuning history, events, 時刻基準と推定精度 §4.4)
+//                       tuning history, events, 時刻基準と推定精度 §3.4)
 // 外部 JSON ライブラリに依存しない(書き出しは素直に、読み込みは必要キーのみ走査)。
 #pragma once
 
@@ -42,7 +42,7 @@ struct EventRecord {
     int64_t value = 0;
 };
 
-// tuning history (§8.4): どの sample から新周波数か (§17.1 timed command で sample 単位に確定)
+// tuning history (§7.4): どの sample から新周波数か (§9.1 timed command で sample 単位に確定)
 struct Tuning {
     uint64_t generation = 0;
     uint64_t sample_index = 0;
@@ -64,14 +64,14 @@ struct Meta {
     std::string description;
     std::string hw = "Ettus B210 via UHD";
     std::string author = "spear";
-    std::string time_reference = "usrp_time_spec";      // §4.4: 基準種別
-    std::string time_accuracy  = "TCXO ~2ppm, no GPSDO"; // §4.4: 推定精度
+    std::string time_reference = "usrp_time_spec";      // §3.4: 基準種別
+    std::string time_accuracy  = "TCXO ~2ppm, no GPSDO"; // §3.4: 推定精度
     double      lo_correction_ppm = 0;   // 録音時に Radio が LO 側で打ち消した個体誤差 [ppm](provenance。0 なら書かない)
     std::string rx_port;                 // 受信に使った装置の端子(TRXA / RXA / RXB / TRXB。provenance。空なら書かない)
     std::vector<Capture>       captures;
     std::vector<Discontinuity> discontinuities;
     std::vector<Tuning>        tuning;
-    std::vector<TimeRef>       time_refs;     // §4.4: generation ごとの hw↔host↔UTC 対応点
+    std::vector<TimeRef>       time_refs;     // §3.4: generation ごとの hw↔host↔UTC 対応点
     std::vector<EventRecord>   events;
     uint64_t total_samples = 0;
 };

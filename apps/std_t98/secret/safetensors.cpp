@@ -95,7 +95,7 @@ private:
 bool read_safetensors(std::span<const uint8_t> bytes, std::map<std::string, Tensor>& out, std::string* err) {
     if (bytes.size() < 8) { if (err) *err = "safetensors: too short"; return false; }
     uint64_t hlen = 0;
-    std::memcpy(&hlen, bytes.data(), 8);   // little endian(x86 前提。要件 §1: 対象機固定)
+    std::memcpy(&hlen, bytes.data(), 8);   // little endian(x86 前提。要件 §1.2: 対象機固定)
     if (hlen == 0 || hlen > (1u << 24) || 8 + hlen > bytes.size()) { if (err) *err = "safetensors: bad header length"; return false; }
     const std::string header(reinterpret_cast<const char*>(bytes.data() + 8), hlen);
     const std::span<const uint8_t> data = bytes.subspan(8 + hlen);

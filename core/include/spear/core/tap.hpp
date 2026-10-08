@@ -1,4 +1,4 @@
-// S.P.E.A.R. core — TAP (要件 §5.3)
+// S.P.E.A.R. core — TAP (要件 §4.4)
 //
 // DSP 中間点の開発用出力。registry も dynamic tap も使わない。
 //   TAP("std_t98.discriminator", buf, n);

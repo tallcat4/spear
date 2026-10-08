@@ -1,5 +1,5 @@
 // spear-gui — TraceSource: 固定長トレース(アイパターン、コンスタレーションの 1 区間など)をどのスレッドからでも push でき、
-// QML の item(EyeDiagramItem 等)が GUI thread でまとめて取り出す薄い QObject (要件 §9.3 の再利用部品)。
+// QML の item(EyeDiagramItem 等)が GUI thread でまとめて取り出す薄い QObject (要件 §8.3 の再利用部品)。
 // ViewSource が「stream → spectrum」なのに対し、こちらは App の DSP が既に切り出した短いトレースを運ぶ。
 #pragma once
 

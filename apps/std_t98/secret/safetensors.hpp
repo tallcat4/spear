@@ -1,6 +1,6 @@
 // safetensors(https://github.com/huggingface/safetensors)の最小リーダ。
 // 形式: u64 LE ヘッダ長 + JSON ヘッダ {"name": {"dtype": "F32", "shape": [...], "data_offsets": [begin, end]}, "__metadata__": {...}} + 生データ。
-// F32 テンソルだけを扱う(秘話モデルの重みはすべて F32)。学習フレームワークには依存しない(要件 §3.4 道 1)。
+// F32 テンソルだけを扱う(秘話モデルの重みはすべて F32)。学習フレームワークには依存しない(要件 §2.5 道 1)。
 #pragma once
 #include <cstdint>
 #include <map>

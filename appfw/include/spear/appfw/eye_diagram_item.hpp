@@ -1,4 +1,4 @@
-// spear-gui — EyeDiagramItem (要件 §9.3): TraceSource のトレースを重ね描きする。
+// spear-gui — EyeDiagramItem (要件 §8.3): TraceSource のトレースを重ね描きする。
 // 古いトレースは薄く(persistence)、直近の数本は明るく。目盛・ラベルは QML 側(EyeDiagram.qml)。
 #pragma once
 

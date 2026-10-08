@@ -6,7 +6,7 @@
 //   → 同期語検出 → 192 シンボル → quantize → dewhiten → RICH / SACCH / PICH / TCH
 // ../std-t98-tools/std_t98_30ch_multi_rf_backend.py と同じ構成・定数。
 //
-// 観測点(§0, §14 M3): Observer の各 hook が全チャネルの中間 stream を受け取る。App はそれを
+// 観測点(§1.1, §12 M3): Observer の各 hook が全チャネルの中間 stream を受け取る。App はそれを
 // Stream Bus に publish するだけで、この DSP コードには触れない。
 #pragma once
 
@@ -49,7 +49,7 @@ struct ReceiverConfig {
 struct Frame {
     int      channel = 0;            // 0..29(ch1 = 351.20000 MHz)
     uint64_t symbol_index = 0;       // そのチャネルのシンボル通し番号(フレーム先頭)
-    uint64_t input_sample_index = 0; // radio.rx の sample index に逆算した先頭(provenance §4.5)
+    uint64_t input_sample_index = 0; // radio.rx の sample index に逆算した先頭(provenance §3.6)
     double   sync_sse = 0;
     Symbols  raw;                    // 量子化済み 192 シンボル(dewhiten 前)
     FrameFields fields;              // dewhiten 後のフィールド(ビット文字列)

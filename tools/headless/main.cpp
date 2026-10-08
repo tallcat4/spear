@@ -1,11 +1,11 @@
-// spear-headless — M0: Stream Bus の成立を GUI なしで確認する (要件 §11, §14 M0)
+// spear-headless — M0: Stream Bus の成立を GUI なしで確認する (要件 §10.4, §12 M0)
 //
 //   Source → Stream Bus → { spectrum (LatestOnly), waterfall (LatestOnly, わざと遅い), recorder (Lossless) }
 //
 //   * 同一 IQ stream を 3 consumer が同時利用する
 //   * waterfall の起動・停止(途中で attach/detach)が他 consumer へ影響しない
 //   * consumer ごとの drop 統計が取得できる
-// source は b210 / synthetic / file:<base> を同一コードで差し替えられる (§7)。
+// source は b210 / synthetic / file:<base> を同一コードで差し替えられる (§6)。
 #include "spear/core/core.hpp"
 #include "spear/core/recording.hpp"
 #include "spear/core/synthetic_source.hpp"
@@ -103,7 +103,7 @@ private:
             auto d = spec_sub_->pop(100ms);
             if (!d || d->block.header().sample_count < 1024) continue;
             auto iq = d->block.as<sc16>();
-            TAP("headless.spectrum_in", iq.data(), iq.size()); // 中間 stream の観測点 (§5.3)
+            TAP("headless.spectrum_in", iq.data(), iq.size()); // 中間 stream の観測点 (§4.4)
             if (!est.compute_averaged(iq, db)) continue;
             std::size_t pk = 0;
             for (std::size_t i = 1; i < db.size(); ++i) if (db[i] > db[pk]) pk = i;
@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
         std::printf("\n");
     });
 
-    // ---- source 差し替え (§7): App コードは変わらない ----
+    // ---- source 差し替え (§6): App コードは変わらない ----
     std::unique_ptr<Source> src;
     if (source == "synthetic") {
         SyntheticSignal sig;

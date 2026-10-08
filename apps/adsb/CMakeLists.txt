@@ -1,7 +1,7 @@
 # App: ADS-B(1090 MHz Mode S / Extended Squitter)。docs/apps/adsb.md
 #   protocol/  純 C++ プロトコルデコーダ(CRC-24、DF 判別、高度/スコーク、CPR)
 #   dsp/       App 内 DSP(プリアンブル検出、PPM ビット判定)
-#   receiver   純 C++ 受信機(回転 → 低域 FIR → 振幅 → PPM → CRC)。Qt/UHD 非依存 → headless / テスト可能 (§11)
+#   receiver   純 C++ 受信機(回転 → 低域 FIR → 振幅 → PPM → CRC)。Qt/UHD 非依存 → headless / テスト可能 (§10.4)
 #   aircraft   航空機表(ICAO ごとの集約、CPR 偶奇ペア、期限切れ)
 #   map/       ミニマップ: 地図データ(Natural Earth + OurAirports、build_map.py で生成、バイナリに埋め込む)、表示範囲の自動フィット、QQuickPaintedItem
 add_library(spear_adsb_rx STATIC

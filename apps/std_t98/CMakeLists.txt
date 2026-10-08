@@ -1,9 +1,9 @@
-# App: STD-T98 モニタ (§14 M3)。
+# App: STD-T98 モニタ (§12 M3)。
 #   protocol/  純 C++ プロトコルデコーダ
 #   dsp/       App 内 DSP(RRC 設計、Gardner symbol sync、同期語検出)
-#   receiver   純 C++ 受信機(30ch)。Qt/UHD 非依存 → headless / テスト可能 (§11)
+#   receiver   純 C++ 受信機(30ch)。Qt/UHD 非依存 → headless / テスト可能 (§10.4)
 #   ambe/      AMBE 3600x2450 → PCM 8 kHz(mbelib-neo の AMBE 経路を C++ 化、GPL-2.0-or-later。pyambelib と同一結果)
-#   secret/    秘話: PN、鍵探索(ffnn = C++ 再実装 / hybrid = ONNX Runtime、要件 §3.4 道 1・2)、要求ポリシー、ワーカースレッド
+#   secret/    秘話: PN、鍵探索(ffnn = C++ 再実装 / hybrid = ONNX Runtime、要件 §2.5 道 1・2)、要求ポリシー、ワーカースレッド
 #   models/    学習済みモデル(バイナリに埋め込む。models/README.md)
 add_subdirectory(protocol)
 

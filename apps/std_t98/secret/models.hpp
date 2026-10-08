@@ -1,4 +1,4 @@
-// 学習済みモデルをバイナリに埋め込む(apps/std_t98/models/、.incbin)。実行時のファイルパスを持たない(read-only rootfs でも動く、§3.4)。
+// 学習済みモデルをバイナリに埋め込む(apps/std_t98/models/、.incbin)。実行時のファイルパスを持たない(read-only rootfs でも動く、§2.5)。
 #pragma once
 #include <cstdint>
 #include <span>

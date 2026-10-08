@@ -1,4 +1,4 @@
-# SPECTRUM — 欠陥レポート(2026-09-17、SDK への移植時)
+# SPECTRUM — 実装メモ(2026-09-17、SDK への移植時)
 
 **検証対象**: App SDK の最小形、SpectrumView 部品、Core への retune。
 

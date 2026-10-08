@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 project(spear VERSION 0.1.0 LANGUAGES CXX)
 
 # S.P.E.A.R. — Signal Processing & Emission Analysis Receiver
-# FZ-G2 / B210 専用。他PC・他SDRへの移植性は要件としない(要件 §1)。
+# FZ-G2 / B210 専用。他PC・他SDRへの移植性は要件としない(要件 §1.2)。
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,12 +13,12 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "" FORCE)
 endif()
 
-option(SPEAR_TSAN        "Build with ThreadSanitizer (要件 §12.2: CIに常設)" OFF)
-option(SPEAR_TAP         "Enable TAP() intermediate-stream dumps (要件 §5.3)" ON)
+option(SPEAR_TSAN        "Build with ThreadSanitizer (要件 §10.2: CIに常設)" OFF)
+option(SPEAR_TAP         "Enable TAP() intermediate-stream dumps (要件 §4.4)" ON)
 option(SPEAR_WITH_UHD    "Build B210 live source/sink (needs libuhd)" ON)
 option(SPEAR_BUILD_TESTS "Build unit tests" ON)
 option(SPEAR_BUILD_TOOLS "Build CLI tools (soak, headless)" ON)
-option(SPEAR_BUILD_GUI   "Build Qt Quick GUI (要件 §9)" ON)
+option(SPEAR_BUILD_GUI   "Build Qt Quick GUI (要件 §8)" ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion)
 
@@ -35,7 +35,7 @@ pkg_check_modules(ALSA REQUIRED IMPORTED_TARGET alsa)
 if(SPEAR_WITH_UHD)
   find_package(UHD 4.0 REQUIRED)
 endif()
-find_package(onnxruntime CONFIG REQUIRED)   # STD-T98 秘話の hybrid モデル(要件 §3.4 道 2)。Arch: onnxruntime-cpu。最上位で探す(imported target をディレクトリ横断で見せる)
+find_package(onnxruntime CONFIG REQUIRED)   # STD-T98 秘話の hybrid モデル(要件 §2.5 道 2)。Arch: onnxruntime-cpu。最上位で探す(imported target をディレクトリ横断で見せる)
 
 add_subdirectory(core)
 add_subdirectory(dsp)

@@ -3,7 +3,7 @@
 // B210(LibreSDR 互換機も同じ)には RX に使える端子が 4 つある: TRXA / RXA / RXB / TRXB。
 // UHD ではこれを「frontend(subdev spec `A:A` / `A:B`)× antenna(`TX/RX` / `RX2`)」の 2 段で指定する。
 // Spear の外(RfConfig / config() / GUI / 保存 / SigMF)は装置パネルの名前 1 つで扱い、UHD への分解は Radio だけが
-// この表を使って行う。対応表はここが唯一の真値(要件 §8.1 の宣言項目 `antenna`)。
+// この表を使って行う。対応表はここが唯一の真値(要件 §7.1 の宣言項目 `antenna`)。
 // 選択した端子の LED は App 運転中(rx streamer が生きている間)に点灯するので、対応は実機で目視確認できる。
 #pragma once
 

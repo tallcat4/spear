@@ -1,4 +1,4 @@
-// S.P.E.A.R. core — SyntheticSource (要件 §7): 合成信号。ハードウェアなしの CI の土台 (§12.3)。
+// S.P.E.A.R. core — SyntheticSource (要件 §6): 合成信号。ハードウェアなしの CI の土台 (§10.3)。
 #pragma once
 
 #include "source.hpp"

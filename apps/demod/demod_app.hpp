@@ -4,7 +4,7 @@
 //   * DSP 境界 (docs/dsp-boundary.md): 共通は FIR 設計 / FirDecimator のみ。quadrature_demod / magnitude /
 //     de-emphasis / squelch は App 内(2 つ目の App が要ったら抽出)
 //   * 段の規約 + Provenance: 搬送波検出 event の sample 範囲を入力 index に逆算
-//   * §0: App 内部の channel IQ と audio を Stream Bus に publish し、waterfall を DSP に触れず後付け
+//   * §1.1: App 内部の channel IQ と audio を Stream Bus に publish し、waterfall を DSP に触れず後付け
 //   * AudioSink (ALSA): underrun を数え event に
 // レート: 1.92 Msps (B210 の 30.72 MHz / 16) → /8 = 240 kHz channel → /5 = 48 kHz audio
 #pragma once

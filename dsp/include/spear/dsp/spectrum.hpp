@@ -1,5 +1,5 @@
 // S.P.E.A.R. dsp — Spectrum estimator
-// sc16 IQ block → power spectrum [dBFS] (fftshift 済み)。view frame (§9.2) の生成に使う。
+// sc16 IQ block → power spectrum [dBFS] (fftshift 済み)。view frame (§8.2) の生成に使う。
 #pragma once
 
 #include "spear/core/types.hpp"

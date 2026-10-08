@@ -53,7 +53,7 @@ Window {
         function restartWithRate(v) { shell.restartActiveWithRate(v) }   // 汎用 App のレート変更(App を再起動する)
     }
 
-    // 固定パネル 1920x1200 前提の固定キャンバス (§1)。窓がそれより小さい/大きい場合は等倍縮尺で全体を収める。
+    // 固定パネル 1920x1200 前提の固定キャンバス (§1.2)。窓がそれより小さい/大きい場合は等倍縮尺で全体を収める。
     Item {
         id: canvas
         width: 1920; height: 1200

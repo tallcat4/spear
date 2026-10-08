@@ -136,7 +136,7 @@ std::unique_ptr<DemodApp::Chain> DemodApp::build_chain(double in_rate) {
     // FM: rad/sample → deviation で 1.0 に正規化。AM: 包絡線の変動分をおおよそ 1.0 に
     c->fm_scale = c->p.fm_deviation_hz > 0 ? static_cast<float>(kChanRate / (2.0 * std::numbers::pi * c->p.fm_deviation_hz)) : 0.f;
     c->am_scale = 4.f;
-    // Provenance: 段が宣言した rate 比と群遅延から合成(§4.5 の手計算を規約で置き換える)
+    // Provenance: 段が宣言した rate 比と群遅延から合成(§3.6 の手計算を規約で置き換える)
     c->prov_chan = dsp::Provenance::identity().then(c->chan.info()).then(c->chan2.info());
     c->prov_audio = c->prov_chan.then(c->audio.info());
     dsp_delay_ms_ = c->prov_audio.offset / in_rate * 1e3;
@@ -249,7 +249,7 @@ void DemodApp::run() {
         const bool open = sig_db >= squelch_db_;
         squelch_open_ = open;
         if (open != carrier) {
-            // 搬送波の出現/消失を event に。範囲は Provenance で radio.rx の sample index に逆算(§4.5)
+            // 搬送波の出現/消失を event に。範囲は Provenance で radio.rx の sample index に逆算(§3.6)
             const uint64_t in_idx = static_cast<uint64_t>(std::llround(c->prov_chan.input_index(static_cast<double>(chan_index_ - n2))));
             if (core()) core()->events().emit(open ? EventKind::Info : EventKind::Info, info().id,
                                               open ? "carrier detected" : "carrier lost",

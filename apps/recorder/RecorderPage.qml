@@ -60,7 +60,7 @@ Item {
             Readout { label: "RATE"; value: Theme.fmtRate(sys.sampleRate) + "  (" + (sys.sampleRate * 4 / 1e6).toFixed(1) + " MB/s)"; width: 330 }
             Readout { label: "DISK FREE"; value: sys.diskFreeGb.toFixed(1) + " GB"; width: 200; valueColor: sys.diskFreeGb < 2 ? Theme.red : Theme.text }
         }
-        // Lossless 不変条件 (§10): drop は 0 でなければならない。0 以外は赤で即座に分かる
+        // Lossless 不変条件 (§4.3): drop は 0 でなければならない。0 以外は赤で即座に分かる
         Rectangle {
             x: 300; y: Theme.pad + 80; width: 700; height: 52
             color: app.droppedBlocks > 0 ? Theme.red : "transparent"; border.color: Theme.lineDim; border.width: 1

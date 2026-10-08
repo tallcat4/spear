@@ -1,4 +1,4 @@
-// 起動 → App 一覧 → 選択 (要件 §9.1)。左: App 一覧、右: 装置状態と RF 宣言
+// 起動 → App 一覧 → 選択 (要件 §8.1)。左: App 一覧、右: 装置状態と RF 宣言
 import QtQuick
 import Spear.Theme
 import Spear.Widgets

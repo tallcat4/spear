@@ -1,4 +1,4 @@
-# spear_core: Radio + Stream Bus + buffer + Source/Sink 抽象 (要件 §5.4: 2000行目安)
+# spear_core: Radio + Stream Bus + buffer + Source/Sink 抽象 (要件 §4.5: 2000行目安)
 add_library(spear_core STATIC
   src/block.cpp
   src/stream.cpp
@@ -20,7 +20,7 @@ target_compile_definitions(spear_core PUBLIC
 )
 
 if(SPEAR_WITH_UHD)
-  # 注意: device 消失からの再接続 (§17.2) には packaging/libuhd のパッチ済み libuhd が必要。
+  # 注意: device 消失からの再接続 (§9.2) には packaging/libuhd のパッチ済み libuhd が必要。
   # 素の UHD 4.9 は device 消失後の最初の USB 送信で std::terminate する(deleter 内の throw)。
   target_sources(spear_core PRIVATE src/radio.cpp src/b210_source.cpp)
   target_include_directories(spear_core PUBLIC ${UHD_INCLUDE_DIRS})

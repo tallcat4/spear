@@ -1,4 +1,4 @@
-// Spear.Widgets — EyeDiagram: TraceSource(2 シンボル幅のトレース)を重ね描きするアイパターン (要件 §9.3)
+// Spear.Widgets — EyeDiagram: TraceSource(2 シンボル幅のトレース)を重ね描きするアイパターン (要件 §8.3)
 // 判定点(1/4, 3/4)の縦線と、levels に与えたレベルの横線を引く。値の意味(±1/±3 等)は App が決める。
 import QtQuick
 import Spear.Theme

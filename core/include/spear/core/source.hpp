@@ -1,8 +1,8 @@
-// S.P.E.A.R. core — Source / Sink 抽象 (要件 §7)
+// S.P.E.A.R. core — Source / Sink 抽象 (要件 §6)
 //
 // App から見て入出力先が区別されない。B210LiveSource / RecordingSource / SyntheticSource は
-// 同じ Stream<sc16> "radio.rx" を出力し、同じ App コードへ差し替えて流し込める(§12.3 の土台)。
-// 出力型は B210 native の sc16 に統一する(10 Msps = 40 MB/s, §1.1)。
+// 同じ Stream<sc16> "radio.rx" を出力し、同じ App コードへ差し替えて流し込める(§10.3 の土台)。
+// 出力型は B210 native の sc16 に統一する(10 Msps = 40 MB/s, §1.3)。
 #pragma once
 
 #include "stream.hpp"
@@ -17,9 +17,9 @@ namespace spear {
 
 inline constexpr const char* kRadioRxStreamId = "radio.rx";
 inline constexpr std::size_t kDefaultBlockSamples = 16384;  // 10 Msps で ~1.6 ms / block
-inline constexpr std::size_t kDefaultPoolBlocks   = 256;    // 16384 * 4 B * 256 = 16 MB (§13.2 予算内)
+inline constexpr std::size_t kDefaultPoolBlocks   = 256;    // 16384 * 4 B * 256 = 16 MB (§11.2 予算内)
 
-// ---- State の単一所有 (§4.1) ----
+// ---- State の単一所有 (§3.1) ----
 // 「宣言された RF 条件」は Source が 1 か所で所有する。GUI や App はコピーを表示に使わず、
 // config() を読む。変更は必ず Source の API(configure / retune)を通り、state_version が進む。
 // 観測側は state_version の変化で「何かが変わった」ことを安価に検知できる。
@@ -28,7 +28,7 @@ public:
     virtual ~Source() = default;
     virtual std::string name() const = 0;
 
-    // App の宣言 (§8.1) を適用する。適用不能なら false(App 起動失敗)。start 前に呼ぶ。
+    // App の宣言 (§7.1) を適用する。適用不能なら false(App 起動失敗)。start 前に呼ぶ。
     virtual bool configure(const RfConfig& cfg, std::string* err = nullptr) = 0;
     virtual void start() = 0;
     virtual void stop() = 0;
@@ -42,10 +42,10 @@ public:
     // 宣言・装置状態が変わるたびに進む。
     virtual uint64_t state_version() const = 0;
 
-    // 装置状態 (§12.1)。実機以外は Ready / Streaming のみを返す。
+    // 装置状態 (§10.1)。実機以外は Ready / Streaming のみを返す。
     virtual DeviceStatus device_status() const = 0;
 
-    // 運転中の retune 要求(timed command, §17.1)。宣言は即座に更新され、実際に適用された時点で
+    // 運転中の retune 要求(timed command, §9.1)。宣言は即座に更新され、実際に適用された時点で
     // Retune event(value = 実周波数, range.begin = 境界 sample index)が出る。要求は失われない(最新値が勝つ)。
     virtual bool retune(double center_freq_hz) = 0;
 

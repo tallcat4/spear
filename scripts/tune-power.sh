@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S.P.E.A.R. — Linux 電源管理調整 (要件 §13.1)。root で実行。
+# S.P.E.A.R. — Linux 電源管理調整 (要件 §11.1)。root で実行。
 # overflow の主因は性能不足ではなく電源管理の介入。優先順:
 #   1. CPU governor を performance に固定   2. USB autosuspend 無効化
 #   3. RX thread の SCHED_FIFO (アプリ側: uhd::set_thread_priority_safe → rtprio 権限が要る)

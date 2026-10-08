@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ambe2_hybrid(safetensors)→ ONNX 変換 + 等価性確認(要件 §3.4 道 2)。再学習したときだけ実行する。
+"""ambe2_hybrid(safetensors)→ ONNX 変換 + 等価性確認(要件 §2.5 道 2)。再学習したときだけ実行する。
 
 std-t98-tools の venv(torch + safetensors + onnx + onnxruntime)で実行する:
   ../std-t98-tools/env/bin/python apps/std_t98/tools/export_secret_onnx.py [--tools ../std-t98-tools] [--out apps/std_t98/models]

@@ -1,7 +1,7 @@
-# ADS-B — 実装と欠陥レポート(要件 §8.2、STATUS 次の仕事 #2)
+# ADS-B — 実装メモ(要件 §7.2、STATUS 次の仕事 #2)
 
-1090 MHz Mode S / Extended Squitter の受信 App。目的は機能ではなく基盤の検証:
-**radio.rx を 8 Msps のままフルレートで Lossless 消費する初めての App**、高頻度事象での Event/provenance の運用、表と極座標という新しい表示。
+1090 MHz Mode S / Extended Squitter の受信 App。基盤の面では、radio.rx を 8 Msps のまま Lossless で消費する初めての App で、
+高頻度の事象での Event / provenance の扱いと、表・地図という新しい表示を確認した。
 一次資料は ICAO Annex 10 Vol. IV / DO-260B、ビット位置の記法と既知ベクトルは Junzi Sun「The 1090MHz Riddle」、参照実装は dump1090 / readsb(GPL)。
 
 ## 構成
@@ -38,7 +38,7 @@ tools/adsb_decode  spear-adsb-decode <base> [--fix] [--ref lat,lon] [--golden ou
   AP 69。`spear-adsb-decode --golden` の出力)。全フレームが出ること。結果はブロック長(4096 / 16384 / 65536)によらない。
 
 ## 実機(2026-09-17、羽田近傍、B210 gain 30、1090 MHz ホイップ)
-IQ RECORDER で 1090 MHz − 2 MHz / 8 Msps を 30.6 s 録音(`rec_20260917_130714`、978 MB)。GUI の ADS-B も実機で動作した(作者確認)。
+IQ RECORDER で 1090 MHz − 2 MHz / 8 Msps を 30.6 s 録音(`rec_20260917_130714`、978 MB)。GUI の ADS-B も実機で動作した。
 `spear-adsb-decode` の結果と検出パラメータの掃引(fix なし):
 | ratio | 候補 | 受理フレーム | 位置 | 備考 |
 |---|---|---|---|---|
@@ -51,7 +51,7 @@ cutoff 1.2 MHz は 801、2.5 MHz は 630(1.5 MHz が最良)。taps 23 は 47 と
 6 機(JAL378 / ANA98 は 675 ft で最終進入、N756HA は 3825 ft 上昇中、XAX522、ANA78、AP のみ 2 機)。DF 別: DF0 268 / DF4 114 / DF5 99 / DF11 106 / DF16 15 / DF17 204 / DF18 36 / DF20 5。
 録音再生の GUI(`docs/gui/adsb.png`): 41 フレーム/s、7 機 / 位置 5、DSP 60 %(CPU 1.7 GHz)、drops 1(起動直後のみ)。
 
-## 基盤への指摘(欠陥レポート)— 直したもの
+## 見つかった基盤の問題 — 修正済み
 1. **`dsp::Provenance::then()` の群遅延の符号が逆だった**(`dsp/include/spear/dsp/stage.hpp`)。段は因果(出力 k は入力 [k−(N−1), k] から)なので
    出力 index → 入力 index は群遅延を **引く**。足していたため 2 × 群遅延ぶん遅い index を返していた。STD-T98 では 1 フレーム 320k サンプルに対して
    数十サンプルなので気付かなかった。ADS-B の合成 PPM テストがサンプル単位で固定した。
@@ -65,7 +65,7 @@ cutoff 1.2 MHz は 801、2.5 MHz は 630(1.5 MHz が最良)。taps 23 は 47 と
 4. **`std::complex<float>` の `operator*` は NaN 処理(`__mulsc3`)に落ちて遅い**。回転は float で手書きし、8 サンプル分の位相子を先に作って位相子を
    8 サンプルごとに進める(直列の 1 サンプル乗算より 4 倍速)。STD-T98 の `Receiver::process` の回転(サンプルごとに `std::cos/sin` + complex 乗算)も同じ形にできる。
 
-## 基盤への指摘 — 残っているもの
+## 見つかった基盤の問題 — 未対応
 5. **実測の負荷**: 受信機単体で 8 Msps 1 秒あたり ~160 ms(3 GHz、FIR ~95 ms、PPM 検出 ~55 ms、回転 ~10 ms)= 1 コアの 16 %。
    `spear-adsb-decode` は 53M サンプルの録音を 1.5 s。GUI では録音再生中に DSP 60 %(CPU 0.9 GHz、バッテリー powersave 時)、drops 0。
    合成源の場合は源の生成自体が同じ機で重い。PPM 検出は移動和(直列)とパルス / 無音和(ベクトル化済み)で、さらに削るならチップ和を 4 サンプル

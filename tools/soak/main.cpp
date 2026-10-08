@@ -1,4 +1,4 @@
-// spear-soak — M-1: 前提の健全性確認 (要件 §14 M-1)
+// spear-soak — M-1: 前提の健全性確認 (要件 §12 M-1)
 //
 // 目的は sample rate の上限探しではなく、電源管理由来の断続性の確認。
 //   10 Msps, 30 分連続受信、(a) AC + performance + USB autosuspend 無効 / (b) バッテリー + デフォルト
@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
     std::set_terminate(on_terminate);
 
     EventBus events;
-    // 起動シーケンス・異常を時刻付きで stdout へ(§12.1: 画面で診断が完結する前提の情報)
+    // 起動シーケンス・異常を時刻付きで stdout へ(§10.1: 画面で診断が完結する前提の情報)
     const auto t_start = std::chrono::steady_clock::now();
     events.subscribe([&](const Event& e) {
         const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - t_start).count();

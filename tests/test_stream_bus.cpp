@@ -1,4 +1,4 @@
-// Stream Bus のテスト (要件 §12.3)
+// Stream Bus のテスト (要件 §10.3)
 //   * consumer 追加・削除時に producer 側コードが変わらないこと
 //   * Lossless consumer の drop 数がゼロであること
 //   * Latest Only consumer の遅延が Lossless 側に影響しないこと

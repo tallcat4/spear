@@ -1,6 +1,6 @@
 // S.P.E.A.R. dsp — PFB チャネライザ(共通 DSP: docs/dsp-boundary.md の基準を満たす)
 //   * 数学的定義のみ(チャネル数・プロトタイプフィルタは引数)。用途の定数を含まない
-//   * §1.1 が名指しする性能要衝。マルチチャネル App が使う
+//   * §1.3 が名指しする性能要衝。マルチチャネル App が使う
 //   * 参照ベクトル(単一トーンの分離)で検証できる
 //
 // critically-sampled polyphase filter bank。M チャネル、各出力 rate = in_rate / M。

@@ -1,8 +1,8 @@
-// S.P.E.A.R. core — Event (要件 §4.1, §12.1)
+// S.P.E.A.R. core — Event (要件 §3.1, §10.1)
 //
-// 離散事象。全 Event は「自分の元となった sample index 範囲」を持つ (§4.5)。
+// 離散事象。全 Event は「自分の元となった sample index 範囲」を持つ (§3.6)。
 // 発行側スレッド(RX thread 等)を listener が遅延させないよう、配送は専用 thread で行う。
-// 最近の履歴を ring に残し、装置画面上で診断を完結させる (§12.1)。
+// 最近の履歴を ring に残し、装置画面上で診断を完結させる (§10.1)。
 #pragma once
 
 #include "types.hpp"
@@ -20,10 +20,10 @@ namespace spear {
 
 enum class EventKind : uint8_t {
     // Stream Bus
-    ConsumerOverflow,   // Lossless consumer のキュー溢れ (§10)
+    ConsumerOverflow,   // Lossless consumer のキュー溢れ (§4.3)
     ConsumerDrop,       // LatestOnly consumer の破棄(集約して報告)
-    // Radio / Core health (§12.1)
-    StartupStage,       // 起動シーケンス各段の結果 (§17.2)
+    // Radio / Core health (§10.1)
+    StartupStage,       // 起動シーケンス各段の結果 (§9.2)
     Overflow,           // ERROR_CODE_OVERFLOW
     OutOfSequence,      // transport packet loss
     Timeout,            // recv timeout
@@ -37,7 +37,7 @@ enum class EventKind : uint8_t {
     DiskLow,
     DeviceState,        // USRP 状態遷移。value = DeviceState, detail = evidence
     UhdLog,             // UHD 自身のログ(warning 以上、または B200 の info)。detail = message
-    TimeReference,      // 時刻基準の記録 (§4.4)。range.generation/begin = 対応点, value = utc_ns, detail = "hw=<s> mono=<ns>"
+    TimeReference,      // 時刻基準の記録 (§3.4)。range.generation/begin = 対応点, value = utc_ns, detail = "hw=<s> mono=<ns>"
     LoUnlock,           // 受信中に lo_locked が false になった / 復帰した(value: 0=unlock, 1=relock)
     // App
     Info,

@@ -1,6 +1,6 @@
-// S.P.E.A.R. core — 基本型 (要件 §4)
+// S.P.E.A.R. core — 基本型 (要件 §3)
 //
-// Stream / Event / State の3分類を混同しない (§4.1)。
+// Stream / Event / State の3分類を混同しない (§3.1)。
 // この header は依存を持たない。
 #pragma once
 
@@ -14,7 +14,7 @@
 namespace spear {
 
 // ---- サンプル型 ------------------------------------------------------------
-using sc16 = std::complex<int16_t>;   // B210 native wire format (10 Msps = 40 MB/s, §1.1)
+using sc16 = std::complex<int16_t>;   // B210 native wire format (10 Msps = 40 MB/s, §1.3)
 using cf32 = std::complex<float>;
 
 enum class DataType : uint8_t {
@@ -47,7 +47,7 @@ std::string_view to_string(DataType t);
 
 enum class Direction : uint8_t { RX, TX };
 
-// ---- Stream metadata (§4.2) ------------------------------------------------
+// ---- Stream metadata (§3.2) ------------------------------------------------
 // stream 生成時に確定し、以後不変。
 struct StreamMeta {
     std::string id;                 // 静的な文字列定数 ("radio.rx", "std_t98.discriminator")
@@ -59,8 +59,8 @@ struct StreamMeta {
     Direction   direction = Direction::RX;
 };
 
-// ---- Sample Block flags (§4.3) ----------------------------------------------
-// UHD の error_code / out_of_sequence をここへ「区別したまま」写す。潰さない (§17.1)。
+// ---- Sample Block flags (§3.3) ----------------------------------------------
+// UHD の error_code / out_of_sequence をここへ「区別したまま」写す。潰さない (§9.1)。
 enum class Flag : uint16_t {
     None          = 0,
     Discontinuity = 1u << 0, // 直前の block との間に欠落がある(どの理由であれ)
@@ -88,7 +88,7 @@ constexpr Flags operator|(Flags a, Flags b) { Flags r = a; r |= b; return r; }
 constexpr Flags operator|(Flag a, Flag b) { return Flags(a) | Flags(b); }
 std::string to_string(Flags f);
 
-// ---- 時間 (§4.4) -------------------------------------------------------------
+// ---- 時間 (§3.4) -------------------------------------------------------------
 // 一次基準は USRP sample counter (rx_metadata_t::time_spec)。
 struct HwTime {
     int64_t full_secs = 0;
@@ -97,13 +97,13 @@ struct HwTime {
     double  seconds() const { return static_cast<double>(full_secs) + frac_secs; }
 };
 
-// ---- Sample Block header (§4.3) ---------------------------------------------
+// ---- Sample Block header (§3.3) ---------------------------------------------
 struct BlockHeader {
-    uint64_t generation   = 0; // §4.4.1: 異なる generation 間で timestamp/sample_index を比較してはならない
+    uint64_t generation   = 0; // §3.5: 異なる generation 間で timestamp/sample_index を比較してはならない
     uint64_t sequence     = 0; // producer が発行した通し番号(block 単位)
-    uint64_t sample_index = 0; // generation 内の先頭 sample の index (provenance の土台, §4.5)
+    uint64_t sample_index = 0; // generation 内の先頭 sample の index (provenance の土台, §3.6)
     HwTime   hw_time;          // 先頭 sample の hardware timestamp
-    uint64_t host_ns      = 0; // host monotonic clock (UTC mapping 用, §4.4)
+    uint64_t host_ns      = 0; // host monotonic clock (UTC mapping 用, §3.4)
     uint32_t sample_count = 0;
     DataType dtype        = DataType::Unknown;
     Flags    flags;
@@ -111,7 +111,7 @@ struct BlockHeader {
     uint64_t sample_end() const { return sample_index + sample_count; } // exclusive
 };
 
-// ---- Provenance (§4.5 最小版) -----------------------------------------------
+// ---- Provenance (§3.6 最小版) -----------------------------------------------
 struct SampleRange {
     uint64_t generation = 0;
     uint64_t begin = 0; // inclusive
@@ -119,7 +119,7 @@ struct SampleRange {
     bool empty() const { return end <= begin; }
 };
 
-// ---- Device state (§12.1, §17.2) --------------------------------------------------
+// ---- Device state (§10.1, §9.2) --------------------------------------------------
 // USRP の主要状態。推定ではなく一次ソース(libusb 列挙 / FX3 状態レジスタ / UHD センサ / stream 状態)
 // から判定する。evidence にその根拠を必ず残す。
 enum class DeviceState : uint8_t {
@@ -144,7 +144,7 @@ struct LiveSensors {
     double rssi_db = 0;
     double hw_time_s = 0;          // get_time_now
     uint64_t host_ns = 0;
-    double drift_ppm = 0;          // 時刻基準からの hw clock vs host monotonic の乖離 (§4.4 精度推定)
+    double drift_ppm = 0;          // 時刻基準からの hw clock vs host monotonic の乖離 (§3.4 精度推定)
     double drift_uncertainty_ppm = 0; // 往復遅延由来の不確かさ。|drift| がこれを超えて初めて意味を持つ
     uint64_t sampled_ns = 0;
 };
@@ -161,7 +161,7 @@ struct DeviceStatus {
     LiveSensors sensors;
 };
 
-// 時刻基準 (§4.4): streaming 開始時に hardware time と host clock の対応を 1 点記録する
+// 時刻基準 (§3.4): streaming 開始時に hardware time と host clock の対応を 1 点記録する
 struct TimeReference {
     uint64_t generation = 0;
     double   hw_time_s = 0;        // USRP get_time_now()(往復の中点で対応付け)
@@ -174,16 +174,16 @@ struct TimeReference {
     bool valid = false;
 };
 
-// ---- RF 宣言 (§8.1) -------------------------------------------------------------
+// ---- RF 宣言 (§7.1) -------------------------------------------------------------
 // App が Core へ宣言する RF 条件。Core はそのまま適用する(適用不能なら App 起動失敗)。
 struct RfConfig {
     Direction   direction   = Direction::RX;
     double      center_freq = 100e6;
-    double      sample_rate = 2e6;   // 2〜10 Msps を基本 (§1.1)
+    double      sample_rate = 2e6;   // 2〜10 Msps を基本 (§1.3)
     double      bandwidth   = 0.0;   // 0 = sample_rate 準拠
     double      gain        = 30.0;  // dB(agc のときは AGC を切ったときに戻る値)
     bool        agc         = false; // 受信 AGC(AD9361)。true なら gain は装置が決める
-    RfPort      port        = RfPort::RxA;   // 装置パネルの端子(§8.1 の antenna)。UHD の frontend/antenna への分解は Radio(rf_port.hpp)
+    RfPort      port        = RfPort::RxA;   // 装置パネルの端子(§7.1 の antenna)。UHD の frontend/antenna への分解は Radio(rf_port.hpp)
     std::string clock_source = "internal";
 };
 

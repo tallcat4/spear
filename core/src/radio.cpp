@@ -441,7 +441,7 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
             if (got != std::string(port.subdev))
                 throw uhd::value_error("subdev spec coerced: requested " + std::string(port.subdev) + ", actual " + got);
         }
-        // ---- 宣言 (§8.1) を装置の能力範囲と照合。範囲外は「適用不能」として失敗させる(黙って丸めない)----
+        // ---- 宣言 (§7.1) を装置の能力範囲と照合。範囲外は「適用不能」として失敗させる(黙って丸めない)----
         {
             const auto fr = usrp_->get_rx_freq_range();
             const auto gr = usrp_->get_rx_gain_range();
@@ -533,7 +533,7 @@ double Radio::retune_rx_at(double freq, const uhd::time_spec_t& at) {
 
 uhd::rx_streamer::sptr Radio::make_rx_streamer(std::string* err) {
     try {
-        uhd::stream_args_t sa("sc16", "sc16"); // native wire format (§1.1)
+        uhd::stream_args_t sa("sc16", "sc16"); // native wire format (§1.3)
         sa.channels = {0};
         return usrp_->get_rx_stream(sa);
     } catch (const uhd::exception& ex) {

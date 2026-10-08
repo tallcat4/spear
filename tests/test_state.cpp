@@ -1,4 +1,4 @@
-// State の単一所有 (§4.1): 宣言は Source が 1 か所で持ち、変更 API を通れば即座に config() に現れ、
+// State の単一所有 (§3.1): 宣言は Source が 1 か所で持ち、変更 API を通れば即座に config() に現れ、
 // state_version が進み、適用は Retune event で報告される。GUI 側のコピーに依存してはならない。
 #include "spear/core/lo_correction.hpp"
 #include "spear/core/rf_port.hpp"

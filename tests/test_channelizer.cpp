@@ -1,4 +1,4 @@
-// PFB チャネライザの検証: 単一トーンが対応チャネルに分離される(§8.3 の参照ベクトル)。
+// PFB チャネライザの検証: 単一トーンが対応チャネルに分離される(§7.3 の参照ベクトル)。
 #include "spear/dsp/channelizer.hpp"
 #include "spear/dsp/fir.hpp"
 

@@ -1,11 +1,11 @@
-// App: STD-T98 MONITOR (§14 M3) — docs/apps/std_t98.md
+// App: STD-T98 MONITOR (§12 M3) — docs/apps/std_t98.md
 //
 // 純 C++ の Receiver(30ch)を GUI に載せる。検証対象:
-//   * §0 観測点: Receiver の中間 stream(帯域 IQ、選択 ch の IQ / アイパターン)を DSP に触れず GUI に出す
-//   * §4.5 provenance: フレーム event の sample 範囲を radio.rx index で
+//   * §1.1 観測点: Receiver の中間 stream(帯域 IQ、選択 ch の IQ / アイパターン)を DSP に触れず GUI に出す
+//   * §3.6 provenance: フレーム event の sample 範囲を radio.rx index で
 //   * 個体設定(band_center_hz / squelch_db)を --set / site.conf で渡す経路(LO 誤差は Core が radio.freq_err_ppm で打ち消す)
 //   * TraceSource / EyeDiagram(新規の再利用部品)
-//   * 秘話(§3.4): 鍵探索は専用ワーカースレッド(secret::Worker)で走らせ、DSP thread は鍵の適用と窓の収集だけを行う
+//   * 秘話(§2.5): 鍵探索は専用ワーカースレッド(secret::Worker)で走らせ、DSP thread は鍵の適用と窓の収集だけを行う
 // RF: 4 Msps、LO は帯域中心から loOffset だけ離す(ゼロ IF の DC スパイクをチャネル 16 に重ねない)。
 #pragma once
 

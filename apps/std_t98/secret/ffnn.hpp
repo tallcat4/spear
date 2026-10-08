@@ -1,4 +1,4 @@
-// 秘話判定モデル ambe2_ffnn(cracker.py AMBE2Classifier: Linear 980→128, ReLU, Linear 128→2)の C++ 推論(要件 §3.4 道 1)。
+// 秘話判定モデル ambe2_ffnn(cracker.py AMBE2Classifier: Linear 980→128, ReLU, Linear 128→2)の C++ 推論(要件 §2.5 道 1)。
 // 入力 = 20 AMBE フレーム × 49 bit(ThumbDV 順)の 0/1、出力 logits[0] = 平文、[1] = 暗号。重みは埋め込みの safetensors から直接読む。
 // 全 32767 鍵のふるい分けに使うので、入力がビットであることを使って fc1 を「立っているビットの列の総和」で計算する。
 #pragma once

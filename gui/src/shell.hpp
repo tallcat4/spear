@@ -1,6 +1,6 @@
-// spear-gui — Shell: 起動 → App 一覧 → 選択 → 実行 → 戻る (要件 §9.1)
+// spear-gui — Shell: 起動 → App 一覧 → 選択 → 実行 → 戻る (要件 §8.1)
 //
-// App はレジストリ(ビルド時生成)から取る。active な App は常に 1 つ (§3.2)。
+// App はレジストリ(ビルド時生成)から取る。active な App は常に 1 つ (§2.3)。
 // RF 宣言の草案(draft*)はシェルが持ち、App 起動時に App へ渡して Core に宣言される。
 // 運転中の RF 状態は Core が所有する(sys.* から読む。docs/state-ownership.md)。
 #pragma once

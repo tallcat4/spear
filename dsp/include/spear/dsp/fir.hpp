@@ -1,6 +1,6 @@
 // S.P.E.A.R. dsp — FIR 設計と decimating FIR(共通 DSP: docs/dsp-boundary.md の基準を満たす)
 //   * 数学的定義のみ(係数・decimation 比は引数)。用途の定数を含まない
-//   * channelizer / decimator は性能要衝 (§1.1)。全 App が使う
+//   * channelizer / decimator は性能要衝 (§1.3)。全 App が使う
 //   * 参照ベクトルで検証できる
 // 段の規約 (stage.hpp) に従い、StageInfo(rate 比と群遅延)を宣言する。
 #pragma once

@@ -1,4 +1,4 @@
-# spear-gui: シェル (要件 §9)。App は apps/、部品は widgets/ input/ theme/、SDK は appfw/。
+# spear-gui: シェル (要件 §8)。App は apps/、部品は widgets/ input/ theme/、SDK は appfw/。
 find_package(Qt6 6.6 REQUIRED COMPONENTS Core Gui Qml Quick GuiPrivate)
 qt_standard_project_setup(REQUIRES 6.6)
 set(CMAKE_AUTOMOC ON)
