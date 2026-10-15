@@ -6,7 +6,18 @@ JR 在来線デジタル列車無線(352.6 MHz 帯、下り = 基地局送信)�
 
 **現段階(2026-10-15、ブランチ `feature/jr-train`)**: 実機も実測データも無い状態で、原本の受信機能をすべて C++ に移植した。
 受信 DSP、フレーム同期、音声フレームの誤り訂正、音声合成(CELP + 学習済みモデル)、データ電文、運行把握、通話の自動選択、保存(WAV / JSONL)を含む。
-原本の Rust と同じ入力で同じ結果(Mac でビット一致)になることは確認済み(下記「検証」)。B210 での受信・画面・負荷は未確認。
+原本の Rust と同じ入力で同じ結果(Mac でビット一致)になることは確認済み(下記「検証」)。Mac で spear 全体をビルドして画面とライフサイクルも確認した。
+B210 での受信・Arch でのビルド・FZ-G2 での負荷は未確認。
+
+## 実機での引き継ぎ(最初にやること)
+1. 取得: `git fetch && git checkout feature/jr-train`。参照ベクトルの再生成やファジングをするなら、原本を spear と同じ階層に置く
+   (`git clone https://github.com/soltia48/jr-conventional-line-radio-receiver ../jr-conventional-line-radio-receiver && git -C ../jr-conventional-line-radio-receiver checkout dfc7440`)。
+2. ビルドとテスト: `cmake -S . -B build -G Ninja && ninja -C build && ctest --test-dir build --output-on-failure`、続けて `scripts/ci.sh`(TSan)。
+   - 参照ベクトルは Mac で作ったので、Arch では浮動小数に依存するテストが許容差で比べられる(落ちれば libm の差が許容を超えたということ)。
+   - Arch でも厳密に比べるなら「参照ベクトル」の 3 コマンドを走らせ直して再テストし、差が出たベクトルをコミットするかを判断する(Rust stable と crates.io が要る)。
+   - 「差分ファジング」も同じ手順で走らせる(Arch の libm・GCC での一致の確認)。
+3. 実機: 下の「実機テストの手順」。見つかったことは「未検証」の番号に沿ってこのファイルに書く。
+4. 録音(REC IQ)と保存(SAVE)を集め、golden テストを足す(「次の段階」)。
 
 ## 構成
 ```
@@ -113,13 +124,32 @@ widgets/qml/ConstellationView.qml   コンスタレーション(新規の共通�
   路線からのチャネル(変則割当の例: 中央本線 甲府〜小淵沢 D6)、外部ファイルの検査(壊れたものは全体を拒否)。
 - **原本 data/mod.rs・operation.rs の単体テスト**(`test_protocol.cpp` `JrTrainDataOriginal`): 一覧の ID 数、運行把握の表、欠落・順序違い・混在・破損した部分、
   書庫の破損と表の形、再送の数え方、前置部の保持、非圧縮の旅客案内。
-- **画面**: `qmllint` で構文の誤りが無いこと(spear のモジュールは未ビルドなので型の解決はしない)。動作は未確認。
+- **画面と App 全体(Mac で spear 全体をビルドして確認、2026-10-15)**: spear 本体を Mac でビルドするため、作業用のコピーで Linux 専用の部分だけを差し替えた
+  (ALSA の AudioSink を何もしない代用品に、ELF の `.incbin` を Mach-O の書式に、`target_clones` を無効に、`RLIMIT_RTPRIO` を外す、libc++ で通らない
+  `std::vector<fftwf_complex>` をテストで置き換え)。リポジトリは変えていない。
+  - `ctest`: 35 件中 34 件が通過。`spear_app_tests`(JR TRAIN RADIO の起動 → 帯域の観測点 → REC IQ → SAVE → 停止)と `spear_settings_tests`(運転状態の宣言)を含む。
+    落ちた 1 件は STD-T98 の `StdT98SymbolSync.RecoversSymbolsFromFractionalSpsStaircase`(JR とは無関係。arm64 での浮動小数の違いと思われる。Arch では通る前提)。
+  - 画面: 参照ベクトルの通しの IQ(音声・データ・共用波)を SigMF にして再生し、スクリーンショットで確認。AUTO が音声の通話を選んで再生し、コンスタレーションが 4 点、
+    データ波・共用波が SYNC、DATA に電文、OPS に運行把握の表、ROUTE の一覧(D 番号の絞り込み・選択・周波数の確認)、手で選んだときの FIXED。
+    帯域スペクトラムとウォーターフォールは画面のある描画(cocoa)で表示を確認(offscreen では既存の SPECTRUM App も描かれない)。
+  - QML: `qmllint` で構文の誤りなし。
 - **CLI**: 原本と同じ IQ WAV を入力にしても、原本の decode-wave と `audio.wav`・`data.jsonl` がバイト単位で同一。`--routes` で路線のチャネルだけを受信。
 - **並行性**: 上記を ThreadSanitizer つきで実行して警告なし。
 - **ライフサイクル**(`apps/tests/test_apps.cpp` `JrTrainLifecycleAndRecordingOnSynthetic`): 合成源で start → 帯域の観測点 → REC IQ → SAVE → stop で consumer 0。
   **Mac ではビルドできないので未実行**(Qt Quick と ALSA が無い)。Arch で `scripts/ci.sh` を回すこと。
 - **負荷**(Apple M5): 22 波・雑音入力・1.92 MS/s で 1 スレッド 57%、9 スレッド 13%(壁時計)。音声合成は通話 1 本あたり 1 フレーム 2.8 ms(1 コアの 7%)。
   FZ-G2(i5-10310U、4C8T)は 1 コアあたり 2〜3 倍遅いと見て、1 スレッドでは間に合わない。worker は既定でハードウェアスレッド数 − 1(`jr_train.threads`)。
+
+### 差分ファジング
+`tests/refgen` の bin `fuzz` が乱数の入力(誤りを入れた音声・データフレーム、モードや外符号だけを壊したもの、乱数の包絡、壊した LH5、乱数の文字列、
+壊したパケットを混ぜた電文の列、欠落と index の飛びを含む音声ペイロードの列、無信号・飽和・DC・強い隣接波・引き込み範囲外の周波数ずれ・振幅の段差・途切れの IQ)を
+原本に通して結果を書き出し、`test_fuzz.cpp`(`JR_TRAIN_FUZZ_DIR` があるときだけ走る)が C++ と比べる。入力は約 50 MB(規模 1)なのでリポジトリには入れない。
+```
+cd apps/jr_train/tests/refgen
+CARGO_TARGET_DIR=/tmp/jr-refgen cargo run --release --bin fuzz -- /tmp/jr-fuzz 5      # 規模 5
+JR_TRAIN_FUZZ_DIR=/tmp/jr-fuzz ./build/apps/jr_train/tests/spear_jr_train_tests --gtest_filter='JrTrainFuzz*'
+```
+Mac(2026-10-15、規模 5): フレーム 300,000、LH5・文字列 325,000、電文の列 7,500(電文 14,630)、音声 150 列(PCM 19,982 フレーム)、DSP 120 ケース — **すべて一致**。
 
 ### 参照ベクトル
 `tests/vectors/` は `tests/refgen` の出力そのもの(手で編集しない)。作り直すには、spear と原本を同じディレクトリに並べて(crates.io から serde_json / encoding_rs を取る):
