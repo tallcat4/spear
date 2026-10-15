@@ -6,15 +6,14 @@ JR 在来線デジタル列車無線(352.6 MHz 帯、下り = 基地局送信)�
 
 **現段階(2026-10-15、ブランチ `feature/jr-train`)**: 実機も実測データも無い状態で、原本の受信機能をすべて C++ に移植した。
 受信 DSP、フレーム同期、音声フレームの誤り訂正、音声合成(CELP + 学習済みモデル)、データ電文、運行把握、通話の自動選択、保存(WAV / JSONL)を含む。
-原本の Rust と同じ入力で同じ結果(Mac でビット一致)になることは確認済み(下記「検証」)。Mac で spear 全体をビルドして画面とライフサイクルも確認した。
+原本の Rust と同じ入力で同じ結果(Mac でビット一致、2026-10-16 に Arch / FZ-G2 でもビット一致)になることは確認済み(下記「検証」)。Mac で spear 全体をビルドして画面とライフサイクルも確認した。
 B210 での受信は未確認。Arch でのビルド・テストと FZ-G2 での負荷の測定・最適化は 2026-10-16 に済ませた(下記「負荷と最適化」)。
 
 ## 実機での引き継ぎ(最初にやること)
 1. 取得: `git fetch && git checkout feature/jr-train`。参照ベクトルの再生成やファジングをするなら、原本を spear と同じ階層に置く
    (`git clone https://github.com/soltia48/jr-conventional-line-radio-receiver ../jr-conventional-line-radio-receiver && git -C ../jr-conventional-line-radio-receiver checkout dfc7440`)。
 2. ビルドとテスト: `cmake -S . -B build -G Ninja && ninja -C build && ctest --test-dir build --output-on-failure`、続けて `scripts/ci.sh`(TSan)。
-   - 参照ベクトルは Mac で作ったので、Arch では浮動小数に依存するテストが許容差で比べられる(落ちれば libm の差が許容を超えたということ)。
-   - Arch でも厳密に比べるなら「参照ベクトル」の 3 コマンドを走らせ直して再テストし、差が出たベクトルをコミットするかを判断する(Rust stable と crates.io が要る)。
+   - 参照ベクトルは対象機と同じ Arch(`linux-x86_64`)で作ったもの(2026-10-16 に作り直した)。Arch ではビット一致、Mac では許容差で比べる。
    - 「差分ファジング」も同じ手順で走らせる(Arch の libm・GCC での一致の確認)。
 3. 実機: 下の「実機テストの手順」。見つかったことは「未検証」の番号に沿ってこのファイルに書く。
 4. 録音(REC IQ)と保存(SAVE)を集め、golden テストを足す(「次の段階」)。
@@ -172,6 +171,7 @@ CARGO_TARGET_DIR=/tmp/jr-refgen cargo run --release --bin fuzz -- /tmp/jr-fuzz 5
 JR_TRAIN_FUZZ_DIR=/tmp/jr-fuzz ./build/apps/jr_train/tests/spear_jr_train_tests --gtest_filter='JrTrainFuzz*'
 ```
 Mac(2026-10-15、規模 5): フレーム 300,000、LH5・文字列 325,000、電文の列 7,500(電文 14,630)、音声 150 列(PCM 19,982 フレーム)、DSP 120 ケース — **すべて一致**。
+Arch / FZ-G2(2026-10-16、規模 5、GCC 16・glibc、受信 DSP と音声合成の最適化後): 同じ件数で**すべて一致**。
 
 ### 参照ベクトル
 `tests/vectors/` は `tests/refgen` の出力そのもの(手で編集しない)。作り直すには、spear と原本を同じディレクトリに並べて(crates.io から serde_json / encoding_rs を取る):
@@ -181,9 +181,15 @@ CARGO_TARGET_DIR=/tmp/jr-refgen cargo run --release -- ../vectors               
 CARGO_TARGET_DIR=/tmp/jr-refgen cargo run --release --bin protocol -- ../vectors/protocol ../../protocol/jis0208_table.cpp
 CARGO_TARGET_DIR=/tmp/jr-refgen cargo run --release --bin voice -- ../vectors/voice
 ```
-浮動小数の結果は libm に依存するので、各ベクトルは生成した環境を `platform` に書く(現在 `macos-aarch64`)。テストは同じ環境でだけビット一致を要求し、
-別の環境(Arch = `linux-x86_64`)では許容差で比べる(DSP: dibit の 1% まで、同期数 ±2 / PCM: 位置だけ / 通し: 電文は一致、音声フレーム数 ±3)。
-Arch でも厳密に比べるには、Arch で上の 3 つを走らせ直す(差分が出たらそれ自体が libm の差の記録になる)。
+浮動小数の結果は libm に依存するので、各ベクトルは生成した環境を `platform` に書く(現在 `linux-x86_64`、対象機と同じ Arch で生成)。
+テストは同じ環境でだけビット一致を要求し、別の環境(Mac = `macos-aarch64`)では許容差で比べる(DSP: dibit の 1% まで、同期数 ±2 / PCM: 位置だけ /
+通し: 電文は一致、音声フレーム数 ±3)。Mac で厳密に比べるには、Mac で上の 3 つを走らせ直す(コミットはしない)。
+
+Arch で作り直したとき(2026-10-16)に見つかった移植の差: 音声合成の FFT の回転因子の表(`numeric.cpp` `rotations()`)を、原本は実行時に
+glibc の `sinf` / `cosf` で作るが、GCC はこの表のループを MPFR で(正しく丸めて)コンパイル時に畳み込んでいた。glibc の値とは 256 点中 8 点で 1 ulp 違い、
+`repeated` シナリオで PCM が 24 フレーム中 15 フレーム ±1 LSB ずれた(Mac の clang は畳み込まないので、Mac のベクトルでは見えなかった)。
+表を作るループの引数を `rs::at_runtime()` で最適化の外に出し、原本と同じく実行時に libm を呼ぶようにした(`excitation.cpp` の窓・回転因子も同じ扱い)。
+コード中の定数式(`ln 10`、`ln 20`、`ln 160`、`ln 2`、`10^0.6`)は LLVM・GCC・glibc の実行時の 3 通りで同じ値であることを確かめた。
 Rust のコードを spear に置くのは §2.5 の例外ではなく、ビルドに含めない開発用ツールとして扱う(STD-T98 の `tools/*.py` と同じ位置づけ)。
 
 ## 未検証(実機で確かめること)
@@ -197,7 +203,7 @@ Rust のコードを spear に置くのは §2.5 の例外ではなく、ビル�
 5. 音声の再生(途切れ・遅延・AUTO の切り替え)。AudioSink の underrun。
 6. フレームの radio.rx index は DSP の遅延を 58 シンボルと見積もった概算(`receiver.cpp` `kDspLatencySymbols`)。通話の優先順位は原本と同じ時刻の定義(区間の開始 + bit_offset)を使うので影響しない。
 7. 画面(1920×1200 でのレイアウト、日本語の表示: 線区名・注記・電文)。`--screenshot` で撮って `docs/gui/` に残す。
-8. Arch(glibc、GCC)での参照ベクトルの一致(上記「参照ベクトル」)。
+8. ~~Arch(glibc、GCC)での参照ベクトルの一致~~ → 2026-10-16 に確認(DSP・プロトコル・音声・差分ファジングのすべてでビット一致。上記「参照ベクトル」)。
 
 ## 実機テストの手順
 1. Arch でビルドとテスト: `cmake -S . -B build -G Ninja && ninja -C build && ctest --test-dir build`

@@ -25,7 +25,7 @@ struct SpectrumConstants {
 const SpectrumConstants& spectrum() {
     static const SpectrumConstants c = [] {
         SpectrumConstants s;
-        for (std::size_t i = 0; i < 160; ++i) s.window[i] = 0.5 - 0.5 * std::cos(2.0 * kPi64 * static_cast<double>(i) / 159.0);
+        for (std::size_t i = 0; i < 160; ++i) s.window[i] = 0.5 - 0.5 * std::cos(rs::at_runtime(2.0 * kPi64 * static_cast<double>(i) / 159.0));
         std::array<double, 22> edges{};
         for (std::size_t i = 0; i < 22; ++i) edges[i] = static_cast<double>(i) * (4000.0 / 21.0);
         for (std::size_t b = 0; b < 20; ++b) {
@@ -38,7 +38,7 @@ const SpectrumConstants& spectrum() {
             for (double& x : s.bank[b]) x /= sum;
         }
         for (std::size_t i = 0; i < 256; ++i) {
-            const double t = -2.0 * kPi64 * static_cast<double>(i) / 512.0;
+            const double t = rs::at_runtime(-2.0 * kPi64 * static_cast<double>(i) / 512.0);
             s.rotation[i] = {std::cos(t), std::sin(t)};
         }
         double wp = -0.0;

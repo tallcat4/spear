@@ -69,7 +69,7 @@ const std::array<Root, 256>& rotations() {
     static const std::array<Root, 256> roots = [] {
         std::array<Root, 256> r{};
         for (std::size_t i = 0; i < 256; ++i) {
-            const float angle = -2.f * kPi * static_cast<float>(i) / 512.f;
+            const float angle = rs::at_runtime(-2.f * kPi * static_cast<float>(i) / 512.f);
             r[i] = {std::cos(angle), std::sin(angle)};
         }
         return r;

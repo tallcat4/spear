@@ -67,6 +67,15 @@ inline bool total_lt(double a, double b) {
     return x < y;
 }
 
+// 表を作るループの超越関数の引数に使う: 値を最適化の外に出して、実行時に libm を呼ばせる。
+// 原本(Rust)は表を実行時に作り libm を呼ぶ。GCC は定数の引数の sin / cos を MPFR で(正しく丸めて)コンパイル時に
+// 畳み込むことがあり、glibc の sinf / cosf と 1 ulp 違う点が出る(FFT の回転因子 256 点中 8 点。clang は畳み込まない)
+template <class T>
+inline T at_runtime(T x) {
+    volatile T v = x;
+    return v;
+}
+
 // 変数の底・定数の指数の powi は LLVM が二乗の積に展開する(x^3 = x·x², x^4 = x²·x²)
 template <class T>
 inline T powi(T x, int n) {

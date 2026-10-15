@@ -1,9 +1,9 @@
 symbols 5687
 locked_symbols 5312
-carrier_error 0.021798523790563126
-frequency_offset_hz 39.88920270608752
+carrier_error 0.021798533622871583
+frequency_offset_hz 39.889201553156475
 carrier_locked 1
-evm 7.920438414037778
+evm 7.920441222914611
 points 256
 frames 28
 synchronized_frames 26
