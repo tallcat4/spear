@@ -190,7 +190,10 @@ Rust のコードを spear に置くのは §2.5 の例外ではなく、ビル�
 1. 実信号で同期・音声・電文が出るか。原本は RTL-SDR / SoapySDR で実績があるが、B210 + spear の前段は初めて。
 2. LO オフセット 250 kHz とゲイン。帯域外の強い信号が前段 FIR(約 −50 dB)で十分落ちるか。
 3. 搬送波ループの引き込み範囲(±497 Hz)に B210 の LO 誤差が収まるか(`radio.freq_err_ppm` の補正後。352 MHz で 1 ppm = 352 Hz)。
-4. CPU 負荷: 合成入力では上記のとおり余裕がある。実機の GUI と同時、熱スロットリング時、複数の通話が同時のときの DSP 負荷と Lossless の drops。
+4. CPU 負荷: 実機(B210、TRXA、アンテナなし、GUI 表示、全 22 波)で 20 分連続運転して確認した(2026-10-16、AC 電源):
+   B210 の OVF / OOS / TMO / DISC 0、DROPS / GAPS 0、AUDIO UNDERRUN 0、DSP 27 %(7 スレッド)、spear-gui 全体で CPU 1.27 コア、
+   パッケージ温度 平均 86 °C・最高 97 °C、クロック平均 3.08 GHz。残り: 複数の通話が同時のとき(音声合成は通話 1 本で 1 コアの約 13 %)、
+   バッテリー駆動・夏の屋外での熱。
 5. 音声の再生(途切れ・遅延・AUTO の切り替え)。AudioSink の underrun。
 6. フレームの radio.rx index は DSP の遅延を 58 シンボルと見積もった概算(`receiver.cpp` `kDspLatencySymbols`)。通話の優先順位は原本と同じ時刻の定義(区間の開始 + bit_offset)を使うので影響しない。
 7. 画面(1920×1200 でのレイアウト、日本語の表示: 線区名・注記・電文)。`--screenshot` で撮って `docs/gui/` に残す。
