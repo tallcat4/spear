@@ -8,6 +8,7 @@ qt_add_qml_module(spear_widgets
     qml/SpectrumView.qml
     qml/LevelMeter.qml
     qml/EyeDiagram.qml
+    qml/ConstellationView.qml
   RESOURCE_PREFIX /qt/qml
   OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/qml/Spear/Widgets
   NO_PLUGIN_OPTIONAL

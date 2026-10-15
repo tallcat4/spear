@@ -14,6 +14,7 @@ Signal Processing & Emission Analysis Receiver
 - **FM / AM RX** — NFM / WFM / AM の復調と音声再生。
 - **STD-T98 MONITOR** — デジタル簡易無線 30 チャネルを同時に受信・復号・音声再生。秘話の解除にも対応。
 - **ADS-B** — 1090 MHz で航空機の位置を受信し、一覧と地図で表示。地図は内蔵でオフライン動作。
+- **JR TRAIN RADIO** — JR 在来線デジタル列車無線(352.6 MHz 帯)の全チャネルを同時に復調し、フレーム同期とコンスタレーションを表示。IQ の録音にも対応。**開発中: 実機(B210)での動作確認はこれから**。音声・データ電文は未対応([`docs/apps/jr_train.md`](docs/apps/jr_train.md))。
 
 そのほか:
 
@@ -86,3 +87,8 @@ Signal Processing & Emission Analysis Receiver
 ## ライセンス
 
 GPL-3.0-or-later。一部のコードとデータのライセンスについては [`LICENSE`](LICENSE) と各ファイルの表記を参照してください。
+
+## 謝辞
+
+JR 在来線デジタル列車無線の受信機能は、KIRISHIKI Yudai 氏による [jr-conventional-line-radio-receiver](https://github.com/soltia48/jr-conventional-line-radio-receiver) の解析と実装を全面的に活用させていただいています。
+膨大な労力を要したであろう成果を OSS として公開してくださったことに深く感謝します。

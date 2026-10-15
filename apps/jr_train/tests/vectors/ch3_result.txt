@@ -1,0 +1,10 @@
+symbols 5687
+locked_symbols 3098
+carrier_error 0.23778205185249118
+frequency_offset_hz -114.5675849500534
+carrier_locked 1
+evm 77.51185878541943
+points 256
+frames 0
+synchronized_frames 0
+frame_locked 0

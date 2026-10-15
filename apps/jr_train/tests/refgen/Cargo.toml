@@ -1,0 +1,12 @@
+# 参照ベクトル生成器(開発用。CMake の対象外 — docs/apps/jr_train.md「参照ベクトル」)。
+# 原本の Rust 実装(jr-conventional-line-radio-receiver)を spear と並べて置いた前提: ../jr-conventional-line-radio-receiver
+[package]
+name = "jr-train-refgen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+jr_conventional_dsp = { path = "../../../../../jr-conventional-line-radio-receiver/crates/jr-conventional-dsp" }
+
+[workspace]

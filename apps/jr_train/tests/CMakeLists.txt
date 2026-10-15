@@ -1,0 +1,5 @@
+# 参照ベクトル(tests/vectors)は tests/refgen が原本の Rust 実装から生成したもの(docs/apps/jr_train.md「参照ベクトル」)
+add_executable(spear_jr_train_tests test_dsp.cpp test_receiver.cpp)
+target_link_libraries(spear_jr_train_tests PRIVATE spear_jr_train_rx GTest::gtest GTest::gtest_main)
+target_compile_definitions(spear_jr_train_tests PRIVATE JR_TRAIN_VECTORS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/vectors")
+add_test(NAME spear_jr_train_tests COMMAND spear_jr_train_tests)

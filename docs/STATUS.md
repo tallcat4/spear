@@ -12,6 +12,7 @@
 | M1 | Recording / Playback | 完了 | SigMF + sidecar。`RecordingSource` はループ再生、retune 不可(録音条件が真値)。IQ RECORDER App |
 | M2 | 単純な RF App | 完了 | SPECTRUM(422.2 MHz の実信号で軸と絶対値を確認)、FM/AM RX(実信号の FM 復調を実機で確認) |
 | M3 | STD-T98 App | 完了 | 実録音・実機ともにフレーム抽出から AMBE 音声まで。秘話は自己スクランブルした実音声で Python と一致し、実機の秘話呼でも鍵が見つかり復号できた(`docs/apps/std_t98.md`) |
+| — | JR TRAIN RADIO(JR 在来線デジタル列車無線) | 実機確認前 | 受信 DSP とフレーム同期を Rust の原本から C++ に移植し、原本とビット一致を確認(合成信号)。音声・データは未移植(`docs/apps/jr_train.md`) |
 | — | ADS-B App(§7.2) | 完了 | 実機で受信。実録音 golden(羽田近傍 30 s で 1223 フレーム、6 機)。8 Msps をフルレートで消費して drops 0(`docs/apps/adsb.md`) |
 
 ## コンポーネントと検証状態
@@ -24,14 +25,15 @@
 | `core/` その他 | `EventBus`(履歴、dispatch thread)、`TAP()`、`HealthMonitor`、`EventLogFile`、`AudioSink`(ALSA / PipeWire) | gtest、実機 |
 | `dsp/` 共通 | `design_lowpass`、`FirDecimator` / `FirInterpolator`(ベクトル化カーネル)、`PfbChannelizer`、`SpectrumEstimator`、`stage.hpp`(StageInfo / Provenance)、FFTW プランナの mutex | gtest(参照ベクトル) |
 | `appfw/` App SDK | `GuiApp`(on_start / on_stop は GUI thread で呼ぶ、`configure(QVariantMap)`、`persist({...})`)、`SettingsStore`(運転状態の復元・保存 `~/spear/state.conf`)、ビルド時レジストリ、`ViewProcessor` / `ViewSource`(任意の複素 stream → spectrum / waterfall。手動レンジは再起動後も残る)、`TraceSource` + `EyeDiagramItem`、`SpectrumItem` / `WaterfallItem`(自前の QRhiTexture リング) | `apps/tests/test_apps.cpp`(全 App のライフサイクル)、`test_settings.cpp`(保存の往復、全 App の宣言の解決) |
-| `widgets/ input/ theme/` | `SpectrumView`(markers / compact)、`EyeDiagram`、`Readout`、`LevelMeter`、`Spear.Input`(KeyButton / Keypad / StepKeys / ValueField / NumericEntry / ChoiceEntry / Feedback(操作音の入口)。タッチ専用)、`Theme` | スクリーンショットで目視(`docs/gui/*.png`) |
+| `widgets/ input/ theme/` | `SpectrumView`(markers / compact)、`EyeDiagram`、`ConstellationView`(JR TRAIN RADIO で追加。未目視)、`Readout`、`LevelMeter`、`Spear.Input`(KeyButton / Keypad / StepKeys / ValueField / NumericEntry / ChoiceEntry / Feedback(操作音の入口)。タッチ専用)、`Theme` | スクリーンショットで目視(`docs/gui/*.png`) |
 | `gui/` シェル | スプラッシュ(起動時に自己診断 → 装置待ち → FPGA ロード(進捗表示)→ tune 確認。完了まで App を始めない)、メニュー(装置共通の GAIN と RX PORT(受信端子 TRXA / RXA / RXB / TRXB)。center / rate は App が決める)、ステータスバー(端子も常に表示)、ソフトキー、DIAGNOSTICS、数値入力・選択モーダル、操作音(`TapSound`: タップ音・拒否音)、起動音(`BootSound`。鳴り終わるまでスプラッシュに留まる)、`--set key=value`、`--screenshot` 検証ハーネス | 実機・合成。FPGA 進捗バーは、FPGA 未構成の状態からの起動ではまだ確認していない |
 | `apps/spectrum` | 汎用。FREQ / RATE(再起動)/ REF / AVG / HOLD | 実信号で確認済み |
 | `apps/recorder` | Lossless 録音、sidecar。録音中は FREQ 無効 | gtest(drop 0)、実機 |
 | `apps/demod` | NFM / WFM / AM。LO を RX から 250 kHz 離す。channel IQ と audio を Stream Bus に publish | 合成 FM トーンの gtest、実信号の FM |
 | `apps/std_t98` | 30ch 受信機(C++ のみ、Qt / UHD 非依存)、プロトコル、AMBE(C++ に移植)、秘話(PN、ffnn の C++ 推論、hybrid の ONNX Runtime 推論、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照実装との一致(プロトコル・AMBE・秘話)、実機の送信で確認(平文・秘話) |
 | `apps/adsb` | 1090 MHz Mode S / ADS-B 受信機(C++ のみ: 回転 → 低域 FIR → 電力 → プリアンブル / PPM → CRC-24、DF17/18/11 + AP 形式)、航空機表(CPR 偶奇 / 局所)、GUI(表 / ミニマップ(埋め込みのオフライン地図 Natural Earth + OurAirports。全機が入るよう自動で範囲を合わせる)/ 電力窓 / 統計)。radio.rx を 8 Msps のまま Lossless で消費 | 既知ベクトル(The 1090MHz Riddle)、合成 PPM で provenance をサンプル単位で確認、ライフサイクル、実録音 golden(`~/spear/golden/adsb`、羽田近傍 3 s / 136 フレーム)、実機で動作(`docs/apps/adsb.md`) |
-| `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード。秘話呼は鍵を探索して復号)、`spear-adsb-decode`(録音 → フレーム表 / 航空機一覧 / golden) | — |
+| `apps/jr_train` | JR 在来線デジタル列車無線の多波受信機(C++ のみ、Qt / UHD 非依存): 回転 + FIR ÷8(1.92 MS/s → 240 kS/s)→ チャネルごとの π/4-DQPSK 復調(原本の NCO・polyphase・RRC・タイミング・搬送波・64 状態 MLSE)→ フレーム同期。worker スレッドで並列。GUI(帯域スペクトラム / タイル / コンスタレーション / REC)。プリセット east / central / west | 原本(Rust)とのビット一致(`tests/vectors`、refgen)、原本の単体テストの移植、前段の合成テスト。**実機・GUI は未確認**(`docs/apps/jr_train.md`) |
+| `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード。秘話呼は鍵を探索して復号)、`spear-adsb-decode`(録音 → フレーム表 / 航空機一覧 / golden)、`spear-jr-train-decode`(録音 → チャネル統計 / 原本の decode-frames・decode-wave に渡す frames と WAV) | — |
 
 ## 未完の作業・既知の問題
 
@@ -46,6 +48,8 @@
    - `RecordingSource` は `configure` / `retune` で録音条件を変えない(要求は Warning を出して無視する)。
    - M3 の順序: ADS-B より先に STD-T98 を実装した。
    - §7.1 の宣言項目 `antenna` は `RfConfig::port`(装置パネルの端子名)で表す。UHD の frontend(subdev)と antenna への分解は Radio だけが行う。
+
+8. JR TRAIN RADIO(2026-10-15 移植、実機なし): Arch でのビルドとライフサイクルテスト、実機での同期・負荷・画面の確認、golden の録音(手順は `docs/apps/jr_train.md`「実機テストの手順」)。その後、音声(FEC + CELP + GRU / MLP)とデータ電文・運行把握を移植する。
 
 ## 決定の記録
 
