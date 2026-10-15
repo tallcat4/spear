@@ -5,6 +5,7 @@
 
 #include "common.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <map>

@@ -13,6 +13,7 @@
 #include "spear/dsp/fir.hpp"
 #include "spear/dsp/stage.hpp"
 
+#include <algorithm>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>

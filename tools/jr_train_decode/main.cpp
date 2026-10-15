@@ -15,6 +15,7 @@
 #include "spear/core/sigmf.hpp"
 #include "storage.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>

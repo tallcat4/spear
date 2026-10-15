@@ -3,6 +3,7 @@
 // 原本: crates/receiver-core/src/recording.rs と wave.rs
 #include "storage.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
