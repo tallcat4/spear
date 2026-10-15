@@ -94,14 +94,36 @@ void ViewProcessor::run() {
     int acc_n = 0;
     const auto period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / max_fps_));
     auto next = std::chrono::steady_clock::now();
+    // nfft より短いブロック(低レートの stream: 12.5 kHz のチャネル IQ は 16384 入力あたり 51 sample)は nfft ぶん溜めてから 1 フレームにする。
+    // 溜めている間の header は最初のブロックのもの(sample_index = フレーム先頭)、flags は OR。generation が変わったら捨てて溜め直す
+    std::vector<cf32> gather32; std::vector<sc16> gather16;
+    BlockHeader gh; Flags gflags;
     while (!stop_) {
         auto d = sub_->pop(50ms);
-        if (!d || d->block.header().sample_count < nfft_) continue;
+        if (!d) continue;
+        BlockHeader h = d->block.header();
+        Flags flags = d->flags;
         bool ok = false;
-        switch (d->block.header().dtype) {
-        case DataType::ComplexInt16:   ok = est.compute_averaged(d->block.as<sc16>(), db); break;
-        case DataType::ComplexFloat32: ok = est.compute_averaged(d->block.as<cf32>(), db); break;
-        default: break;
+        if (h.sample_count >= nfft_) {
+            gather32.clear(); gather16.clear();
+            switch (h.dtype) {
+            case DataType::ComplexInt16:   ok = est.compute_averaged(d->block.as<sc16>(), db); break;
+            case DataType::ComplexFloat32: ok = est.compute_averaged(d->block.as<cf32>(), db); break;
+            default: break;
+            }
+        } else {
+            const bool fresh = gather32.empty() && gather16.empty();
+            if (!fresh && h.generation != gh.generation) { gather32.clear(); gather16.clear(); }
+            if (gather32.empty() && gather16.empty()) { gh = h; gflags = flags; } else gflags |= flags;
+            switch (h.dtype) {
+            case DataType::ComplexInt16: { auto x = d->block.as<sc16>(); gather16.insert(gather16.end(), x.begin(), x.end()); break; }
+            case DataType::ComplexFloat32: { auto x = d->block.as<cf32>(); gather32.insert(gather32.end(), x.begin(), x.end()); break; }
+            default: continue;
+            }
+            if (gather16.size() >= nfft_) { ok = est.compute_averaged(std::span<const sc16>(gather16), db); gather16.clear(); }
+            else if (gather32.size() >= nfft_) { ok = est.compute_averaged(std::span<const cf32>(gather32), db); gather32.clear(); }
+            else continue;
+            h = gh; flags = gflags;
         }
         if (!ok) continue;
         // 時間平均(power 領域ではなく dB 領域の移動平均で十分: 表示用)
@@ -134,7 +156,6 @@ void ViewProcessor::run() {
             const float lo = std::max(nf - 15.f, std::floor(pk / 10.f) * 10.f - 60.f);
             set_db_range(lo, lo + 90.f);
         }
-        const auto& h = d->block.header();
         {
             std::lock_guard lk(mu_);
             frame_.seq++;
@@ -147,7 +168,7 @@ void ViewProcessor::run() {
             frame_.noise_floor_db = sorted[nfft_ / 2];
             frame_.sample_index = h.sample_index;
             frame_.generation = h.generation;
-            frame_.flags = d->flags;
+            frame_.flags = flags;
             uint32_t* row = ring_.data() + (rows_written_.load() % rows_) * nfft_;
             for (std::size_t i = 0; i < nfft_; ++i) row[i] = colorize(db[i]);
             rows_written_++;

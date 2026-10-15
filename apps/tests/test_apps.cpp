@@ -4,6 +4,7 @@
 #include "adsb_app.hpp"
 #include "demod_app.hpp"
 #include "recorder_app.hpp"
+#include "slpr_app.hpp"
 #include "spectrum_app.hpp"
 #include "std_t98_app.hpp"
 #include "template_app.hpp"
@@ -156,6 +157,7 @@ TEST(Apps, DemodRecoversFmTone) {
     for (const auto& e : core.events().history()) if (e.source == "demod" && e.detail == "carrier detected") { carrier_event = true; EXPECT_GE(e.range.end, 0u); }
     EXPECT_TRUE(carrier_event);
     EXPECT_EQ(app->losslessDrops(), 0.0);
+    sub.reset();   // テストの購読が持つ BlockRef を App の pool より先に返す(stop で pool が消える)
     core.stop_app();
     EXPECT_EQ(core.rx().consumer_count(), 0u);
 }
@@ -214,6 +216,61 @@ TEST(Apps, AdsbLifecycleOnSynthetic) {
     EXPECT_EQ(st["frames"].toDouble(), 0.0) << "無変調トーンからフレームが出てはならない";
     EXPECT_EQ(st["drops"].toDouble(), 0.0);
     EXPECT_EQ(app->aircraft().size(), 0);
+    core.stop_app();
+    EXPECT_FALSE(app->running());
+    EXPECT_EQ(core.rx().consumer_count(), 0u) << "stop 後に consumer が残ってはならない";
+}
+
+// 特定小電力 20ch: 合成 NFM(偏移 2.5 kHz、変調 1 kHz)を ch15 の位置に置いて start → ch15 だけ開き、ミックス音声に 1 kHz が出る → stop。
+// 音声は App 内部の Stream Bus の stream(slpr.audio、12.5 kHz)から取る(AudioSink は ALSA "null" device)。受信機自体の検証は apps/slpr/tests。
+TEST(Apps, SlprReceivesOneChannelOnSynthetic) {
+    Core core(".");
+    SyntheticSignal sig;
+    sig.fm = {62.5e3 + 250e3, 0.3, 2.5e3, 1e3, true};   // ch15(帯域中心 + 62.5 kHz)。LO は帯域中心 − 250 kHz
+    sig.noise_amplitude = 0.02;
+    core.set_source(std::make_unique<SyntheticSource>(&core.events(), sig));
+    auto app = std::make_shared<apps::SlprApp>(appfw::AppInfo{"slpr", "SLPR 20CH RX", "", Direction::RX, ""});
+    QVariantMap settings; settings["audio_device"] = "null";
+    app->configure(settings);
+    RfConfig c; c.center_freq = 100e6; c.sample_rate = 1e6;   // App が 4 Msps / 帯域中心 − 250 kHz に上書きする
+    app->set_rf_config(c);
+    ASSERT_TRUE(core.run_app(app));
+    EXPECT_DOUBLE_EQ(core.source().config().sample_rate, 4e6);
+    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 422.175e6 - 250e3);
+    EXPECT_DOUBLE_EQ(app->channelFreqHz(14), 422.2375e6);
+    auto sub = app->audio_stream().subscribe("test", DeliveryPolicy::Lossless, 256);
+    std::vector<float> audio;
+    const auto t0 = std::chrono::steady_clock::now();
+    while (audio.size() < 12500 && std::chrono::steady_clock::now() - t0 < 6s) {
+        if (auto d = sub->pop(200ms)) { auto s = d->block.as<float>(); audio.insert(audio.end(), s.begin(), s.end()); }
+    }
+    ASSERT_GE(audio.size(), 12500u);
+    ASSERT_NE(app->bandView()->processor(), nullptr);
+    EXPECT_GT(app->bandView()->processor()->rows_written(), 3u) << "帯域の観測点(slpr.band)が流れていること";
+    ASSERT_NE(app->channelView()->processor(), nullptr);
+    EXPECT_GT(app->channelView()->processor()->rows_written(), 3u) << "12.5 kHz の観測点(slpr.channel、1 ブロック 51 sample)も流れていること(ViewProcessor が nfft ぶん溜める)";
+    const auto chans = app->channels();
+    ASSERT_EQ(chans.size(), 20);
+    for (int i = 0; i < 20; ++i) EXPECT_EQ(chans[i].toMap()["open"].toBool(), i == 14) << "ch" << i + 1 << " power " << chans[i].toMap()["power"].toDouble();
+    EXPECT_EQ(app->openChannels(), 1);
+    EXPECT_EQ(chans[14].toMap()["name"].toString(), "15");
+    // 後半 4096 sample で FFT → 1 kHz が最大
+    const int N = 4096;
+    std::vector<fftwf_complex> in(N), out(N);
+    auto plan = fftwf_plan_dft_1d(N, in.data(), out.data(), FFTW_FORWARD, FFTW_ESTIMATE);
+    for (int i = 0; i < N; ++i) { in[i][0] = audio[audio.size() - N + i]; in[i][1] = 0; }
+    fftwf_execute(plan);
+    int pk = 1; float pm = 0;
+    for (int i = 1; i < N / 2; ++i) { const float m = out[i][0] * out[i][0] + out[i][1] * out[i][1]; if (m > pm) { pm = m; pk = i; } }
+    fftwf_destroy_plan(plan);
+    EXPECT_NEAR(pk * 12500.0 / N, 1000.0, 12500.0 / N * 2);
+    // Provenance: squelch の開 event が入力 index 範囲を持つ
+    core.events().flush();
+    bool carrier_event = false;
+    for (const auto& e : core.events().history()) if (e.source == "slpr" && e.detail == "ch15 carrier") { carrier_event = true; EXPECT_EQ(e.value, 15); }
+    EXPECT_TRUE(carrier_event);
+    EXPECT_EQ(app->losslessDrops(), 0.0);
+    sub.reset();   // テストの購読が持つ BlockRef を App の pool より先に返す(stop で pool が消える)
     core.stop_app();
     EXPECT_FALSE(app->running());
     EXPECT_EQ(core.rx().consumer_count(), 0u) << "stop 後に consumer が残ってはならない";

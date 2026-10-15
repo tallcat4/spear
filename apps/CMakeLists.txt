@@ -45,6 +45,7 @@ add_subdirectory(recorder)
 add_subdirectory(demod)
 add_subdirectory(std_t98)
 add_subdirectory(adsb)
+add_subdirectory(slpr)
 add_subdirectory(template)   # UNLISTED: コンパイルだけ(腐らせない)
 
 # ---- レジストリ生成 ----
