@@ -231,7 +231,7 @@ TEST(Apps, JrTrainLifecycleAndRecordingOnSynthetic) {
     auto app = std::make_shared<apps::JrTrainApp>(appfw::AppInfo{"jr_train", "JR TRAIN RADIO", "", Direction::RX, ""});
     const auto dir = std::filesystem::temp_directory_path() / "spear_jr_train_test";
     std::filesystem::remove_all(dir);
-    QVariantMap settings; settings["jr_train.preset"] = "east"; settings["record_dir"] = QString::fromStdString(dir.string());
+    QVariantMap settings; settings["jr_train.preset"] = "east"; settings["record_dir"] = QString::fromStdString(dir.string()); settings["audio_device"] = "null";
     app->configure(settings);
     RfConfig c; c.center_freq = 100e6; c.sample_rate = 1e6;   // App が 1.92 MS/s / 帯域中心 − 250 kHz に上書きする
     app->set_rf_config(c);
@@ -246,6 +246,20 @@ TEST(Apps, JrTrainLifecycleAndRecordingOnSynthetic) {
     EXPECT_FALSE(app->recording());
     EXPECT_GT(app->recordSeconds(), 0.3);
     EXPECT_TRUE(std::filesystem::exists(sigmf::data_path(app->recordPath().toStdString())));
+    // 復号結果の保存: 開始 → 停止で session.json / result.json ができ、INCOMPLETE が消える(音声は無いので WAV は 0)
+    app->toggleSaving();
+    EXPECT_TRUE(app->saving());
+    std::this_thread::sleep_for(300ms);
+    app->toggleSaving();
+    EXPECT_FALSE(app->saving());
+    const auto save = app->saveStatus();
+    EXPECT_EQ(save["state"].toString().toStdString(), "completed") << save["error"].toString().toStdString();
+    const std::filesystem::path save_dir = save["directory"].toString().toStdString();
+    EXPECT_TRUE(std::filesystem::exists(save_dir / "session.json"));
+    EXPECT_TRUE(std::filesystem::exists(save_dir / "result.json"));
+    EXPECT_FALSE(std::filesystem::exists(save_dir / "INCOMPLETE"));
+    EXPECT_EQ(app->monitoredChannel(), app->selectedChannel()) << "通話が無ければ選択中のチャネルを聴く";
+    EXPECT_TRUE(app->activeCalls().isEmpty());
     ASSERT_NE(app->bandView()->processor(), nullptr);
     EXPECT_GT(app->bandView()->processor()->rows_written(), 3u) << "帯域の観測点(jr_train.band)が流れていること";
     const auto chans = app->channels();

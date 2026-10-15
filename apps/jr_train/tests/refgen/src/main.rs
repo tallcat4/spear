@@ -166,6 +166,8 @@ fn main() {
         writeln!(meta, "channel {c} {} {}", tx.frequency_hz, u8::from(tx.present)).unwrap();
     }
     fs::write(out.join("meta.txt"), meta).unwrap();
+    // 生成した環境(C++ のテストはこれが一致するときだけビット一致を要求する: tests/platform.hpp)
+    fs::write(out.join("platform"), format!("{}-{}\n", std::env::consts::OS, std::env::consts::ARCH)).unwrap();
 
     for (c, tx) in txs.iter().enumerate() {
         let mut dsp = Dsp::new(RATE, tx.frequency_hz - CENTER).unwrap();

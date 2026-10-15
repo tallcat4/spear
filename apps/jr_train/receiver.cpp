@@ -15,22 +15,13 @@ constexpr double kDspLatencySymbols = 58;
 
 struct Receiver::Channel {
     int index = 0;
-    double offset_hz = 0;
-    std::unique_ptr<dsp::Demodulator> demod;
-    protocol::Synchronizer sync;
-    std::vector<uint8_t> dibits;
-    std::vector<protocol::Frame> frames;
-    ChannelStatus status;
-    uint64_t epoch_work_start = 0;   // この epoch の DSP が最初に受けた work_rate の通し番号
+    std::unique_ptr<Pipeline> pipe;
+    // worker が 1 ブロックで作ったもの(呼び出し元のスレッドで Observer に渡す)
+    std::vector<FrameEvent> events;
+    std::vector<Audio> audio;
     std::size_t worker = 0;
     bool failed = false;
-
-    void reset(double rate) {
-        demod = std::make_unique<dsp::Demodulator>(rate, offset_hz);
-        sync = protocol::Synchronizer{};
-        dibits.clear();
-        frames.clear();
-    }
+    uint64_t resets = 0;
 };
 
 Receiver::Receiver(ReceiverConfig cfg) : cfg_(std::move(cfg)) {
@@ -49,12 +40,12 @@ Receiver::Receiver(ReceiverConfig cfg) : cfg_(std::move(cfg)) {
         front_ = std::make_unique<spear::dsp::FirDecimator<cf32>>("jr_train.front", cfg_.in_rate, spear::dsp::design_lowpass(cfg_.in_rate, cutoff, taps), decim_);
         prov_ = prov_.then(front_->info());
     }
-    for (std::size_t i = 0; i < cfg_.channel_offsets_hz.size(); ++i) {
+    for (std::size_t i = 0; i < cfg_.channels.size(); ++i) {
+        const auto& cc = cfg_.channels[i];
+        if (auto e = dsp::validate(work_rate_, cc.frequency_hz - cfg_.band_center_hz); !e.empty()) throw std::invalid_argument(cc.label + ": " + e);
         auto c = std::make_unique<Channel>();
         c->index = static_cast<int>(i);
-        c->offset_hz = cfg_.channel_offsets_hz[i];
-        if (auto e = dsp::validate(work_rate_, c->offset_hz); !e.empty()) throw std::invalid_argument("channel " + std::to_string(i) + ": " + e);
-        c->reset(work_rate_);
+        c->pipe = std::make_unique<Pipeline>(cc, work_rate_, cfg_.band_center_hz);
         ch_.push_back(std::move(c));
     }
     const unsigned hw = std::max(2u, std::thread::hardware_concurrency());   // 0(不明)でも 1 以上
@@ -75,16 +66,14 @@ Receiver::~Receiver() {
 }
 
 void Receiver::run_channel(Channel& c) {
-    c.dibits.clear();
-    c.frames.clear();
+    c.events.clear();
+    c.audio.clear();
     if (c.failed) return;
     try {
-        c.demod->process(work_in_, c.dibits);
+        c.audio = c.pipe->process(work_in_, [&](const FrameEvent& ev) { c.events.push_back(ev); });
     } catch (const std::exception&) {
-        c.failed = true;   // 呼び出し元のスレッドで作り直す
-        return;
+        c.failed = true;   // 呼び出し元のスレッドで作り直す(原本は受信全体を止める。ここではそのチャネルだけやり直す)
     }
-    for (uint8_t d : c.dibits) c.sync.push(d, c.frames);
 }
 
 void Receiver::work(std::size_t worker) {
@@ -154,61 +143,56 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
         cv_done_.wait(lk, [&] { return pending_ == 0; });
     }
     work_in_ = {};
-    // 4) 状態とフレーム(呼び出し元のスレッド)
+    // 4) フレームと音声(呼び出し元のスレッド、チャネルの順)
     const double work_per_symbol = work_rate_ / dsp::kSymbolRate;
+    const auto to_us = [&](uint64_t work_samples) { return static_cast<uint64_t>(static_cast<double>(work_samples) / work_rate_ * 1e6); };
     for (auto& cp : ch_) {
         Channel& c = *cp;
         if (c.failed) {
             c.failed = false;
-            c.reset(work_rate_);
-            c.epoch_work_start = work_index_;
-            ++c.status.epoch;
-            ++c.status.resets;
-            c.status.frame_locked = false;
+            c.pipe->discontinuity();
+            ++c.resets;
             continue;
         }
-        c.status.snap = c.demod->snapshot();
-        c.status.frame_locked = c.sync.locked;
-        c.status.frames = c.sync.frames;
-        c.status.synchronized_frames = c.sync.synchronized_frames;
-        for (const auto& f : c.frames) {
-            Frame out;
-            out.channel = c.index;
-            out.epoch = c.status.epoch;
-            out.bit_offset = f.bit_offset;
-            out.sync_matched = f.sync_matched;
-            out.marker_errors = f.marker_errors;
-            out.received = f.received;
-            const double work_sample = static_cast<double>(c.epoch_work_start) + (static_cast<double>(f.bit_offset / 2) - kDspLatencySymbols) * work_per_symbol;
-            out.input_sample_index = in0_ + static_cast<uint64_t>(std::max(0.0, prov_.input_index(std::max(0.0, work_sample))));
-            if (obs_.frame) obs_.frame(out);
+        for (const auto& ev : c.events) {
+            FrameTiming t;
+            const double work_sample = static_cast<double>(segment_start_) + (static_cast<double>(ev.frame.bit_offset / 2) - kDspLatencySymbols) * work_per_symbol;
+            t.input_sample_index = in0_ + static_cast<uint64_t>(std::max(0.0, prov_.input_index(std::max(0.0, work_sample))));
+            t.time_us = to_us(segment_start_) + ev.frame.bit_offset * 1'000'000 / 9600;
+            if (obs_.frame) obs_.frame(c.index, ev, t);
         }
+        if (obs_.audio)
+            for (const auto& a : c.audio) obs_.audio(c.index, a);
+        c.events.clear();
+        c.audio.clear();
     }
 }
 
 void Receiver::discontinuity() {
     for (auto& c : ch_) {
-        c->reset(work_rate_);
+        c->pipe->discontinuity();
         c->failed = false;
-        c->epoch_work_start = work_index_;
-        ++c->status.epoch;
-        ++c->status.resets;
-        c->status.frame_locked = false;
-        c->status.evm_percent = 0;
+    }
+    segment_start_ = work_index_;
+}
+
+void Receiver::flush() {
+    for (auto& c : ch_) {
+        std::vector<Audio> tail;
+        try {
+            tail = c->pipe->flush();
+        } catch (const std::exception&) {
+            continue;
+        }
+        if (obs_.audio)
+            for (const auto& a : tail) obs_.audio(c->index, a);
     }
 }
 
-const ChannelStatus& Receiver::status(int ch) const { return ch_.at(static_cast<std::size_t>(ch))->status; }
-
-double Receiver::read_signal(int ch, std::vector<std::complex<float>>& points, std::size_t capacity) {
-    auto& c = *ch_.at(static_cast<std::size_t>(ch));
-    c.status.evm_percent = c.demod->read_signal(points, capacity);
-    return c.status.evm_percent;
-}
-
-void Receiver::update_signal() {
-    std::vector<std::complex<float>> tmp;
-    for (int i = 0; i < num_channels(); ++i) read_signal(i, tmp);
-}
+const PipelineStatus& Receiver::pipeline_status(int ch) const { return ch_.at(static_cast<std::size_t>(ch))->pipe->status(); }
+const PipelineStatus& Receiver::snapshot(int ch) { return ch_.at(static_cast<std::size_t>(ch))->pipe->snapshot(); }
+std::vector<protocol::Message> Receiver::take_messages(int ch) { return ch_.at(static_cast<std::size_t>(ch))->pipe->take_messages(); }
+uint64_t Receiver::resets(int ch) const { return ch_.at(static_cast<std::size_t>(ch))->resets; }
+uint64_t Receiver::time_us() const { return static_cast<uint64_t>(static_cast<double>(work_index_) / work_rate_ * 1e6); }
 
 } // namespace spear::jr_train
