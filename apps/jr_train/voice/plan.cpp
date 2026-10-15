@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <initializer_list>
 #include <limits>
 
@@ -153,6 +154,32 @@ float level(const int16_t* pcm, std::size_t n) {
     return 10.f * std::log10(rs::max(static_cast<float>(sum) / 1073741824.f / static_cast<float>(n), 1e-12f));
 }
 
+// Σ a[j] b[j](j < n)を int64 で。整数の和なので順序を変えても値は同じ(積は int32 に収まる: |a b| <= 2^30)
+using I16x8 = int16_t __attribute__((vector_size(16)));
+using I32x8 = int32_t __attribute__((vector_size(32)));
+using I32x4 = int32_t __attribute__((vector_size(16)));
+using I64x4 = int64_t __attribute__((vector_size(32)));
+#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__) && !defined(__SANITIZE_THREAD__) && !defined(__SANITIZE_ADDRESS__)
+__attribute__((target_clones("avx2", "default")))
+#endif
+int64_t dot_i16(const int16_t* a, const int16_t* b, std::size_t n) {
+    I64x4 acc{};
+    std::size_t j = 0;
+    for (; j + 8 <= n; j += 8) {
+        I16x8 x, y;
+        std::memcpy(&x, a + j, sizeof x);
+        std::memcpy(&y, b + j, sizeof y);
+        const I32x8 p = __builtin_convertvector(x, I32x8) * __builtin_convertvector(y, I32x8);
+        I32x4 lo, hi;
+        std::memcpy(&lo, &p, sizeof lo);
+        std::memcpy(&hi, reinterpret_cast<const char*>(&p) + sizeof lo, sizeof hi);
+        acc += __builtin_convertvector(lo, I64x4) + __builtin_convertvector(hi, I64x4);
+    }
+    int64_t sum = acc[0] + acc[1] + acc[2] + acc[3];
+    for (; j < n; ++j) sum += static_cast<int64_t>(a[j]) * static_cast<int64_t>(b[j]);
+    return sum;
+}
+
 std::array<float, 141> correlation(const int16_t* pcm, std::size_t n) {
     std::array<int64_t, 641> sums{}, squares{};
     for (std::size_t i = 0; i < n; ++i) {
@@ -165,8 +192,7 @@ std::array<float, 141> correlation(const int16_t* pcm, std::size_t n) {
     std::array<float, 141> out{};
     for (std::size_t i = 0; i < 141; ++i) {
         const std::size_t lag = i + 20;
-        int64_t raw = 0;
-        for (std::size_t j = 0; j < n - lag; ++j) raw += static_cast<int64_t>(pcm[j]) * static_cast<int64_t>(pcm[j + lag]);
+        const int64_t raw = dot_i16(pcm, pcm + lag, n - lag);
         const int64_t left_sum = sums[n - lag], right_sum = total - sums[lag];
         const int64_t extra = (size - static_cast<int64_t>(lag)) * total_square;
         const int64_t cov = size * size * raw - size * total * (left_sum + right_sum) + extra;

@@ -166,6 +166,7 @@ float ma(std::size_t mode, std::size_t tap, std::size_t k);
 struct Layer {
     std::size_t input = 0, output = 0;
     std::vector<float> weight, bias;
+    std::vector<float> columns;   // weight の転置(input 行 × output 列)。apply が出力をまたいでベクトル化するため
     std::vector<float> apply(std::span<const float> x, bool activation) const;
 };
 class Network {

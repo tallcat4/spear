@@ -374,10 +374,40 @@ HmlArray take(std::map<std::string, HmlArray>& a, const std::string& name) {
 }
 } // namespace
 
+namespace {
+using V8 = float __attribute__((vector_size(32)));
+
+// 出力 o .. o+7 の内積を 8 レーンで同時に取る。各レーンの和は原本と同じく i の順に 1 本の累算器で取る(FMA にしない)ので、
+// 1 出力ずつ計算したときと同じ値になる
+#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__) && !defined(__SANITIZE_THREAD__) && !defined(__SANITIZE_ADDRESS__)
+__attribute__((target_clones("avx2", "default")))
+#endif
+void dot8(const float* x, std::size_t input, const float* columns, std::size_t output, std::size_t o, float* sums) {
+    V8 acc{};
+    for (std::size_t i = 0; i < input; ++i) {
+        V8 xi, w;
+        for (std::size_t l = 0; l < 8; ++l) xi[l] = x[i];
+        std::memcpy(&w, columns + i * output + o, sizeof w);
+        acc += xi * w;
+    }
+    std::memcpy(sums, &acc, sizeof acc);
+}
+} // namespace
+
 std::vector<float> Layer::apply(std::span<const float> x, bool activation) const {
     if (x.size() != input) throw std::runtime_error("jr_voice: layer input size");
     std::vector<float> out(output);
-    for (std::size_t o = 0; o < output; ++o) {
+    std::size_t first = 0;
+    if (columns.size() == weight.size())
+        for (; first + 8 <= output; first += 8) {
+            float sums[8];
+            dot8(x.data(), input, columns.data(), output, first, sums);
+            for (std::size_t l = 0; l < 8; ++l) {
+                const float sum = sums[l] + bias[first + l];
+                out[first + l] = activation ? std::tanh(sum) : sum;
+            }
+        }
+    for (std::size_t o = first; o < output; ++o) {
         float sum = 0.f;
         for (std::size_t i = 0; i < input; ++i) sum += x[i] * weight[o * input + i];
         sum = sum + bias[o];
@@ -401,7 +431,11 @@ Network::Network(Blob bytes) {
         if (w.shape.size() != 2) throw std::runtime_error("jr_voice: weight rank");
         auto bias = take(a, "b" + std::to_string(layers_.size())).data;
         if (bias.size() != w.shape[0]) throw std::runtime_error("jr_voice: bias size");
-        layers_.push_back(Layer{w.shape[1], w.shape[0], std::move(w.data), std::move(bias)});
+        Layer layer{w.shape[1], w.shape[0], std::move(w.data), std::move(bias), {}};
+        layer.columns.resize(layer.weight.size());
+        for (std::size_t o = 0; o < layer.output; ++o)
+            for (std::size_t i = 0; i < layer.input; ++i) layer.columns[i * layer.output + o] = layer.weight[o * layer.input + i];
+        layers_.push_back(std::move(layer));
     }
     if (auto it = a.find("output_scale"); it != a.end()) {
         output_scale_ = std::move(it->second.data);

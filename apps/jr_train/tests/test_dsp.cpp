@@ -238,7 +238,7 @@ TEST(JrTrainSequence, DiagnosticCancelsDelayedPathsAndComplexGainWithoutSlicing)
     det.costs.fill(INFINITY);
     det.costs[prior] = 0.f;
     const std::array<C32, 4> channel = {C32{0.6f, 0.3f}, C32{0.4f, -0.2f}, C32{-0.2f, 0.15f}, C32{0.1f, 0.05f}};
-    det.channels[prior] = channel;
+    det.set_channel(prior, channel);
     const C32 expected{kSym[1].re + 0.12f, kSym[1].im - 0.07f};
     const C32 sent[4] = {expected, kSym[2], kSym[1], kSym[3]};
     C32 received{};
@@ -259,7 +259,11 @@ TEST(JrTrainSequence, DiagnosticCancelsDelayedPathsAndComplexGainWithoutSlicing)
 TEST(JrTrainSequence, DiagnosticDoesNotInvertUnusableMainTap) {
     for (float gain : {0.f, 1e-4f}) {
         dsp::detail::Sequence det;
-        for (auto& ch : det.channels) ch[0].re = gain;
+        for (std::size_t s = 0; s < dsp::detail::Sequence::kStates; ++s) {
+            auto ch = det.channel(s);
+            ch[0].re = gain;
+            det.set_channel(s, ch);
+        }
         det.process(kSym[0], true);
         EXPECT_FALSE(det.equalized());
     }
@@ -287,7 +291,7 @@ TEST(JrTrainSequence, RandomSymbolsSurviveIsiAndMissingInterval) {
 TEST(JrTrainSequence, LongSilenceKeepsChannelAndRecovers) {
     dsp::detail::Sequence det;
     for (int i = 0; i < 10000; ++i) det.process(C32{}, false);
-    for (const auto& h : det.channels) EXPECT_EQ(h[0].re, 1.f);
+    for (std::size_t s = 0; s < dsp::detail::Sequence::kStates; ++s) EXPECT_EQ(det.channel(s)[0].re, 1.f);
     const auto tx = qpsk_symbols(1000);
     std::vector<uint8_t> out;
     for (auto q : tx)

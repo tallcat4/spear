@@ -47,11 +47,13 @@ public:
     // 現在の観測から最良生き残りの遅延波と複素利得を除いたもの(判定前の診断値。DSP には戻さない)
     std::optional<C32> equalized() const { return equalized_; }
 
-    // テスト用の内部状態
+    // テスト用の内部状態。伝送路は内部では SoA(タップ k × 状態)で持つ
     std::array<float, kStates> costs{};
-    std::array<std::array<C32, 4>, kStates> channels{};
+    std::array<C32, 4> channel(std::size_t state) const;
+    void set_channel(std::size_t state, const std::array<C32, 4>& h);
 
 private:
+    alignas(32) float hr_[4][kStates], hi_[4][kStates];
     std::array<std::array<uint8_t, kStates>, kDepth> history_{};
     std::size_t write_ = 0, filled_ = 0;
     std::optional<std::size_t> previous_;
