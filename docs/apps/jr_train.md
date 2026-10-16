@@ -204,8 +204,8 @@ Rust のコードを spear に置くのは §2.5 の例外ではなく、ビル�
 6. フレームの radio.rx index は DSP の遅延を 58 シンボルと見積もった概算(`receiver.cpp` `kDspLatencySymbols`)。通話の優先順位は原本と同じ時刻の定義(区間の開始 + bit_offset)を使うので影響しない。
 7. ~~画面~~ → 2026-10-16 に FZ-G2 の実画面(1920×1200)で確認。参照ベクトルの通しの IQ を 1.92 MS/s・LO = 帯域中心 − 250 kHz に変換した SigMF
    (`~/spear/recordings/sim/jr_train_e2e_sim`)を再生し、AUTO の通話選択、コンスタレーション、SYNC、DATA / OPS、ROUTE、日本語の表示を確かめた
-   (`docs/gui/jr_train.png`、`docs/gui/jr_train_ops.png`)。帯域スペクトラムの右端の目盛り「+120.0 kHz」が枠の外にはみ出し、ROUTE を開くと
-   「kHz」だけが見える(共通の `SpectrumView` の問題で、STD-T98 の画面でも同じ)。
+   (`docs/gui/jr_train.png`、`docs/gui/jr_train_ops.png`)。帯域スペクトラムの右端の目盛り「+120.0 kHz」が枠の外にはみ出していた件は、
+   共通の `SpectrumView` で両端のラベルを枠の内側に寄せて直した(main `aa5848b`)。
 8. ~~Arch(glibc、GCC)での参照ベクトルの一致~~ → 2026-10-16 に確認(DSP・プロトコル・音声・差分ファジングのすべてでビット一致。上記「参照ベクトル」)。
 
 ## 実機テストの手順
