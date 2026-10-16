@@ -58,6 +58,12 @@ int blip25_decode_2450_thumbdv(blip25_decoder *dec, const uint8_t frame[7], int1
  * uncorrectable is treated as lost. */
 int blip25_decode_3600(blip25_decoder *dec, const uint8_t frame[9], int16_t pcm[160], int *errors);
 
+/* One 3600x2450 frame from 72 soft decisions (log-likelihood ratios), in transmission order (llr[2k] = high bit of
+ * dibit k, llr[2k+1] = low bit): sign = hard decision (> 0 means 1), magnitude = confidence. Chase-II soft Golay
+ * decoding (about 2 dB coding gain over hard slicing), then the recovered bits are synthesised as a clean frame -
+ * exactly as blip25-vocoder's Vocoder::decode_soft. */
+int blip25_decode_3600_soft(blip25_decoder *dec, const int8_t llr[72], int16_t pcm[160]);
+
 /* A frame that was not received at all: repeat and fade (concealment). */
 int blip25_decode_lost(blip25_decoder *dec, int16_t pcm[160]);
 
@@ -67,6 +73,9 @@ int blip25_decode_lost(blip25_decoder *dec, int16_t pcm[160]);
  * per-codeword corrections (c0: 0..3, or 255 if uncorrectable; c1: 0..3; c2, c3: 0). Returns the total number of
  * corrected errors, or -1 if c0 was uncorrectable. */
 int blip25_fec_3600(const uint8_t frame[9], uint8_t bits[49], uint8_t errors[4]);
+
+/* Soft-decision version of blip25_fec_3600 (72 LLRs as for blip25_decode_3600_soft). */
+int blip25_fec_3600_soft(const int8_t llr[72], uint8_t bits[49], uint8_t errors[4]);
 
 /* The same from four already-deinterleaved codewords c0 (24 bits), c1 (23), c2 (11), c3 (14), LSB = last bit. */
 int blip25_fec_codewords(const uint32_t c[4], uint8_t bits[49], uint8_t errors[4]);

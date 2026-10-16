@@ -154,10 +154,19 @@ Rust 版とビット一致する。AMBE-3000R 自身の復号音との差(mel �
   (C1 に誤りのないフレームでは C0 = 0 が大半)。訂正数は「誤りの程度」として合成に渡す(`blip25_decode_3600` と同じ)。
 - 9/20 の会場録音では、CRC が通った SACCH のフレームでも C1 が訂正の上限(3)のものが 1/3 あり、C0 の訂正不能が 1 割ある
   (自宅の強い信号では全ブロック誤り 0)。会場の雑音・AGC による実際のビット誤りで、軟判定の余地が大きい。
-- 秘話: keystream は FEC 後の 49 bit(ambe_d 順)に XOR してから `blip25_decode_bits` に渡す(以前と同じ位置)。鍵探索の窓も同じ 49 bit。
+- **軟判定**(2026-10-16): 受信機は TCH の量子化前のシンボルから 4 ブロック × 72 の LLR を作り(`traffic_llr`)、`blip25_fec_3600_soft`
+  (Golay を Chase-II で軟判定復号、blip25-vocoder の `decode_frame_soft` と同じ)で 49 bit にする。ビット対応(+1→00 +3→01 −1→10 −3→11)から
+  上位ビット = −y、下位ビット = |y| − 2(× 32、±127 で飽和)。符号は 9 byte の硬判定と一致する(0 は情報なし)。
+  合成は blip25-vocoder の `decode_soft` と同じく誤りなしとして行うが、最良の候補でも C0 が訂正不能なフレームだけは消失にする
+  (硬判定の経路と同じ扱い。`decode_soft` は常に誤りなし)。9/20 の録音の 740 ブロックで、硬判定と 49 bit が違うのは 274、C0 の訂正不能は 79 → 63。
+  C0 はほぼ上位ビット(シンボルの符号)に、C1 はほぼ下位ビット(内側 / 外側のレベル)に載るので、会場の録音で C1 の誤りが多いのは
+  レベルの判定の誤り(|y| は内側 1.0、外側 3.4 ± 0.9、1.5〜2.5 に 18 %)。レベルの追従(閾値 2 の適応)は次の改善候補。
+  App も tool も軟判定で復号する。tool の `--hard` は比較用に 9 byte の硬判定で、`--llr base` はチャネルごとの LLR 列(golden 用)を書く。
+- 秘話: keystream は FEC 後の 49 bit(ambe_d 順)に XOR してから `blip25_decode_bits` に渡す(以前と同じ位置)。鍵探索の窓も同じ 49 bit(軟判定の FEC 後)。
 - PCM は int16 の全幅(mbelib の float 経路は 1/7 だった)。App のミキサの係数は 1/32768。
 - 検証(`tests/test_ambe.cpp`): 9/20 の録音の 740 ブロック(誤り 550、消失 79 を含む)を blip25c の `tools/golden`(blip25-vocoder 1.0)で
   復号した golden(`~/spear/golden/std_t98/ambe_blip25_golden.txt`、音声を含むのでリポジトリ外)と、49 bit・訂正数・PCM がすべて一致。
+  軟判定は、同じ録音の LLR を Rust 版の `fecsoft` と `dec2450`(C0 訂正不能なら消失)で復号した golden(`~/spear/golden/std_t98/ambe_soft/`)と一致。
 
 ## 実機で見つかった移植バグ
 - **symbol sync の max_deviation の単位**(2026-09-17、実機で発覚): GR `symbol_sync_ff` の `max_deviation` は「平均クロック周期の

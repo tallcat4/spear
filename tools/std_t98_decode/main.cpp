@@ -1,9 +1,10 @@
 // spear-std-t98-decode — SigMF 録音を STD-T98 Receiver に流す headless 解析 (§10.4, §10.3 golden set)
-//   spear-std-t98-decode <base> [--squelch-margin 8] [--sync-ratio 0.2] [--sync-locked-ratio 0.6] [--sync-max-misses 3] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base] [--no-secret]
+//   spear-std-t98-decode <base> [--squelch-margin 8] [--sync-ratio 0.2] [--sync-locked-ratio 0.6] [--sync-max-misses 3] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base] [--hard] [--llr base] [--no-secret]
 //   --freq-err: 入力を回して帯域中心を DC へ戻す量。App の録音(LO = 帯域中心 − 250 kHz)なら 250000(+ そのファイル固有の残留誤差)
 // 出力: チャネルごとの電力/同期/フレーム統計、フレーム内容、推定周波数誤差。
 // 秘話呼(SACCH call=1)は GUI と同じポリシー(5 バーストで最初の探索、10 バーストごとに再確認)で鍵を同期的に探索し、以後のフレームを
 //   復号する(埋め込みモデル)。--no-secret で探索を止める。
+//   AMBE の FEC は軟判定(App と同じ)。--hard で 9 byte の硬判定に戻す(比較用)。--llr base でチャネルごとの LLR 列(golden 用)を書く。
 #include "ambe.hpp"
 #include "receiver.hpp"
 #include "secret/cracker.hpp"
@@ -36,7 +37,7 @@ bool flag(int argc, char** argv, const char* key) {   // 値を取らないオ�
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) { std::puts("usage: spear-std-t98-decode <sigmf base> [--squelch-margin dB] [--sync-ratio r] [--sync-locked-ratio r] [--sync-max-misses n] [--freq-err Hz] [--pfb N] [--dump-ch N --dump-file f [--dump-filtered]] [--log f] [--payloads f] [--wav base] [--no-secret] [--quiet]"); return 1; }
+    if (argc < 2) { std::puts("usage: spear-std-t98-decode <sigmf base> [--squelch-margin dB] [--sync-ratio r] [--sync-locked-ratio r] [--sync-max-misses n] [--freq-err Hz] [--pfb N] [--dump-ch N --dump-file f [--dump-filtered]] [--log f] [--payloads f] [--wav base] [--hard] [--llr base] [--no-secret] [--quiet]"); return 1; }
     const std::string base = argv[1];
     sigmf::Meta meta;
     std::string err;
@@ -50,6 +51,9 @@ int main(int argc, char** argv) {
     cfg.freq_err_hz = std::stod(arg(argc, argv, "--freq-err", "0"));
     const int dump_ch = std::stoi(arg(argc, argv, "--dump-ch", "-1"));
     const bool quiet = flag(argc, argv, "--quiet");
+    const bool hard = flag(argc, argv, "--hard");
+    const char* llr_base = arg(argc, argv, "--llr", nullptr);
+    std::map<int, std::FILE*> llr_files;
     cfg.sync_locked_ratio = std::stod(arg(argc, argv, "--sync-locked-ratio", "0.6"));
     cfg.sync_max_misses = std::stoi(arg(argc, argv, "--sync-max-misses", "3"));
     std::FILE* dump = dump_ch >= 0 ? std::fopen(arg(argc, argv, "--dump-file", "ch.f32"), "wb") : nullptr;
@@ -105,7 +109,10 @@ int main(int argc, char** argv) {
             const bool keyed = sc.call_secret && sc.tracker.key() != 0;
             if (keyed && sc.pn_key != sc.tracker.key()) { sc.pn_key = sc.tracker.key(); sc.pn = secret::pn_sequence(sc.pn_key); }
             secret::Burst raw{};
-            for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(fec_demod_3600_to_2450(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9)));
+            // AMBE の FEC は軟判定(App と同じ)。--hard なら 9 byte の硬判定で(比較用)
+            auto block = [&](int k) { return std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9); };
+            auto llr = [&](int k) { return std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72); };
+            for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(hard ? fec_demod_3600_to_2450(block(k)) : fec_soft_3600_to_2450(llr(k)));
             if (wav_base) {
                 auto& v = voice[f.channel];
                 // 欠落フレーム(192 シンボル間隔でない)は無音で埋めて時間軸を保つ
@@ -113,7 +120,8 @@ int main(int argc, char** argv) {
                 v.last_sym = f.symbol_index;
                 for (int k = 0; k < 4; ++k) {
                     std::array<int16_t, 160> pcm{};
-                    v.dec.decode_3600(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9), pcm, keyed ? secret::keystream_d(sc.pn, k) : nullptr);
+                    const uint8_t* ks = keyed ? secret::keystream_d(sc.pn, k) : nullptr;
+                    if (hard) v.dec.decode_3600(block(k), pcm, ks); else v.dec.decode_3600_soft(llr(k), pcm, ks);
                     v.pcm.insert(v.pcm.end(), pcm.begin(), pcm.end());
                 }
             }
@@ -127,6 +135,11 @@ int main(int argc, char** argv) {
                     secret_note = "  SECRET key=" + std::to_string(r.key) + " (" + secret::to_string(r.source) + ", " + std::to_string(dt).substr(0, 4) + " s)";
                 }
             }
+        }
+        if (llr_base && f.rich.f == 1 && f.sacch.crc_ok) {   // チャネルごとの LLR 列(72 × int8 / ブロック)。golden 用
+            auto& fp = llr_files[f.channel];
+            if (!fp) fp = std::fopen((std::string(llr_base) + ".ch" + (f.channel + 1 < 10 ? "0" : "") + std::to_string(f.channel + 1) + ".llr").c_str(), "wb");
+            if (fp) std::fwrite(f.tch_llr.data(), 1, f.tch_llr.size(), fp);
         }
         if (payloads && f.rich.f == 1 && f.sacch.crc_ok) {
             std::fprintf(payloads, "%d %llu ", f.channel, (unsigned long long)f.symbol_index);
@@ -172,6 +185,7 @@ int main(int argc, char** argv) {
     if (dump) std::fclose(dump);
     if (logf) std::fclose(logf);
     if (payloads) std::fclose(payloads);
+    for (auto& [ch, fp] : llr_files) if (fp) std::fclose(fp);
     for (auto& [ch, v] : voice) {
         const std::string name = std::string(wav_base) + ".ch" + (ch + 1 < 10 ? "0" : "") + std::to_string(ch + 1) + ".wav";
         std::FILE* w = std::fopen(name.c_str(), "wb");

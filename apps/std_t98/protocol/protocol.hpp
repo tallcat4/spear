@@ -66,4 +66,10 @@ Pich decode_pich(const std::string& pich_bits);       // 144 bit
 std::array<std::string, 4> split_traffic_blocks(const FrameFields& f);
 std::vector<uint8_t> traffic_blocks_to_payload(const std::array<std::string, 4>& blocks); // 4*9=36 bytes
 
+// TCH の軟判定: 量子化前の 192 シンボル(±1/±3 スケール)→ 4 ブロック × 72 の LLR(int8、送信順 = traffic_blocks_to_payload の
+// ビット順。llr[2k] がシンボル k の上位ビット)。符号が硬判定(正 = 1)、絶対値が確からしさ。デホワイトは符号の反転なのでそのまま掛ける。
+// ビット対応(+1→00 +3→01 −1→10 −3→11)から、等間隔 4 値の max-log 近似で 上位 = −y、下位 = |y| − 2(× kLlrScale、±127 で飽和)
+inline constexpr float kLlrScale = 32.f;
+std::vector<int8_t> traffic_llr(const std::vector<float>& raw);   // 288 = 4 × 72
+
 } // namespace spear::std_t98

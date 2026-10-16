@@ -13,6 +13,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -111,6 +112,43 @@ TEST(StdT98Ambe, PcmMatchesBlip25RustAcrossFrames) {
     EXPECT_GT(lost, 0);          // 消失(C0 訂正不能)の経路も通っている
     EXPECT_GT(with_errors, 100);
     std::printf("[ pcm ] %zu frames identical to blip25-vocoder (Rust), %d with corrected errors, %d lost\n", cases.size(), with_errors, lost);
+}
+
+TEST(StdT98Ambe, SoftDecisionMatchesBlip25Rust) {
+    // 軟判定: 9/20 の録音の LLR(spear-std-t98-decode --llr)を、blip25-vocoder 1.0 の decode_frame_soft(fecsoft)と
+    // その 49 bit の合成(dec2450。C0 が訂正不能なら消失、ほかは誤りなし)で復号した golden と、49 bit・訂正数・PCM が一致すること
+    std::string dir;
+    if (const char* d = std::getenv("SPEAR_GOLDEN_DIR")) dir = std::string(d) + "/std_t98/ambe_soft";
+    else if (const char* h = std::getenv("HOME")) dir = std::string(h) + "/spear/golden/std_t98/ambe_soft";
+    auto slurp = [](const std::string& p) { std::ifstream f(p, std::ios::binary); return std::vector<char>((std::istreambuf_iterator<char>(f)), {}); };
+    int blocks = 0, lost = 0;
+    for (int ch : {23, 24}) {
+        const auto llr = slurp(dir + "/ch" + std::to_string(ch) + ".llr");
+        const auto fec = slurp(dir + "/ch" + std::to_string(ch) + ".fec");
+        const auto pcm = slurp(dir + "/ch" + std::to_string(ch) + ".pcm");
+        if (llr.empty()) GTEST_SKIP() << "soft golden not present: " << dir;
+        const std::size_t n = llr.size() / 72;
+        ASSERT_EQ(fec.size(), n * 11);
+        ASSERT_EQ(pcm.size(), n * 320);
+        AmbeDecoder dec;
+        for (std::size_t k = 0; k < n; ++k) {
+            std::array<int16_t, 160> out{};
+            const auto r = dec.decode_3600_soft(std::span<const int8_t, 72>(reinterpret_cast<const int8_t*>(llr.data()) + k * 72, 72), out);
+            EXPECT_EQ(r.raw2450, fec_soft_3600_to_2450(std::span<const int8_t, 72>(reinterpret_cast<const int8_t*>(llr.data()) + k * 72, 72)));
+            const auto bits = ambe::unpack_thumbdv(r.raw2450);
+            std::array<uint8_t, 7> packed{};
+            for (std::size_t i = 0; i < 49; ++i) packed[i / 8] |= static_cast<uint8_t>(bits[i] << (7 - i % 8));
+            const auto* e = reinterpret_cast<const uint8_t*>(fec.data()) + k * 11;
+            EXPECT_EQ(0, std::memcmp(packed.data(), e, 7)) << "ch" << ch << " block " << k;
+            const bool c0_lost = e[7] == 255;
+            EXPECT_EQ(r.total_errors, c0_lost ? 4 : e[7] + e[8]) << "ch" << ch << " block " << k;
+            ASSERT_EQ(0, std::memcmp(out.data(), pcm.data() + k * 320, 320)) << "ch" << ch << " block " << k;
+            lost += c0_lost;
+            ++blocks;
+        }
+    }
+    EXPECT_GT(lost, 0);
+    std::printf("[ soft ] %d blocks identical to blip25-vocoder (Rust), %d lost\n", blocks, lost);
 }
 
 TEST(StdT98Ambe, Decode3600EqualsTwoStepWhenErrorFree) {

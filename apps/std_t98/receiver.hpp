@@ -66,7 +66,8 @@ struct Frame {
     Rich  rich;
     Sacch sacch;                     // rich.f == 1(トラフィック)のとき有効
     Pich  pich;                      // rich.f == 0(同期バースト)のとき有効
-    std::vector<uint8_t> tch_payload; // トラフィック時: 4 ブロック × 9 バイト(AMBE 3600)
+    std::vector<uint8_t> tch_payload; // トラフィック時: 4 ブロック × 9 バイト(AMBE 3600、硬判定)
+    std::vector<int8_t>  tch_llr;     // トラフィック時: 4 ブロック × 72 の軟判定(traffic_llr、AMBE の FEC はこちらで復号する)
 };
 
 struct ChannelMetrics {

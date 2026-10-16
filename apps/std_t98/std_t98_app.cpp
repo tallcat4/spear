@@ -203,7 +203,7 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
         // 同期バースト = 呼の区切り: 秘話セッションを閉じる(鍵は保持)
         if (f.rich.f == 0) secret_clear(f.channel);
         // トラフィック: 秘話判定 → 音声(AMBE → 8 kHz PCM → ミキサ)→ 秘話なら鍵探索の窓へ
-        if (f.rich.f == 1 && f.tch_payload.size() == 36) traffic_frame(f);
+        if (f.rich.f == 1 && f.tch_llr.size() == 288) traffic_frame(f);
     };
     rx->set_observer(std::move(o));
     return rx;
@@ -249,7 +249,7 @@ void StdT98App::traffic_frame(const Frame& f) {
         if (late) ++audio_late_;
         for (int k = 0; k < 4; ++k) {
             std::array<int16_t, 160> s{};
-            const auto d = dec->decode_3600(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9), s, keyed ? secret::keystream_d(sc.pn, k) : nullptr);
+            const auto d = dec->decode_3600_soft(std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72), s, keyed ? secret::keystream_d(sc.pn, k) : nullptr);
             raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(d.raw2450);
             if (late || future) continue;
             for (int i = 0; i < 160; ++i) {
@@ -262,7 +262,7 @@ void StdT98App::traffic_frame(const Frame& f) {
     if (!sc.call_secret || !secret_) return;
     // 鍵探索の窓: FEC 後・XOR 前の 49 bit × 4。音声を出していないチャネルでも積む(選択を切り替えた瞬間から復号できるように)
     if (!have_raw)
-        for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(fec_demod_3600_to_2450(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9)));
+        for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(fec_soft_3600_to_2450(std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72)));
     secret::Tracker::Request rq;
     if (sc.tracker.on_secret_burst(raw, &rq)) secret_->submit({f.channel, rq.session, rq.current_key, std::move(rq.bursts)});
 }

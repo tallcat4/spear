@@ -17,6 +17,12 @@ std::array<uint8_t, 7> fec_demod_3600_to_2450(std::span<const uint8_t, 9> block,
     return ambe::pack_thumbdv(d);
 }
 
+std::array<uint8_t, 7> fec_soft_3600_to_2450(std::span<const int8_t, 72> llr) {
+    ambe::Bits49 d{};
+    blip25_fec_3600_soft(llr.data(), d.data(), nullptr);
+    return ambe::pack_thumbdv(d);
+}
+
 struct AmbeDecoder::Impl { blip25_decoder dec; };
 
 AmbeDecoder::AmbeDecoder() : impl_(std::make_unique<Impl>()) { blip25_init(&impl_->dec); }
@@ -33,6 +39,15 @@ AmbeDecoder::Decoded3600 AmbeDecoder::decode_3600(std::span<const uint8_t, 9> bl
     if (keystream) for (std::size_t i = 0; i < d.size(); ++i) d[i] = static_cast<uint8_t>(d[i] ^ keystream[i]);   // 秘話: FEC 後・音声復号前に XOR(secret_voice.py と同じ位置)
     // 誤りの程度 = 訂正数(blip25_decode_3600 と同じ)。C0 が訂正不能なフレームは消失として前フレームの繰り返し / フェードにする
     blip25_decode_bits(&impl_->dec, d.data(), e < 0 ? BLIP25_LOST : e, pcm.data());
+    return out;
+}
+
+AmbeDecoder::Decoded3600 AmbeDecoder::decode_3600_soft(std::span<const int8_t, 72> llr, std::span<int16_t, 160> pcm, const uint8_t* keystream) {
+    ambe::Bits49 d{};
+    const int e = blip25_fec_3600_soft(llr.data(), d.data(), nullptr);
+    Decoded3600 out{ambe::pack_thumbdv(d), e < 0 ? 4 : e};
+    if (keystream) for (std::size_t i = 0; i < d.size(); ++i) d[i] = static_cast<uint8_t>(d[i] ^ keystream[i]);
+    blip25_decode_bits(&impl_->dec, d.data(), e < 0 ? BLIP25_LOST : 0, pcm.data());   // blip25_decode_3600_soft は常に 0(誤りなし)
     return out;
 }
 

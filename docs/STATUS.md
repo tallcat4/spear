@@ -39,7 +39,7 @@
 
 1. STD-T98 秘話の golden: 実機の秘話呼で動作は確認した(2026-09-17)。その録音の抜粋(鍵つき)を `~/spear/golden/std_t98/` に加え、受信 → 鍵探索 → 復号を通しで回帰テストにする。現在の E2E テストは、平文の実音声を自分でスクランブルしたもの。
 2. ADS-B(2026-09-17 実装・実機確認、`docs/apps/adsb.md`): 地上位置(TC5–8)の CPR、多数機のときの表の差分更新 model、受信機 reset の SDK 規約(generation 切替時)、ミニマップの `Spear.Widgets` への抽出(2 つ目の利用者が出たら)が残っている。
-3. STD-T98 の実地確認: 2026-10-16 にフレーム同期を状態機械にし(squelch はフレームに関与しない)、AMBE を blip25c にした。次の実地で弱い局の聞こえ方を確認する。残る改善案は軟判定(SACCH / PICH の Viterbi。9/20 の録音では CRC OK のフレームでも C1 が訂正上限のものが 1/3)。
+3. STD-T98 の実地確認: 2026-10-16 にフレーム同期を状態機械にし(squelch はフレームに関与しない)、AMBE を blip25c(軟判定の Golay)にした。次の実地で弱い局の聞こえ方を確認する。残る改善案は SACCH / PICH の Viterbi の軟判定と、4 値のレベル判定の追従(9/20 の録音では外側のレベルが 3.4 で、下位ビットの誤りが多い)。
    以前の経緯: 2026-09-20 のイベントで「遠い局が途切れる / 空き ch が開く」症状が出た。原因は AGC で揺れる床に絶対閾値のスケルチが乗っていたこと。床相対スケルチと出力ゲートに直した(2026-09-21、`docs/apps/std_t98.md`「スケルチ」)。次の実地で AGC OFF(手動ゲイン)との比較と、弱い局の聞こえ方を確認する。引き込み(`max_deviation` の単位の修正後)は録音解析で 0.1〜0.4 s と確認した。
 4. IQ RECORDER: 録音一覧と再生元の選択(`Spear.Input` に ListPicker が必要)、ディスク残量による自動停止。
 5. Source API: 運転中の gain / bandwidth / 受信端子の変更。現在は `retune` だけで、gain と端子はメニューで決めて App 起動時に適用し、rate の変更は App を再起動する。
@@ -86,7 +86,7 @@
   - subdev spec は tune の最初の装置呼び出しで設定する(能力の照合もセンサも channel 0 から spec 経由で解決されるため)。frontend の存在は事前に tree で確認する。libuhd の `coerce_subdev_spec` は B200 / B20xmini で `B` を黙って `A` に書き換えるので、例外を待つ方法だと RXB が RXA になってしまう。
   - 既定は UHD の既定と同じ RXA。運転中に変更する API は作らない(メニューは App 停止中にしか表示されない。GAIN と同じ)。
   - 実機確認(2026-09-19、5IWG5D5): 4 端子とも stage 4 で `port=… lo_locked`、12 s のストリームで Lossless drop 0(`spear-headless --port`)。GUI でも warm-up の tune check と App 起動が選んだ端子で通った(`--port TRXB` / `RXB` で SPECTRUM を運転し、ステータスバーに端子名が出る)。端子 LED での対応の目視確認は App の運転中に行う(起動時には点かない)。
-- AMBE は blip25c(blip25-vocoder の C 移植、MIT、Rust 版とビット一致)を使う(2026-10-16)。チップの復号音との差は 0.77 dB で、以前の mbelib-neo の C++ 移植(5.7 dB)から置き換えた。FEC の 49 bit は以前と同じ。
+- AMBE は blip25c(blip25-vocoder の C 移植、MIT、Rust 版とビット一致)を使い、FEC は 72 bit の軟判定(Chase-II)で復号する(2026-10-16)。チップの復号音との差は 0.77 dB で、以前の mbelib-neo の C++ 移植(5.7 dB)から置き換えた。FEC の 49 bit は以前と同じ。
 - ライセンスは GPL-3.0 で公開する(2026-09-17)。GPL-2.0-or-later 由来のコードと結合してよい。
 - STD-T98 の LO は帯域中心 − 250 kHz にする(ゼロ IF の DC スパイクを ch16 に重ねないため)。回転量は Core の実際の LO から求めるので、録音の再生(LO 固定)と実機で同じコードが通る。
 - 秘話モデル(§2.5 の道 1 と道 2、2026-09-17): ffnn は C++ で再実装(safetensors を直接読む)、hybrid は ONNX Runtime(必須の依存)で動かす。両モデルともリポジトリに置き、バイナリに埋め込む。

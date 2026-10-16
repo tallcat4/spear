@@ -213,6 +213,7 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
                 f.sacch = decode_sacch(f.fields.sacch);
                 crc_ok = f.sacch.crc_ok;
                 f.tch_payload = traffic_blocks_to_payload(split_traffic_blocks(f.fields));
+                f.tch_llr = traffic_llr(raw);
             }
             ch.pending.push_back(std::move(f));
             return crc_ok;

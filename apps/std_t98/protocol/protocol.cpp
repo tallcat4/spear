@@ -1,6 +1,8 @@
 #include "protocol.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 
 namespace spear::std_t98 {
@@ -17,20 +19,30 @@ Symbols quantize(const std::vector<float>& raw) {
     return s;
 }
 
+namespace {
+// LFSR 9-bit(初期 [0,1,1,1,0,0,1,0,0]、リスト末尾が s0)。1 = そのシンボルの符号を反転
+const std::array<int, 182>& whitening_seq() {
+    static const std::array<int, 182> w = [] {
+        std::array<int, 9> lfsr = {0, 1, 1, 1, 0, 0, 1, 0, 0};
+        std::array<int, 182> out{};
+        for (int i = 0; i < 182; ++i) {
+            const int s0 = lfsr[8];
+            const int s4 = lfsr[4];
+            const int new_s8 = s4 ^ s0;
+            out[i] = s0;
+            // lfsr = [new_s8] + lfsr[:-1]
+            for (int j = 8; j > 0; --j) lfsr[j] = lfsr[j - 1];
+            lfsr[0] = new_s8;
+        }
+        return out;
+    }();
+    return w;
+}
+}
+
 Symbols dewhiten(const Symbols& sym) {
     if (sym.size() < 192) return sym;
-    // LFSR 9-bit(初期 [0,1,1,1,0,0,1,0,0]、リスト末尾が s0)
-    std::array<int, 9> lfsr = {0, 1, 1, 1, 0, 0, 1, 0, 0};
-    std::array<int, 182> whitening{};
-    for (int i = 0; i < 182; ++i) {
-        const int s0 = lfsr[8];
-        const int s4 = lfsr[4];
-        const int new_s8 = s4 ^ s0;
-        whitening[i] = s0;
-        // lfsr = [new_s8] + lfsr[:-1]
-        for (int j = 8; j > 0; --j) lfsr[j] = lfsr[j - 1];
-        lfsr[0] = new_s8;
-    }
+    const auto& whitening = whitening_seq();
     Symbols out = sym;
     for (int i = 0; i < 182; ++i) {
         const int sign = whitening[i] == 0 ? 1 : -1;
@@ -289,6 +301,20 @@ Pich decode_pich(const std::string& pich_bits) {
 
 std::array<std::string, 4> split_traffic_blocks(const FrameFields& f) {
     return {f.tch1.substr(0, 72), f.tch1.substr(72), f.tch2.substr(0, 72), f.tch2.substr(72)};
+}
+
+std::vector<int8_t> traffic_llr(const std::vector<float>& raw) {
+    std::vector<int8_t> llr;
+    if (raw.size() < 192) return llr;
+    llr.reserve(288);
+    const auto& w = whitening_seq();
+    auto sat = [](float v) { return static_cast<int8_t>(std::lround(std::clamp(v * kLlrScale, -127.f, 127.f))); };
+    for (int k = 48; k < 192; ++k) {   // TCH1(シンボル 48..119)+ TCH2(120..191)
+        const float y = w[static_cast<std::size_t>(k - 10)] ? -raw[static_cast<std::size_t>(k)] : raw[static_cast<std::size_t>(k)];
+        llr.push_back(sat(-y));
+        llr.push_back(sat(std::fabs(y) - 2.f));
+    }
+    return llr;
 }
 
 std::vector<uint8_t> traffic_blocks_to_payload(const std::array<std::string, 4>& blocks) {
