@@ -41,7 +41,7 @@ site.conf の値が state.conf より優先される。運転状態を初期化�
 ## STD-T98 録音の解析
 
 ```
-./build/tools/spear-std-t98-decode ~/spear/recordings/<base> --freq-err <残留誤差 Hz> --squelch -50 --wav ~/spear/audio/<base>
+./build/tools/spear-std-t98-decode ~/spear/recordings/<base> --freq-err <帯域中心 − 録音中心 (App の録音なら 250000) + 残留誤差 Hz> --wav ~/spear/audio/<base>
 ```
 
 - 30 チャネルのフレーム表(SACCH/PICH CRC、CSM、推定周波数誤差)と、チャネルごとの AMBE 音声 WAV を出力する。

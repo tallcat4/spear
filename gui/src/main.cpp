@@ -83,6 +83,8 @@ int main(int argc, char** argv) {
         SyntheticSignal sig;
         sig.tones = {{cfg.sample_rate * 0.1, 0.3}, {-cfg.sample_rate * 0.23, 0.05}, {cfg.sample_rate * 0.31, 0.01}};
         sig.noise_amplitude = 0.004;
+        // 検証用: --synth-fm <offset_hz> で NFM(偏移 2.5 kHz、1 kHz トーン)を LO からのオフセットに置く(復調系 App の画面確認)
+        if (const char* fm = arg(argc, argv, "--synth-fm", nullptr)) sig.fm = {std::stod(fm), 0.3, 2.5e3, 1e3, true};
         src = std::make_unique<SyntheticSource>(&core.events(), sig);
     } else if (source.rfind("file:", 0) == 0) {
         auto rs = std::make_unique<RecordingSource>(&core.events(), source.substr(5), true);

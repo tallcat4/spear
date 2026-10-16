@@ -25,19 +25,19 @@ constexpr std::size_t kMixRing = 16384;                   // 2 s
 StdT98App::StdT98App(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::move(info), parent) {
     cfg_.in_rate = kRfRate;
     cfg_.pfb_channels = kPfb;
-    cfg_.squelch_db = squelch_db_;
+    cfg_.squelch_margin_db = squelch_margin_db_;
     stats_.resize(static_cast<std::size_t>(cfg_.num_channels));
     eye_.setCapacity(200);
     eye_.set_rate(cfg_.baud);
     // 再起動をまたいで残す運転状態(個体値は site.conf、チャネル IQ 表示のレンジは帯域表示に追従する派生値なので宣言しない)
-    persist({"squelchDb", "selectedChannel", "mute", "allChannelAudio", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange", "bandView.averaging"});
+    persist({"squelchMarginDb", "selectedChannel", "mute", "allChannelAudio", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange", "bandView.averaging"});
 }
 StdT98App::~StdT98App() = default;
 
 void StdT98App::configure(const QVariantMap& settings) {
     if (settings.contains("audio_device")) audio_device_ = settings["audio_device"].toString().toStdString();
     if (settings.contains("std_t98.band_center_hz")) band_center_hz_ = settings["std_t98.band_center_hz"].toDouble();
-    if (settings.contains("std_t98.squelch_db")) squelch_db_ = settings["std_t98.squelch_db"].toDouble();
+    if (settings.contains("std_t98.squelch_margin_db")) squelch_margin_db_ = settings["std_t98.squelch_margin_db"].toDouble();
     if (settings.contains("std_t98.secret")) secret_enabled_ = settings["std_t98.secret"].toInt() != 0;
 }
 
@@ -82,6 +82,8 @@ QVariantList StdT98App::channels() const {
         m["ch"] = i + 1;
         m["freq"] = channelFreqHz(i);
         m["power"] = s.power_db;
+        m["floor"] = s.floor_db;
+        m["threshold"] = s.threshold_db;
         m["open"] = s.open;
         m["frames"] = static_cast<double>(s.frames);
         m["sacchOk"] = static_cast<double>(s.sacch_ok);
@@ -104,6 +106,8 @@ QVariantMap StdT98App::selected() const {
     m["ch"] = selected_.load() + 1;
     m["freq"] = channelFreqHz(selected_);
     m["power"] = s.power_db;
+    m["floor"] = s.floor_db;
+    m["threshold"] = s.threshold_db;
     m["open"] = s.open;
     m["frames"] = static_cast<double>(s.frames);
     m["sacchOk"] = static_cast<double>(s.sacch_ok);
@@ -145,7 +149,7 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
     // 個体の LO 誤差はここでは扱わない(Core の Radio が radio.freq_err_ppm で LO 側で打ち消す。録音も補正済み)
     built_center_ = core.source().config().center_freq;
     c.freq_err_hz = band_center_hz_ - built_center_;
-    c.squelch_db = squelch_db_;
+    c.squelch_margin_db = squelch_margin_db_;
     auto rx = std::make_unique<Receiver>(c);
     Observer o;
     o.band = [this](std::span<const cf32> iq, uint64_t) {
@@ -401,7 +405,7 @@ void StdT98App::run() {
         if (rebuild_.exchange(false) || !rx || (core() && core()->source().config().center_freq != built_center_)) { if (core()) rx = build_receiver(*core()); }
         if (!rx) continue;
         const auto t0 = std::chrono::steady_clock::now();
-        rx->set_squelch_db(squelch_db_);
+        rx->set_squelch_margin_db(squelch_margin_db_);
         secret_drain_results();
         auto in = d->block.as<sc16>();
         iq.resize(in.size());
@@ -413,7 +417,8 @@ void StdT98App::run() {
             for (int c = 0; c < cfg_.num_channels; ++c) {
                 const auto& m = rx->metrics(c);
                 auto& s = stats_[static_cast<std::size_t>(c)];
-                s.power_db = m.power_db; s.open = m.open; s.frames = m.frames; s.sacch_ok = m.sacch_ok; s.pich_ok = m.pich_ok;
+                if (s.open && !m.open && c == selected_) eye_.clear();   // 選択 ch の squelch が閉じたらアイを消す(IDLE で雑音の目を残さない)
+                s.power_db = m.power_db; s.floor_db = m.floor_db; s.threshold_db = m.threshold_db; s.open = m.open; s.frames = m.frames; s.sacch_ok = m.sacch_ok; s.pich_ok = m.pich_ok;
                 s.syncs = m.sync_detections; s.best_sse = m.best_sse; s.sps = m.sps; s.csm = m.csm;
                 auto& sc = secret_ch_[static_cast<std::size_t>(c)];
                 if (!m.open && sc.tracker.active()) { sc.call_secret = false; sc.tracker.on_clear(); }   // squelch 閉 = 呼の終わり

@@ -39,7 +39,8 @@
 
 ## 検証
 `spear-gui --screenshot out.png --after N [--start-app I] [--diag] [--open-entry] [--invoke openPortEntry] [--app-action key] [--restart-rate R] [--agc] [--port TRXA]`
-で実画面をキャプチャして目視確認する(`--source file:<base>` で録音を流せば実信号の画面が撮れる)。
+で実画面をキャプチャして目視確認する(`--source file:<base>` で録音を流せば実信号の画面が撮れる。`--source synthetic --synth-fm <offset_hz>` で
+LO からのオフセットに NFM トーンを置ける — 復調系 App の画面確認用)。
 
 | | |
 |---|---|

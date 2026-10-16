@@ -8,7 +8,7 @@
 
 FZ-G2(タブレット、タッチ操作のみ)+ USRP B210 上で動く SDR の基盤。C++20 / Qt 6 / UHD。
 構成要素は RF バックエンド、フレームワーク(Stream Bus、provenance、App SDK、観測点)、再利用部品(DSP、Widgets、入力)で、
-その上に App(SPECTRUM / IQ RECORDER / FM-AM RX / STD-T98 MONITOR / ADS-B)が載る。
+その上に App(SPECTRUM / IQ RECORDER / FM-AM RX / STD-T98 MONITOR / ADS-B / SLPR 20CH RX)が載る。
 App を作り終えたら、基盤に足りなかった点を `docs/apps/<id>.md` に記録し、基盤に反映する。
 要件は `docs/requirements.md`(v5.0、コード中の §番号はこの文書の節)。
 
@@ -65,10 +65,10 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
   WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/user/1000 QT_QPA_PLATFORM=wayland QT_FORCE_STDERR_LOGGING=1 \
     ./build/gui/spear-gui --source file:<base> --screenshot out.png --after 10 --start-app <n> [--diag] [--app-action <key>] [--restart-rate R]
   ```
-  App 番号はメニュー順(0 SPECTRUM, 1 RECORDER, 2 FM/AM, 3 STD-T98, 4 ADS-B)。`--state-file` を付けなければ運転状態の復元・保存はしない(再現性のため)。
+  App 番号はメニュー順(0 SPECTRUM, 1 RECORDER, 2 FM/AM, 3 STD-T98, 4 ADS-B, 5 SLPR)。`--state-file` を付けなければ運転状態の復元・保存はしない(再現性のため)。
 - 実機: B210 の FPGA ロードは USB 2.0 で約 70 s かかる。`--after` はそれより長くする(途中で切ると次回また読み込む)。
   新しい表示部品や DSP 段は、周波数が既知の実信号で軸の向きと絶対値を確認する(合成トーンでは向きの誤りが分からない)。
-- 実録音: `spear-std-t98-decode <base> --squelch -50 [--freq-err <Hz>] [--wav out]` でフレーム表と音声を出す(秘話呼は鍵を探索して復号する。`--freq-err` は `docs/tools.md`)。
+- 実録音: `spear-std-t98-decode <base> --freq-err <Hz> [--wav out]` でフレーム表と音声を出す(秘話呼は鍵を探索して復号する)。App の録音(LO = 帯域中心 − 250 kHz)は `--freq-err 250000`(`docs/tools.md`)。
 - 装置の既知の挙動(B210 の癖など)は `docs/STATUS.md` の「装置の事実」と `docs/diagnostics.md` にある。
 
 ## 方針

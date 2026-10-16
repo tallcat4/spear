@@ -1,10 +1,11 @@
 // STD-T98 受信機 — 純 C++(Qt / UHD / Stream Bus 非依存)。
 //
 // radio.rx(in_rate = pfb_channels × spacing × resamp1 の整数倍: 1.2 Msps/48ch または 4 Msps/64ch)の cf32 を受け取り、30 チャネルを並列に復調してフレームを出す。
-//   in → resamp1(÷4 → 300 kHz)→ PFB 48ch(6.25 kHz/ch)→ [30ch] squelch → ×10 補間(62.5 kHz)
+//   in → resamp1(÷4 → 300 kHz)→ PFB 48ch(6.25 kHz/ch)→ [30ch] ×10 補間(62.5 kHz)
 //   → quadrature demod(315 Hz/level)→ RRC rx filter → ×0.23 → Gardner symbol sync → ×5
 //   → 同期語検出 → 192 シンボル → quantize → dewhiten → RICH / SACCH / PICH / TCH
-// ../std-t98-tools/std_t98_30ch_multi_rf_backend.py と同じ構成・定数。
+// ../std-t98-tools/std_t98_30ch_multi_rf_backend.py と同じ構成・定数。ただし squelch は復調を止めず出力だけをゲートし、
+// 閾値は絶対 dB ではなく「そのブロックの床(全チャネル電力の中央値)+ margin」(下記 ReceiverConfig)。
 //
 // 観測点(§1.1, §12 M3): Observer の各 hook が全チャネルの中間 stream を受け取る。App はそれを
 // Stream Bus に publish するだけで、この DSP コードには触れない。
@@ -39,7 +40,12 @@ struct ReceiverConfig {
     double fsk_dev_hz = 315;         // 1 level あたり
     double freq_err_hz = 0;          // 入力を -freq_err 回転する量: 帯域中心を DC へ戻す分 + そのファイル固有の残留誤差(golden / --freq-err)。
                                      // 実機の個体誤差は Core の Radio が LO 側で打ち消す(radio.freq_err_ppm)ので App は足さない
-    double squelch_db = -40;         // チャネル電力 [dB]、B210 gain 30 で -40 が目安
+    // squelch: チャネル電力 ≥ 床 + margin で開く。床 = そのブロックの全チャネル電力の中央値。AGC や会場の広帯域雑音で床が
+    // 全チャネル一斉に(ブロックごとに数 dB)動いても閾値が追従する — 絶対 dB の閾値(旧 squelch_db = -40)は AGC 有効時に床の
+    // 真上に乗って毎秒 30 回近く開閉した(2026-09-20 の実地録音、docs/apps/std_t98.md)。閉じるのは床 + margin − hyst を hold_s
+    // の間下回り続けたとき(フレーム 80 ms より長く)。squelch は DSP を止めない(閉でも復調・シンボル同期は回り続け、フレームと
+    // アイの出力だけを止める)。閉で IQ を 0 にしていた頃は開くたびにシンボル同期の再引き込みになった
+    double squelch_margin_db = 8, squelch_hyst_db = 3, squelch_hold_s = 0.12;
     double sync_ratio = 0.2;         // SSE 閾値 = 同期語エネルギー × ratio
     double sym_loop_bw = 0.06, sym_damping = 1.1, sym_ted_gain = 0.1, sym_max_dev = 0.02;   // GR symbol_sync_ff の引数そのまま(max_dev は samples/symbol)
     float  post_filt_gain = 0.23f, post_sync_gain = 5.f;
@@ -60,8 +66,11 @@ struct Frame {
 };
 
 struct ChannelMetrics {
-    double power_db = -999;          // 直近ブロックのチャネル電力(squelch 前)
+    double power_db = -999;          // 直近ブロックのチャネル電力
+    double floor_db = -999;          // 直近ブロックの床(全チャネル電力の中央値、全チャネル共通)
+    double threshold_db = -999;      // 開く閾値 = floor + margin
     bool   open = false;             // squelch
+    uint64_t gated_frames = 0;       // squelch 閉で捨てた同期(雑音の偽同期の目安)
     double sps = 0;                  // symbol sync の推定周期
     uint64_t sync_detections = 0, frames = 0, sacch_ok = 0, pich_ok = 0;
     double best_sse = 1e9;
@@ -89,7 +98,7 @@ public:
     double channel_offset_hz(int ch) const { return (ch - cfg_.num_channels / 2) * cfg_.spacing_hz; }
     int channel_to_bin(int ch) const;
 
-    void set_squelch_db(double db) { cfg_.squelch_db = db; }
+    void set_squelch_margin_db(double db) { cfg_.squelch_margin_db = db; }
     void set_sync_ratio(double r);
     void set_observer(Observer o) { obs_ = std::move(o); }
 
@@ -116,6 +125,7 @@ private:
     double rot_phase_ = 0;
     std::vector<cf32> buf1_;
     std::vector<std::vector<cf32>> bins_;
+    std::vector<double> floor_tmp_;       // 床(中央値)計算用
     uint64_t band_index_ = 0;   // resamp1 出力の通し番号
     uint64_t in0_ = 0;          // 最初のブロックの radio.rx index(provenance の原点)
     bool have_in0_ = false;

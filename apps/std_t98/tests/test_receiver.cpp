@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -129,6 +130,83 @@ TEST(StdT98SymbolSync, AveragePeriodStaysWithinMaxDeviation) {
     EXPECT_LE(bad, 3);
 }
 
+// ---- squelch: 床相対・ヒステリシス・保持 ----
+// 会場の広帯域雑音 + AGC で床が全チャネル一斉にブロックごとに数 dB 動く状況(2026-09-20 の実地録音)を、白色雑音の振幅を
+// 20 ms ごとに ±10 dB 段階的に変えて再現する。絶対 dB の閾値は床の真上に乗って開閉を繰り返したが、床相対なら
+//   1) 雑音だけ: 全チャネルほぼ閉のまま  2) 床 + 15 dB のトーン: そのチャネルだけ開き、床が動いても開いたまま
+//   3) トーンが消える: hold_s 後に閉じ、以後は閉のまま
+namespace {
+struct PumpedNoise {
+    std::mt19937 rng{11};
+    std::normal_distribution<float> n{0.f, 0.05f};
+    std::uniform_int_distribution<int> step{0, 3};
+    double gain_db = 0;
+    int in_block = 0;
+    // 1 ブロック(4 ms @ 1.2 Msps = 4800 sample)。20 ms ごとにゲインを {-10, 0, +10, +20} dB からランダムに選び直す
+    void fill(std::vector<cf32>& buf, double tone_hz, float tone_amp, double& tone_phase, double fs) {
+        if (in_block++ % 5 == 0) gain_db = -10.0 + 10.0 * step(rng);
+        const float g = static_cast<float>(std::pow(10.0, gain_db / 20.0));
+        for (auto& x : buf) {
+            cf32 v(n(rng), n(rng));
+            if (tone_amp > 0) { v += tone_amp * cf32(static_cast<float>(std::cos(tone_phase)), static_cast<float>(std::sin(tone_phase))); tone_phase += 2 * M_PI * tone_hz / fs; }
+            x = v * g;
+        }
+    }
+};
+}
+
+TEST(StdT98Squelch, TracksCommonModeFloorAndHolds) {
+    ReceiverConfig cfg;   // 1.2 Msps / 48ch(テストが軽い)
+    Receiver rx(cfg);
+    const int ch = 10;
+    const double tone_hz = rx.channel_offset_hz(ch);
+    const std::size_t block = 4800;   // 4 ms
+    std::vector<cf32> buf(block);
+    PumpedNoise src;
+    double ph = 0;
+    uint64_t idx = 0;
+    auto run = [&](int blocks, float tone_amp, auto&& per_block) {
+        for (int b = 0; b < blocks; ++b) {
+            src.fill(buf, tone_hz, tone_amp, ph, cfg.in_rate);
+            rx.process(buf, idx);
+            idx += block;
+            per_block(b);
+        }
+    };
+    // 1) 雑音だけ 1 s(フィルタの立ち上がり 50 ブロックは数えない)
+    std::vector<int> open_blocks(static_cast<std::size_t>(cfg.num_channels), 0);
+    int counted = 0;
+    run(250, 0.f, [&](int b) { if (b < 50) return; ++counted; for (int c = 0; c < cfg.num_channels; ++c) if (rx.metrics(c).open) ++open_blocks[static_cast<std::size_t>(c)]; });
+    for (int c = 0; c < cfg.num_channels; ++c) EXPECT_LE(open_blocks[static_cast<std::size_t>(c)], counted / 20) << "ch " << c << " opened on pumped noise";
+    // 床は動いている(ゲイン段 ±10 dB)のに閾値が追従していることの確認: 床の範囲が 15 dB 以上
+    // 2) トーン(床 + 約 15 dB)を 1 s: そのチャネルは 95% 以上開、他は 5% 以下
+    //    1 チャネル(6.25 kHz)あたりの雑音電力 ≈ σ² × 2 × 6250 / 1.2e6 → +15 dB のトーン振幅
+    const float sigma2 = 0.05f * 0.05f * 2;
+    const float tone_amp = std::sqrt(sigma2 * 6250.f / 1.2e6f * std::pow(10.f, 15.f / 10.f));
+    std::fill(open_blocks.begin(), open_blocks.end(), 0);
+    counted = 0;
+    double floor_min = 1e9, floor_max = -1e9;
+    run(250, tone_amp, [&](int b) {
+        if (b < 50) return;
+        ++counted;
+        for (int c = 0; c < cfg.num_channels; ++c) if (rx.metrics(c).open) ++open_blocks[static_cast<std::size_t>(c)];
+        floor_min = std::min(floor_min, rx.metrics(ch).floor_db); floor_max = std::max(floor_max, rx.metrics(ch).floor_db);
+    });
+    EXPECT_GE(open_blocks[static_cast<std::size_t>(ch)], counted * 95 / 100);
+    for (int c = 0; c < cfg.num_channels; ++c) if (c != ch) EXPECT_LE(open_blocks[static_cast<std::size_t>(c)], counted / 20) << "ch " << c;
+    EXPECT_GT(floor_max - floor_min, 15.0);   // 床は実際に揺れている
+    EXPECT_NEAR(rx.metrics(ch).threshold_db, rx.metrics(ch).floor_db + cfg.squelch_margin_db, 1e-9);
+    // 3) トーンを止める: hold_s(120 ms = 30 ブロック)+ フィルタ遅延の内に閉じ、以後開かない
+    int closed_at = -1;
+    run(100, 0.f, [&](int b) { if (closed_at < 0 && !rx.metrics(ch).open) closed_at = b; });
+    ASSERT_GE(closed_at, 0);
+    EXPECT_GE(closed_at, static_cast<int>(cfg.squelch_hold_s / 0.004) - 1);
+    EXPECT_LE(closed_at, static_cast<int>(cfg.squelch_hold_s / 0.004) + 12);
+    int reopened = 0;
+    run(100, 0.f, [&](int) { if (rx.metrics(ch).open) ++reopened; });
+    EXPECT_LE(reopened, 5);
+}
+
 // ---- golden: 実機録音 ----
 // 録音(<base>.sigmf-*)と期待値(<base>.golden.json)はリポジトリ外(個体の LO 誤差や無線機の識別符号を含むため)。
 // 無ければ skip。自分の録音で golden を作るには: 録音 → spear-std-t98-decode で確認 → 抜粋と JSON を ~/spear/golden/std_t98/ に置く。
@@ -138,7 +216,7 @@ std::string golden_base() {
     if (const char* h = std::getenv("HOME")) return std::string(h) + "/spear/golden/std_t98/ch3_pich";
     return {};
 }
-struct Golden { double freq_err_hz = 0, squelch_db = -50; int channel = 0; std::string csm; int min_frames = 1, pich_frames = 0, min_sacch = 0; };
+struct Golden { double freq_err_hz = 0; int channel = 0; std::string csm; int min_frames = 1, pich_frames = 0, min_sacch = 0; };   // squelch_db は読まない(床相対なので録音ごとの値は要らない)
 // 最小限の JSON 読み("key": 値 を探すだけ。ネストなし)
 std::string jvalue(const std::string& s, const std::string& key) {
     const auto k = s.find("\"" + key + "\"");
@@ -156,7 +234,6 @@ bool read_golden(const std::string& base, Golden& g) {
     if (!f) return false;
     const std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     g.freq_err_hz = std::stod(jvalue(s, "freq_err_hz"));
-    g.squelch_db = std::stod(jvalue(s, "squelch_db"));
     g.channel = std::stoi(jvalue(s, "channel"));
     g.csm = jvalue(s, "csm");
     g.min_frames = std::stoi(jvalue(s, "min_frames"));
@@ -177,7 +254,6 @@ TEST(StdT98Golden, RealRecordingCh3PichAndSacch) {
     ReceiverConfig cfg;
     cfg.in_rate = meta.sample_rate;
     cfg.pfb_channels = 64;
-    cfg.squelch_db = g.squelch_db;
     cfg.freq_err_hz = g.freq_err_hz;   // 録音した個体の LO 誤差(golden.json)
     Receiver rx(cfg);
 

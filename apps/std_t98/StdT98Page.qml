@@ -24,7 +24,7 @@ Item {
     function softKey(action) {
         switch (action) {
         case "all": app.allChannelAudio = !app.allChannelAudio; break
-        case "sq": ui.askRef(app.squelchDb, (v) => app.squelchDb = v); break
+        case "sq": ui.askLevel("SQUELCH  MARGIN ABOVE NOISE FLOOR", "dB", 0, 40, app.squelchMarginDb, (v) => app.squelchMarginDb = v); break
         case "diag": ui.showDiagnostics(); break
         case "mute": app.mute = !app.mute; break
         }
@@ -77,11 +77,11 @@ Item {
                 Text { anchors.right: parent.right; anchors.rightMargin: 8; y: 5; text: modelData.open ? modelData.power.toFixed(0) : ""; color: page.chColor(modelData); font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
                 Text { x: 8; y: 24; text: modelData.csm.length ? "CSM " + modelData.csm : (modelData.freq / 1e6).toFixed(5) + " MHz"
                        color: modelData.csm.length ? Theme.textBright : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-                // 電力バー(-100..-20 dB)
+                // 電力バー(-100..-20 dB)。琥珀の目印は開く閾値 = 床(全 ch 中央値)+ 余裕。床が動けば目印も動く
                 Rectangle {
                     x: 8; y: 44; width: parent.width - 16; height: 10; color: Theme.bg; border.color: Theme.lineDim; border.width: 1
                     Rectangle { x: 1; y: 1; height: 8; width: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (modelData.power + 100) / 80))); color: page.chColor(modelData) }
-                    Rectangle { x: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (app.squelchDb + 100) / 80))); y: -2; width: 2; height: 14; color: Theme.amber; opacity: 0.8 }
+                    Rectangle { x: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (modelData.threshold + 100) / 80))); y: -2; width: 2; height: 14; color: Theme.amber; opacity: 0.8; visible: modelData.threshold > -900 }
                 }
                 MouseArea { anchors.fill: parent; onClicked: if (index !== app.selectedChannel) { Feedback.tap(); app.selectedChannel = index } }
             }
@@ -137,6 +137,7 @@ Item {
                     Readout { label: "FRAMES"; value: String(page.sel.frames); width: 110; height: 52; valueColor: Theme.green }
                     Readout { label: "SACCH OK"; value: String(page.sel.sacchOk); width: 120; height: 52 }
                     Readout { label: "PICH OK"; value: String(page.sel.pichOk); width: 110; height: 52 }
+                    Readout { label: "FLOOR / SQL"; value: page.sel.floor > -900 ? page.sel.floor.toFixed(0) + " / +" + app.squelchMarginDb.toFixed(0) + " dB" : "--"; width: 170; height: 52 }
                     Readout { label: "CSM"; value: page.sel.csm.length ? page.sel.csm : "--"; width: 170; height: 52; valueColor: Theme.textBright }
                     Readout { label: "TOTAL / DROPS / DSP"; value: app.totalFrames.toFixed(0) + " / " + app.losslessDrops.toFixed(0) + " / " + (app.dspLoad * 100).toFixed(0) + "%"; width: 200; height: 52
                               valueColor: app.losslessDrops > 0 ? Theme.red : Theme.text }
