@@ -110,14 +110,16 @@ Item {
                 color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall
             }
         }
-        // 周波数軸(中心からのオフセット)
+        // 周波数軸(中心からのオフセット)。両端のラベルは枠の内側に寄せる(中央揃えだと右端は枠の外へ、左端は dB 軸に重なる)
         Repeater {
             model: page.divisions + 1
             delegate: Text {
                 required property int index
                 readonly property double span: page.span
                 visible: !page.compact || index % 5 === 0
-                x: plot.x + Math.round(plot.width * index / page.divisions) - width / 2
+                x: index === 0 ? plot.x
+                   : index === page.divisions ? plot.x + plot.width - width
+                   : plot.x + Math.round(plot.width * index / page.divisions) - width / 2
                 y: plot.y + plot.height + 4
                 text: index === page.divisions / 2 ? Theme.fmtFreq(page.centerFreq) : Theme.fmtHz(-span / 2 + span * index / page.divisions)
                 color: index === page.divisions / 2 ? Theme.text : Theme.textDim
