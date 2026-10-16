@@ -4,8 +4,9 @@
 //   in → resamp1(÷4 → 300 kHz)→ PFB 48ch(6.25 kHz/ch)→ [30ch] ×10 補間(62.5 kHz)
 //   → quadrature demod(315 Hz/level)→ RRC rx filter → ×0.23 → Gardner symbol sync → ×5
 //   → 同期語検出 → 192 シンボル → quantize → dewhiten → RICH / SACCH / PICH / TCH
-// ../std-t98-tools/std_t98_30ch_multi_rf_backend.py と同じ構成・定数。ただし squelch は復調を止めず出力だけをゲートし、
-// 閾値は絶対 dB ではなく「そのブロックの床(全チャネル電力の中央値)+ margin」(下記 ReceiverConfig)。
+// ../std-t98-tools/std_t98_30ch_multi_rf_backend.py と同じ構成・定数。ただしフレームを出すかどうかは同期の状態機械
+// (捕捉 / フライホイール / 喪失、dsp/sync_correlator.hpp)と CRC だけで決め、squelch は電力の表示とアイにだけ使う。
+// squelch の閾値は絶対 dB ではなく「そのブロックの床(全チャネル電力の中央値)+ margin」(下記 ReceiverConfig)。
 //
 // 観測点(§1.1, §12 M3): Observer の各 hook が全チャネルの中間 stream を受け取る。App はそれを
 // Stream Bus に publish するだけで、この DSP コードには触れない。
@@ -43,10 +44,12 @@ struct ReceiverConfig {
     // squelch: チャネル電力 ≥ 床 + margin で開く。床 = そのブロックの全チャネル電力の中央値。AGC や会場の広帯域雑音で床が
     // 全チャネル一斉に(ブロックごとに数 dB)動いても閾値が追従する — 絶対 dB の閾値(旧 squelch_db = -40)は AGC 有効時に床の
     // 真上に乗って毎秒 30 回近く開閉した(2026-09-20 の実地録音、docs/apps/std_t98.md)。閉じるのは床 + margin − hyst を hold_s
-    // の間下回り続けたとき(フレーム 80 ms より長く)。squelch は DSP を止めない(閉でも復調・シンボル同期は回り続け、フレームと
-    // アイの出力だけを止める)。閉で IQ を 0 にしていた頃は開くたびにシンボル同期の再引き込みになった
+    // の間下回り続けたとき(フレーム 80 ms より長く)。squelch は DSP もフレームも止めない — 電力の表示(CARRIER)とアイの出力だけ。
+    // 閉で IQ を 0 にしていた頃は開くたびにシンボル同期の再引き込みになり、フレームをゲートしていた頃は弱い局が途切れた
     double squelch_margin_db = 8, squelch_hyst_db = 3, squelch_hold_s = 0.12;
-    double sync_ratio = 0.2;         // SSE 閾値 = 同期語エネルギー × ratio
+    double sync_ratio = 0.2;         // 捕捉(SEARCH / TENTATIVE)の SSE 閾値 = 同期語エネルギー × ratio
+    double sync_locked_ratio = 0.6;  // 同期中の予測位置 ±1 での SSE 閾値(緩い)
+    int    sync_max_misses = 3;      // 同期語も CRC も取れないフレームがこれだけ続いたら同期喪失(3 × 80 ms)
     double sym_loop_bw = 0.06, sym_damping = 1.1, sym_ted_gain = 0.1, sym_max_dev = 0.02;   // GR symbol_sync_ff の引数そのまま(max_dev は samples/symbol)
     float  post_filt_gain = 0.23f, post_sync_gain = 5.f;
     int    eye_points = 64;          // アイパターン 1 トレース(2 シンボル)の点数
@@ -57,20 +60,25 @@ struct Frame {
     uint64_t symbol_index = 0;       // そのチャネルのシンボル通し番号(フレーム先頭)
     uint64_t input_sample_index = 0; // radio.rx の sample index に逆算した先頭(provenance §3.6)
     double   sync_sse = 0;
+    bool     sync_ok = true;         // 同期語が閾値内。false = 同期中に予測位置で取ったフレーム(フライホイール、CRC か後続のフレームで確認済み)
     Symbols  raw;                    // 量子化済み 192 シンボル(dewhiten 前)
     FrameFields fields;              // dewhiten 後のフィールド(ビット文字列)
     Rich  rich;
     Sacch sacch;                     // rich.f == 1(トラフィック)のとき有効
     Pich  pich;                      // rich.f == 0(同期バースト)のとき有効
-    std::vector<uint8_t> tch_payload; // トラフィック時: 4 ブロック × 9 バイト(AMBE 3600)
+    std::vector<uint8_t> tch_payload; // トラフィック時: 4 ブロック × 9 バイト(AMBE 3600、硬判定)
+    std::vector<int8_t>  tch_llr;     // トラフィック時: 4 ブロック × 72 の軟判定(traffic_llr、AMBE の FEC はこちらで復号する)
 };
 
 struct ChannelMetrics {
     double power_db = -999;          // 直近ブロックのチャネル電力
     double floor_db = -999;          // 直近ブロックの床(全チャネル電力の中央値、全チャネル共通)
     double threshold_db = -999;      // 開く閾値 = floor + margin
-    bool   open = false;             // squelch
-    uint64_t gated_frames = 0;       // squelch 閉で捨てた同期(雑音の偽同期の目安)
+    bool   open = false;             // squelch(電力。表示だけ)
+    bool   locked = false;           // フレーム同期中(呼の有無はこれで決める)
+    uint64_t locks = 0;              // 同期を捕捉した回数
+    uint64_t flywheel_frames = 0;    // 同期語が崩れていたが出したフレーム
+    uint64_t dropped_frames = 0;     // 捨てた候補(雑音の偽同期、同期喪失前の保留)
     double sps = 0;                  // symbol sync の推定周期
     uint64_t sync_detections = 0, frames = 0, sacch_ok = 0, pich_ok = 0;
     double best_sse = 1e9;

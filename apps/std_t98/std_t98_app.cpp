@@ -16,7 +16,7 @@ namespace {
 constexpr double kRfRate = 4e6;        // 4 Msps → resamp1 ÷10 → 400 kHz = 64 × 6.25 kHz(実機録音で検証済みの構成)
 constexpr int kPfb = 64;
 constexpr unsigned kAudioRate = 8000;  // AMBE の出力レート。ALSA/PipeWire 側でリサンプルさせる
-constexpr float kAmbeGain = 7.f / 32768.f;   // mbelib の short 経路(float × 7)相当で ±1.0 に
+constexpr float kAmbeGain = 1.f / 32768.f;   // blip25c の PCM は int16 の全幅(mbelib の float 経路は 1/7 だったので以前は × 7 していた)
 constexpr double kAudioPerInput = kAudioRate / kRfRate;   // radio.rx index → 8 kHz index
 constexpr uint64_t kMixLatency = kAudioRate * 3 / 10;     // 300 ms: フレーム長 80 ms + 受信機の遅延 + ブロック長より十分大きく
 constexpr std::size_t kMixRing = 16384;                   // 2 s
@@ -85,6 +85,7 @@ QVariantList StdT98App::channels() const {
         m["floor"] = s.floor_db;
         m["threshold"] = s.threshold_db;
         m["open"] = s.open;
+        m["locked"] = s.locked;
         m["frames"] = static_cast<double>(s.frames);
         m["sacchOk"] = static_cast<double>(s.sacch_ok);
         m["pichOk"] = static_cast<double>(s.pich_ok);
@@ -109,6 +110,7 @@ QVariantMap StdT98App::selected() const {
     m["floor"] = s.floor_db;
     m["threshold"] = s.threshold_db;
     m["open"] = s.open;
+    m["locked"] = s.locked;
     m["frames"] = static_cast<double>(s.frames);
     m["sacchOk"] = static_cast<double>(s.sacch_ok);
     m["pichOk"] = static_cast<double>(s.pich_ok);
@@ -164,13 +166,13 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
     };
     o.eye = [this](int ch, std::span<const float> t) { if (ch == selected_) eye_.push(t); };
     o.discriminator = [this](int ch, std::span<const float> d) {
-        // 周波数誤差の推定: 開いているチャネルの discriminator 平均 × 偏移(315 Hz)を IIR で
+        // 周波数誤差の推定: 信号のある(同期中か squelch 開の)チャネルの discriminator 平均 × 偏移(315 Hz)を IIR で
         double m = 0;
         for (float v : d) m += v;
         m = d.empty() ? 0 : m / static_cast<double>(d.size()) * cfg_.fsk_dev_hz;
         std::lock_guard<std::mutex> lk(mu_);
         auto& s = stats_[static_cast<std::size_t>(ch)];
-        if (s.open) s.freq_err_est = 0.95 * s.freq_err_est + 0.05 * m;
+        if (s.open || s.locked) s.freq_err_est = 0.95 * s.freq_err_est + 0.05 * m;
     };
     o.frame = [this, &core](const Frame& f) {
         ++total_frames_;
@@ -201,7 +203,7 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
         // 同期バースト = 呼の区切り: 秘話セッションを閉じる(鍵は保持)
         if (f.rich.f == 0) secret_clear(f.channel);
         // トラフィック: 秘話判定 → 音声(AMBE → 8 kHz PCM → ミキサ)→ 秘話なら鍵探索の窓へ
-        if (f.rich.f == 1 && f.tch_payload.size() == 36) traffic_frame(f);
+        if (f.rich.f == 1 && f.tch_llr.size() == 288) traffic_frame(f);
     };
     rx->set_observer(std::move(o));
     return rx;
@@ -247,7 +249,7 @@ void StdT98App::traffic_frame(const Frame& f) {
         if (late) ++audio_late_;
         for (int k = 0; k < 4; ++k) {
             std::array<int16_t, 160> s{};
-            const auto d = dec->decode_3600(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9), s, keyed ? secret::keystream_d(sc.pn, k) : nullptr);
+            const auto d = dec->decode_3600_soft(std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72), s, keyed ? secret::keystream_d(sc.pn, k) : nullptr);
             raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(d.raw2450);
             if (late || future) continue;
             for (int i = 0; i < 160; ++i) {
@@ -260,7 +262,7 @@ void StdT98App::traffic_frame(const Frame& f) {
     if (!sc.call_secret || !secret_) return;
     // 鍵探索の窓: FEC 後・XOR 前の 49 bit × 4。音声を出していないチャネルでも積む(選択を切り替えた瞬間から復号できるように)
     if (!have_raw)
-        for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(fec_demod_3600_to_2450(std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9)));
+        for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(fec_soft_3600_to_2450(std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72)));
     secret::Tracker::Request rq;
     if (sc.tracker.on_secret_burst(raw, &rq)) secret_->submit({f.channel, rq.session, rq.current_key, std::move(rq.bursts)});
 }
@@ -417,11 +419,12 @@ void StdT98App::run() {
             for (int c = 0; c < cfg_.num_channels; ++c) {
                 const auto& m = rx->metrics(c);
                 auto& s = stats_[static_cast<std::size_t>(c)];
-                if (s.open && !m.open && c == selected_) eye_.clear();   // 選択 ch の squelch が閉じたらアイを消す(IDLE で雑音の目を残さない)
-                s.power_db = m.power_db; s.floor_db = m.floor_db; s.threshold_db = m.threshold_db; s.open = m.open; s.frames = m.frames; s.sacch_ok = m.sacch_ok; s.pich_ok = m.pich_ok;
+                // 選択 ch の信号が無くなったら(同期が外れ squelch も閉)アイを消す(IDLE で雑音の目を残さない)
+                if ((s.open || s.locked) && !m.open && !m.locked && c == selected_) eye_.clear();
+                s.power_db = m.power_db; s.floor_db = m.floor_db; s.threshold_db = m.threshold_db; s.open = m.open; s.locked = m.locked; s.frames = m.frames; s.sacch_ok = m.sacch_ok; s.pich_ok = m.pich_ok;
                 s.syncs = m.sync_detections; s.best_sse = m.best_sse; s.sps = m.sps; s.csm = m.csm;
                 auto& sc = secret_ch_[static_cast<std::size_t>(c)];
-                if (!m.open && sc.tracker.active()) { sc.call_secret = false; sc.tracker.on_clear(); }   // squelch 閉 = 呼の終わり
+                if (!m.locked && sc.tracker.active()) { sc.call_secret = false; sc.tracker.on_clear(); }   // 同期喪失 = 呼の終わり(squelch ではなく)
                 s.secret = sc.call_secret; s.key = sc.tracker.key(); s.secret_status = sc.tracker.status();
             }
         }

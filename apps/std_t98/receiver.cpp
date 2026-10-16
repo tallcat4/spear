@@ -22,6 +22,7 @@ struct Receiver::Channel {
     std::vector<float> eye_buf;           // フィルタ後の履歴(アイパターン用)、eye_base が eye_buf[0] の絶対 sample index
     uint64_t eye_base = 0, eye_fed = 0;   // eye_fed = これまで symbol sync に渡した総サンプル数(sym_pos と同じ座標)
     std::deque<double> eye_pending;       // トレース未生成の判定点
+    std::deque<Frame> pending;            // 同期の状態機械が出す / 捨てるを決めるまでの復号済み候補(候補の順)
     uint64_t symbol_index = 0;            // 出力シンボルの通し番号
     uint64_t sample_index = 0;            // 62.5 kHz sample の通し番号(このチャネル)
     bool open = false;
@@ -53,7 +54,7 @@ Receiver::Receiver(ReceiverConfig cfg) : cfg_(cfg) {
         ch->quad_gain = static_cast<float>(demod_rate / (2.0 * std::numbers::pi * cfg_.fsk_dev_hz));
         ch->rrc = dsp::FirDecimator<float>("rrc_rx", demod_rate, rx_taps_, 1);
         ch->sync = SymbolSync(sps, cfg_.sym_loop_bw, cfg_.sym_damping, cfg_.sym_ted_gain, cfg_.sym_max_dev);
-        ch->corr = SyncCorrelator(cfg_.sync_ratio, kFrameSymbols);
+        ch->corr = SyncCorrelator(cfg_.sync_ratio, cfg_.sync_locked_ratio, cfg_.sync_max_misses, kFrameSymbols);
         ch_.push_back(std::move(ch));
     }
     metrics_.assign(static_cast<std::size_t>(cfg_.num_channels), {});
@@ -123,8 +124,8 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
         m.open = ch.open;
         m.floor_db = floor_db;
         m.threshold_db = thr_open;
-        // 補間 ×10。以降の復調・シンボル同期は squelch に関係なく回す(閉で 0 を入れると同期ループが凍り、開くたびに再引き込みになる)。
-        // squelch がゲートするのはフレームとアイの出力だけ
+        // 補間 ×10。以降の復調・シンボル同期・フレーム同期は squelch に関係なく回す(閉で 0 を入れると同期ループが凍り、開くたびに
+        // 再引き込みになる)。squelch は電力の表示(CARRIER)とアイの出力にだけ使う
         ch.iq_up.resize(bin.size() * static_cast<std::size_t>(cfg_.resamp2) + 2);
         const std::size_t n2 = ch.up.process(bin, ch.iq_up);
         const uint64_t iq_first = ch.sample_index;
@@ -151,8 +152,8 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
         for (auto& s : ch.syms) s *= cfg_.post_sync_gain;
         m.sps = ch.sync.period();
         // アイパターン: symbol sync の判定点 p を基準に [p − sps/2, p + 1.5 sps] の 2 シンボル幅を切り出す
-        // (判定点がトレースの 1/4 と 3/4 に来る)。振幅はシンボルと同じ ±1/±3 スケール。履歴は squelch に関係なく進め、
-        // トレースを出すのは開いているときだけ(閉でバッファを捨てると開くたびに先頭が欠ける)
+        // (判定点がトレースの 1/4 と 3/4 に来る)。振幅はシンボルと同じ ±1/±3 スケール。履歴は常に進め、
+        // トレースを出すのは信号があるとき(同期中か squelch 開)だけ(バッファを捨てると出し始めに先頭が欠ける)
         if (obs_.eye) {
             const double sps = ch.sync.period();
             if (ch.eye_buf.empty()) ch.eye_base = ch.eye_fed;
@@ -171,7 +172,7 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
                     const double mu = t - static_cast<double>(i0);
                     trace[static_cast<std::size_t>(k)] = (ch.eye_buf[i0] + static_cast<float>(mu) * (ch.eye_buf[i0 + 1] - ch.eye_buf[i0])) * cfg_.post_sync_gain;
                 }
-                if (ch.open) obs_.eye(c, trace);
+                if (ch.open || ch.corr.locked()) obs_.eye(c, trace);
             }
             // 未処理の判定点より前は捨てる(4 シンボル分は残す)
             const double keep_from = (ch.eye_pending.empty() ? avail : ch.eye_pending.front()) - 2.0 * sps - 2.0;
@@ -187,16 +188,20 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
         ch.symbol_index += ns;
         for (std::size_t i = 0; i < ns; ++i) ch.pos_hist.emplace_back(sym_first + i, ch.sym_pos[i]);
         while (ch.pos_hist.size() > 600) ch.pos_hist.pop_front();
-        ch.corr.process(ch.syms, sym_first, [&](std::span<const float> pkt, uint64_t sym_idx) {
+        // フレームを出すかどうかは同期の状態機械と CRC だけで決める(squelch は関与しない、dsp/sync_correlator.hpp)。
+        // 候補はここで復号して CRC を返し、出す / 捨てるの通知(候補の順)を待って出す
+        auto on_candidate = [&](const SyncCandidate& cand) {
+            const uint64_t sym_idx = cand.first_symbol_index;
             Frame f;
             f.channel = c;
             f.symbol_index = sym_idx;
-            f.sync_sse = ch.corr.stats().last_metric;
+            f.sync_sse = cand.sse;
+            f.sync_ok = cand.sync_ok;
             // provenance (§3.6): フレーム先頭シンボルの判定点(62.5 kHz sample)→ 段の宣言から radio.rx の index へ
             double ch_sample = static_cast<double>(sym_idx) * (ch.rrc.info().in_rate / cfg_.baud);
             for (const auto& [si, pos] : ch.pos_hist) if (si == sym_idx) { ch_sample = pos; break; }
             f.input_sample_index = in0_ + static_cast<uint64_t>(std::max(0.0, prov_chan_.input_index(ch_sample)));
-            std::vector<float> raw(pkt.begin(), pkt.end());
+            std::vector<float> raw(cand.symbols.begin(), cand.symbols.end());
             f.raw = quantize(raw);
             f.fields = parse_frame(dewhiten(f.raw));
             f.rich = decode_rich(f.fields.rich);
@@ -208,17 +213,26 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
                 f.sacch = decode_sacch(f.fields.sacch);
                 crc_ok = f.sacch.crc_ok;
                 f.tch_payload = traffic_blocks_to_payload(split_traffic_blocks(f.fields));
+                f.tch_llr = traffic_llr(raw);
             }
-            // squelch のゲート: 閉じていても CRC が通ったフレームは信号の確かな証拠なので開く(床 + margin に届かない遠い局を拾う。
-            // 偽同期が CRC を通る確率は 1/4096 × 数回/時 で無視できる)。CRC 不良のフレームは開いているときだけ出す(雑音上の偽同期を音にしない)
-            if (crc_ok) { ch.open = true; ch.closing_s = 0; m.open = true; }
-            else if (!ch.open) { ++m.gated_frames; return; }
+            ch.pending.push_back(std::move(f));
+            return crc_ok;
+        };
+        auto on_resolve = [&](uint64_t, bool emit) {   // 候補の順に通知される(先頭 == その候補)
+            Frame f = std::move(ch.pending.front());
+            ch.pending.pop_front();
+            if (!emit) return;
             m.frames++;
             if (f.rich.valid && f.rich.f == 0 && f.pich.crc_ok) { m.pich_ok++; m.csm = f.pich.csm; }
             if (f.rich.valid && f.rich.f == 1 && f.sacch.crc_ok) m.sacch_ok++;
-            m.last_frame_symbol_index = sym_idx;
+            m.last_frame_symbol_index = f.symbol_index;
             if (obs_.frame) obs_.frame(f);
-        });
+        };
+        ch.corr.process(ch.syms, sym_first, on_candidate, on_resolve);
+        m.locked = ch.corr.locked();
+        m.locks = ch.corr.stats().locks;
+        m.flywheel_frames = ch.corr.stats().flywheel;
+        m.dropped_frames = ch.corr.stats().dropped;
         m.sync_detections = ch.corr.stats().detections;
         m.best_sse = ch.corr.stats().best_metric;
     }

@@ -29,8 +29,9 @@ Item {
         case "mute": app.mute = !app.mute; break
         }
     }
+    // 緑 = フレーム同期中(呼がある。電力が squelch に届かない遠い局も)、琥珀 / シアン = 同期していない電力(squelch 開)
     function chColor(c) {
-        if (c.frames > 0 && c.open) return Theme.green
+        if (c.locked) return Theme.green
         if (c.syncs > 0 && c.open) return Theme.amber
         if (c.open) return Theme.cyan
         return Theme.gray
@@ -74,7 +75,7 @@ Item {
                 color: selectedCh ? "#141414" : Theme.panel
                 border.color: selectedCh ? Theme.amber : Theme.line; border.width: selectedCh ? 2 : 1
                 Text { x: 8; y: 3; text: "CH " + modelData.ch; color: selectedCh ? Theme.amber : Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
-                Text { anchors.right: parent.right; anchors.rightMargin: 8; y: 5; text: modelData.open ? modelData.power.toFixed(0) : ""; color: page.chColor(modelData); font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+                Text { anchors.right: parent.right; anchors.rightMargin: 8; y: 5; text: modelData.open || modelData.locked ? modelData.power.toFixed(0) : ""; color: page.chColor(modelData); font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
                 Text { x: 8; y: 24; text: modelData.csm.length ? "CSM " + modelData.csm : (modelData.freq / 1e6).toFixed(5) + " MHz"
                        color: modelData.csm.length ? Theme.textBright : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
                 // 電力バー(-100..-20 dB)。琥珀の目印は開く閾値 = 床(全 ch 中央値)+ 余裕。床が動けば目印も動く
@@ -123,14 +124,14 @@ Item {
                 Row {
                     spacing: 6
                     Rectangle {
-                        width: 130; height: 52; color: page.sel.open ? (page.sel.frames > 0 ? Theme.green : Theme.cyan) : Theme.gray
-                        Text { anchors.centerIn: parent; text: page.sel.open ? (page.sel.frames > 0 ? "FRAMES" : "CARRIER") : "IDLE"; color: "#000000"
+                        width: 130; height: 52; color: page.sel.locked ? Theme.green : page.sel.open ? Theme.cyan : Theme.gray
+                        Text { anchors.centerIn: parent; text: page.sel.locked ? "SYNC" : page.sel.open ? "CARRIER" : "IDLE"; color: "#000000"
                                font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
                     }
                     Readout { label: "POWER"; value: page.sel.power > -900 ? page.sel.power.toFixed(1) + " dB" : "--"; width: 130; height: 52 }
                     Readout { label: "SYNC / BEST SSE"; value: page.sel.syncs + " / " + (page.sel.bestSse < 1e8 ? page.sel.bestSse.toFixed(2) : "--"); width: 200; height: 52 }
                     Readout { label: "SPS"; value: page.sel.sps > 0 ? page.sel.sps.toFixed(3) : "--"; width: 110; height: 52 }
-                    Readout { label: "FREQ ERR"; value: page.sel.open ? page.sel.freqErrEst.toFixed(0) + " Hz" : "--"; width: 130; height: 52 }
+                    Readout { label: "FREQ ERR"; value: page.sel.open || page.sel.locked ? page.sel.freqErrEst.toFixed(0) + " Hz" : "--"; width: 130; height: 52 }
                 }
                 Row {
                     spacing: 6

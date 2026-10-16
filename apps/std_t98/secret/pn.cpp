@@ -1,5 +1,5 @@
 #include "pn.hpp"
-#include "ambe/decoder.hpp"
+#include "ambe/bits.hpp"
 
 namespace spear::std_t98::secret {
 

@@ -53,7 +53,7 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
   site.conf は自動保存の `state.conf` より優先される。
 - libuhd はパッチ済みパッケージ(`packaging/libuhd`)を使う。upstream に PR は出さない。B200-only プロファイルは共用の開発機に入れない(他の UHD アプリが動かなくなる)。
 - event には radio.rx の sample 範囲(provenance)を付ける。中間 stream には `TAP()` を置く。
-- ライセンスは GPL-3.0。GPL-2.0-or-later 由来のコード(`apps/std_t98/ambe/`)は結合してよい。SPDX と著作権表示は残す。
+- ライセンスは GPL-3.0。GPL-2.0-or-later や MIT 由来のコード(`apps/std_t98/blip25c/` は MIT)は結合してよい。SPDX と著作権表示は残す。
 - コメントは日本語、識別子は英語。既存ファイルの書き方に合わせる。根拠として要件の §番号を書く。
 - 要件と実装の違いは `docs/STATUS.md` の「要件との差分」に書く。要件書の §番号を変えたら、コードとドキュメントの参照も合わせて直す。
 

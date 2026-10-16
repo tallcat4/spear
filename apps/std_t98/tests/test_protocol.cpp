@@ -5,6 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <vector>
+
 using namespace spear::std_t98;
 
 TEST(StdT98Protocol, MatchesPythonReference) {
@@ -57,4 +60,32 @@ TEST(StdT98Protocol, QuantizeAndBits) {
     EXPECT_EQ(s[5], -3);
     // +1→00 +3→01 -1→10 -3→11
     EXPECT_EQ(symbols_to_bits(Symbols{1, 3, -1, -3}), "00011011");
+}
+
+TEST(StdT98Protocol, TrafficLlrAgreesWithHardBitsAndConfidence) {
+    // 軟判定 LLR の符号は、量子化 → デホワイト → ビット → 9 byte の硬判定と同じビットになる。絶対値は判定境界からの距離
+    std::vector<float> raw(192);
+    uint32_t r = 12345;
+    for (auto& v : raw) {
+        r = r * 1103515245u + 12345u;
+        const float level = static_cast<float>(static_cast<int>((r >> 16) % 4) * 2 - 3);   // -3 -1 1 3
+        v = level + (static_cast<float>((r >> 8) % 100) / 100.f - 0.5f) * 0.8f;              // ±0.4 の揺れ(境界はまたがない)
+    }
+    const auto payload = traffic_blocks_to_payload(split_traffic_blocks(parse_frame(dewhiten(quantize(raw)))));
+    const auto llr = traffic_llr(raw);
+    ASSERT_EQ(llr.size(), 288u);
+    ASSERT_EQ(payload.size(), 36u);
+    for (std::size_t i = 0; i < 288; ++i) {
+        const int bit = (payload[i / 8] >> (7 - i % 8)) & 1;
+        EXPECT_EQ(llr[i] > 0, bit == 1) << "bit " << i;
+        EXPECT_NE(llr[i], 0) << "bit " << i;
+    }
+    // 外側のレベルほど下位ビット(|y| − 2)の確からしさが大きい。上位ビットは符号そのもの(× kLlrScale)
+    std::vector<float> one(192, 1.f);
+    one[48] = 3.f;   // TCH1 先頭シンボル(デホワイトの符号に関係なく |y| は同じ)
+    const auto l1 = traffic_llr(one);
+    EXPECT_EQ(std::abs(l1[0]), 96);    // |−y| × 32
+    EXPECT_EQ(l1[1], 32);              // (3 − 2) × 32
+    EXPECT_EQ(std::abs(l1[2]), 32);
+    EXPECT_EQ(l1[3], -32);             // (1 − 2) × 32
 }
