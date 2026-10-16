@@ -16,7 +16,7 @@ namespace {
 constexpr double kRfRate = 4e6;        // 4 Msps → resamp1 ÷10 → 400 kHz = 64 × 6.25 kHz(実機録音で検証済みの構成)
 constexpr int kPfb = 64;
 constexpr unsigned kAudioRate = 8000;  // AMBE の出力レート。ALSA/PipeWire 側でリサンプルさせる
-constexpr float kAmbeGain = 7.f / 32768.f;   // mbelib の short 経路(float × 7)相当で ±1.0 に
+constexpr float kAmbeGain = 1.f / 32768.f;   // blip25c の PCM は int16 の全幅(mbelib の float 経路は 1/7 だったので以前は × 7 していた)
 constexpr double kAudioPerInput = kAudioRate / kRfRate;   // radio.rx index → 8 kHz index
 constexpr uint64_t kMixLatency = kAudioRate * 3 / 10;     // 300 ms: フレーム長 80 ms + 受信機の遅延 + ブロック長より十分大きく
 constexpr std::size_t kMixRing = 16384;                   // 2 s

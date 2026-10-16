@@ -30,7 +30,7 @@
 | `apps/spectrum` | 汎用。FREQ / RATE(再起動)/ REF / AVG / HOLD | 実信号で確認済み |
 | `apps/recorder` | Lossless 録音、sidecar。録音中は FREQ 無効 | gtest(drop 0)、実機 |
 | `apps/demod` | NFM / WFM / AM。LO を RX から 250 kHz 離す。channel IQ と audio を Stream Bus に publish | 合成 FM トーンの gtest、実信号の FM |
-| `apps/std_t98` | 30ch 受信機(C++ のみ、Qt / UHD 非依存)、プロトコル、同期の状態機械(フライホイール)、AMBE(C++ に移植)、秘話(PN、ffnn の C++ 推論、hybrid の ONNX Runtime 推論、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照実装との一致(プロトコル・AMBE・秘話)、実機の送信で確認(平文・秘話) |
+| `apps/std_t98` | 30ch 受信機(C++ のみ、Qt / UHD 非依存)、プロトコル、同期の状態機械(フライホイール)、AMBE(blip25c)、秘話(PN、ffnn の C++ 推論、hybrid の ONNX Runtime 推論、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照実装との一致(プロトコル・AMBE・秘話)、実機の送信で確認(平文・秘話) |
 | `apps/adsb` | 1090 MHz Mode S / ADS-B 受信機(C++ のみ: 回転 → 低域 FIR → 電力 → プリアンブル / PPM → CRC-24、DF17/18/11 + AP 形式)、航空機表(CPR 偶奇 / 局所)、GUI(表 / ミニマップ(埋め込みのオフライン地図 Natural Earth + OurAirports。全機が入るよう自動で範囲を合わせる)/ 電力窓 / 統計)。radio.rx を 8 Msps のまま Lossless で消費 | 既知ベクトル(The 1090MHz Riddle)、合成 PPM で provenance をサンプル単位で確認、ライフサイクル、実録音 golden(`~/spear/golden/adsb`、羽田近傍 3 s / 136 フレーム)、実機で動作(`docs/apps/adsb.md`) |
 | `apps/slpr` | 特定小電力(422 MHz 帯、単信 20 ch、ICOM 準拠の 01–20)の同時 NFM 受信機(C++ のみ: 回転 → resamp1 → PFB 32 × 12.5 kHz → quadrature demod → LPF → DC 阻止 → 床相対 squelch(attack / hold))、加算ミキサ、GUI(帯域スペクトラム / 20ch 格子 / 選択 ch の IQ) | 合成 NFM(2 ch 同時、隣接の漏れ、provenance、hold)、ライフサイクル、実機で ch12 の実信号(`docs/apps/slpr.md`) |
 | `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード。秘話呼は鍵を探索して復号)、`spear-adsb-decode`(録音 → フレーム表 / 航空機一覧 / golden) | — |
@@ -39,7 +39,7 @@
 
 1. STD-T98 秘話の golden: 実機の秘話呼で動作は確認した(2026-09-17)。その録音の抜粋(鍵つき)を `~/spear/golden/std_t98/` に加え、受信 → 鍵探索 → 復号を通しで回帰テストにする。現在の E2E テストは、平文の実音声を自分でスクランブルしたもの。
 2. ADS-B(2026-09-17 実装・実機確認、`docs/apps/adsb.md`): 地上位置(TC5–8)の CPR、多数機のときの表の差分更新 model、受信機 reset の SDK 規約(generation 切替時)、ミニマップの `Spear.Widgets` への抽出(2 つ目の利用者が出たら)が残っている。
-3. STD-T98 の実地確認: 2026-10-16 にフレーム同期を状態機械にした(squelch はフレームに関与しない)。次の実地で弱い局の聞こえ方を確認する。残る改善案は軟判定(SACCH / PICH の Viterbi)。
+3. STD-T98 の実地確認: 2026-10-16 にフレーム同期を状態機械にし(squelch はフレームに関与しない)、AMBE を blip25c にした。次の実地で弱い局の聞こえ方を確認する。残る改善案は軟判定(SACCH / PICH の Viterbi。9/20 の録音では CRC OK のフレームでも C1 が訂正上限のものが 1/3)。
    以前の経緯: 2026-09-20 のイベントで「遠い局が途切れる / 空き ch が開く」症状が出た。原因は AGC で揺れる床に絶対閾値のスケルチが乗っていたこと。床相対スケルチと出力ゲートに直した(2026-09-21、`docs/apps/std_t98.md`「スケルチ」)。次の実地で AGC OFF(手動ゲイン)との比較と、弱い局の聞こえ方を確認する。引き込み(`max_deviation` の単位の修正後)は録音解析で 0.1〜0.4 s と確認した。
 4. IQ RECORDER: 録音一覧と再生元の選択(`Spear.Input` に ListPicker が必要)、ディスク残量による自動停止。
 5. Source API: 運転中の gain / bandwidth / 受信端子の変更。現在は `retune` だけで、gain と端子はメニューで決めて App 起動時に適用し、rate の変更は App を再起動する。
@@ -86,7 +86,7 @@
   - subdev spec は tune の最初の装置呼び出しで設定する(能力の照合もセンサも channel 0 から spec 経由で解決されるため)。frontend の存在は事前に tree で確認する。libuhd の `coerce_subdev_spec` は B200 / B20xmini で `B` を黙って `A` に書き換えるので、例外を待つ方法だと RXB が RXA になってしまう。
   - 既定は UHD の既定と同じ RXA。運転中に変更する API は作らない(メニューは App 停止中にしか表示されない。GAIN と同じ)。
   - 実機確認(2026-09-19、5IWG5D5): 4 端子とも stage 4 で `port=… lo_locked`、12 s のストリームで Lossless drop 0(`spear-headless --port`)。GUI でも warm-up の tune check と App 起動が選んだ端子で通った(`--port TRXB` / `RXB` で SPECTRUM を運転し、ステータスバーに端子名が出る)。端子 LED での対応の目視確認は App の運転中に行う(起動時には点かない)。
-- AMBE は mbelib-neo の AMBE 経路だけを C++ で書き直した(IMBE / SIMD / pffft なし)。pyambelib と PCM が ±1 LSB で一致する。
+- AMBE は blip25c(blip25-vocoder の C 移植、MIT、Rust 版とビット一致)を使う(2026-10-16)。チップの復号音との差は 0.77 dB で、以前の mbelib-neo の C++ 移植(5.7 dB)から置き換えた。FEC の 49 bit は以前と同じ。
 - ライセンスは GPL-3.0 で公開する(2026-09-17)。GPL-2.0-or-later 由来のコードと結合してよい。
 - STD-T98 の LO は帯域中心 − 250 kHz にする(ゼロ IF の DC スパイクを ch16 に重ねないため)。回転量は Core の実際の LO から求めるので、録音の再生(LO 固定)と実機で同じコードが通る。
 - 秘話モデル(§2.5 の道 1 と道 2、2026-09-17): ffnn は C++ で再実装(safetensors を直接読む)、hybrid は ONNX Runtime(必須の依存)で動かす。両モデルともリポジトリに置き、バイナリに埋め込む。
@@ -105,4 +105,4 @@
 - 受信端子と UHD の対応(`rf_port.hpp` が正): TRXA = `A:A` `TX/RX`、RXA = `A:A` `RX2`、RXB = `A:B` `RX2`、TRXB = `A:B` `TX/RX`。
   選んだ端子の LED は App の運転中(rx streamer がある間)だけ点く(ATR が streamer の有無で RX 状態を決めるため)。起動時の warm-up の tune check(open → tune → close)では点かない。B200 系(frontend A のみ)で RXB / TRXB を選ぶと stage 4 で FAULT になる。
 - Qt のログは journald に出る。端末に出すには `QT_FORCE_STDERR_LOGGING=1` を付ける。
-- 記録・ログ・golden・音声は `~/spear/`(`recordings / logs / golden / audio / site.conf`)に置く。個体固有の値、録音、音声由来の golden(`golden/std_t98/ch3_pich.*`, `ambe_golden.txt`, `ch3_payloads.txt`, `secret_golden.txt`)はリポジトリに入れない(golden テストは無ければ skip)。
+- 記録・ログ・golden・音声は `~/spear/`(`recordings / logs / golden / audio / site.conf`)に置く。個体固有の値、録音、音声由来の golden(`golden/std_t98/ch3_pich.*`, `ambe_golden.txt`, `ambe_blip25_golden.txt`, `ch3_payloads.txt`, `secret_golden.txt`)はリポジトリに入れない(golden テストは無ければ skip)。

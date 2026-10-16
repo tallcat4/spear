@@ -5,7 +5,7 @@
 //   4) 要求ポリシー(Tracker)と Worker
 // モデルはバイナリに埋め込み。golden(~/spear/golden/std_t98、SPEAR_GOLDEN_DIR)は音声由来でリポジトリ外、無ければ skip。
 #include "ambe.hpp"
-#include "ambe/decoder.hpp"
+#include "ambe/bits.hpp"
 #include "secret/cracker.hpp"
 #include "secret/ffnn.hpp"
 #include "secret/hybrid.hpp"

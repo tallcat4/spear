@@ -29,10 +29,8 @@ M3(§12)では、既存の DSP を変えずに任意の中間 stream に観測�
   - FFTW プランナは dsp 全体で 1 mutex に統一(spectrum と channelizer が別 mutex だと危険だった)。
   - headless: `spear-std-t98-decode <sigmf base> --freq-err <Hz> [--squelch-margin 8] [--wav base] [--payloads f] [--log f]`。
     **App の録音(LO = 帯域中心 − 250 kHz)には `--freq-err 250000`** が要る(tool は録音中心を帯域中心と見なす。GUI は `band_center − LO` を自分で渡す)。
-- **2(完了)**: AMBE 3600x2450 → PCM 8 kHz。`apps/std_t98/ambe/` に mbelib-neo の AMBE 経路だけを C++ で書き直した
-  (IMBE・SIMD・スレッドローカル・pffft なし、GPL-2.0-or-later のまま)。実録音の TCH ペイロードを pyambelib(Python)で
-  復号した golden(音声を含むのでリポジトリ外 `~/spear/golden/std_t98/ambe_golden.txt`、無ければ skip)と比較:
-  fec_demod 完全一致、PCM は 98.1% 一致・最大 1 LSB 差(float 演算順)。
+- **2(完了)**: AMBE 3600x2450 → PCM 8 kHz。FEC と音声合成は `apps/std_t98/blip25c/`(blip25-vocoder の C 移植、下記「AMBE デコーダ」)。
+  当初は mbelib-neo の AMBE 経路を C++ に書き直したもの(`apps/std_t98/ambe/`)を使っていたが、2026-10-16 に置き換えた。
 - **1c(完了)**: UI — 30ch 俯瞰スペクトラム + 選択chアイパターン + フレーム表示 + 音声再生。
 - **3(完了、2026-09-17)**: 秘話(下記)。
 
@@ -145,6 +143,22 @@ Python(torch、マルチスレッド)は 0.37 / 0.65 s。golden は音声由来�
 空きチャネルの偽フレームは 0。フライホイールで出したフレームの 3〜4 割は CRC が通り、残りもほとんど RICH のパリティが通る
 (本物のフレームの誤り)。
 
+## AMBE デコーダ — blip25c(2026-10-16)
+音声の FEC と合成は blip25c(`apps/std_t98/blip25c/`)。blip25-vocoder(Rust、MIT)の AMBE+2 半レート・デコーダの C99 移植で、
+Rust 版とビット一致する。AMBE-3000R 自身の復号音との差(mel スペクトル距離)は 0.77 dB で、以前使っていた mbelib は 5.7 dB。
+整数演算のみ、1 デコーダの状態は約 2.5 KB。ビット一致を保つため手を加えない(警告もこのターゲットだけ消している)。
+- STD-T98 の TCH の 9 byte は AMBE-3000R の rate 33(P25 Phase 2 Annex S のインターリーブ)と同じ並び。以前の pyambelib の
+  rW/rX/rY/rZ でほどいた 49 bit と、blip25c の `blip25_fec_3600` の 49 bit は、golden の 48 ブロックと 9/20 の録音の 740 ブロックすべてで一致した。
+- 訂正数の数え方は違う: 以前は C0 の 12 データビットの訂正だけを数えていた。blip25c は C0 を拡張 Golay [24,12] として 24 ビットで数え、
+  4 ビット誤り(検出のみ)を消失として前フレームの繰り返しとフェードにする。STD-T98 の 24 ビット目は本当に Golay のパリティ
+  (C1 に誤りのないフレームでは C0 = 0 が大半)。訂正数は「誤りの程度」として合成に渡す(`blip25_decode_3600` と同じ)。
+- 9/20 の会場録音では、CRC が通った SACCH のフレームでも C1 が訂正の上限(3)のものが 1/3 あり、C0 の訂正不能が 1 割ある
+  (自宅の強い信号では全ブロック誤り 0)。会場の雑音・AGC による実際のビット誤りで、軟判定の余地が大きい。
+- 秘話: keystream は FEC 後の 49 bit(ambe_d 順)に XOR してから `blip25_decode_bits` に渡す(以前と同じ位置)。鍵探索の窓も同じ 49 bit。
+- PCM は int16 の全幅(mbelib の float 経路は 1/7 だった)。App のミキサの係数は 1/32768。
+- 検証(`tests/test_ambe.cpp`): 9/20 の録音の 740 ブロック(誤り 550、消失 79 を含む)を blip25c の `tools/golden`(blip25-vocoder 1.0)で
+  復号した golden(`~/spear/golden/std_t98/ambe_blip25_golden.txt`、音声を含むのでリポジトリ外)と、49 bit・訂正数・PCM がすべて一致。
+
 ## 実機で見つかった移植バグ
 - **symbol sync の max_deviation の単位**(2026-09-17、実機で発覚): GR `symbol_sync_ff` の `max_deviation` は「平均クロック周期の
   公称値からの絶対偏差 [samples/symbol]」(0.02 → 26.04 ± 0.02)。移植では比率と解釈して ±0.52 sample を許していたため、
@@ -153,9 +167,9 @@ Python(torch、マルチスレッド)は 0.37 / 0.65 s。golden は音声由来�
   一次資料(GR ソース)と突き合わせること**。修正後、平均周期の上下限テストを追加。
 
 ## ライセンス
-`apps/std_t98/ambe/` は mbelib(2010)/ mbelib-neo(2025)由来で GPL-2.0-or-later(C++ に書き直しても派生物)。
-S.P.E.A.R. 本体は **GPL-3.0 で公開する方針**(2026-09-17)なので、GPL-2.0-or-later のコードを静的リンクしても問題ない
-(GPL-2 "or later" → GPL-3 として結合可)。ファイル頭の SPDX と著作権表示は残すこと。
+`apps/std_t98/blip25c/` は blip25-vocoder(MIT, Copyright (c) Chance Lindsey)の派生物で MIT(`blip25c/LICENSE`)。GPL-3.0 の本体と結合してよい。
+AMBE+2 には特許がある(US 8,359,197 ほか。blip25-vocoder の PATENT_NOTICE.md)。
+以前の `apps/std_t98/ambe/`(mbelib / mbelib-neo 由来、GPL-2.0-or-later)は 2026-10-16 に削除した。残っている `ambe/bits.hpp` は 49 bit の並びの表だけ。
 
 ## プラットフォーム検証メモ
 - 純 C++ プロトコルデコーダは Qt/SDR 非依存ライブラリ(`spear_std_t98_protocol`)として App から独立にテストできた。
@@ -168,4 +182,4 @@ S.P.E.A.R. 本体は **GPL-3.0 で公開する方針**(2026-09-17)なので、GP
   Gardner には厳しい)か、×4 に落とす案。
 - `Provenance` の連鎖(resamp1 → PFB → 補間 → シンボル判定点)でフレーム先頭を radio.rx sample index に戻せた(§3.6)。
   PFB の provenance は「M 入力 → 1 出力」の整数比で表せるので StageInfo で十分だった。
-- AMBE の float 経路は ±4447 でソフトクリップされる(mbelib の short 経路は ×7)。AudioSink に出すときは ×7 して 16 bit に。
+- (mbelib のころ)AMBE の float 経路は ±4447 でソフトクリップされる(mbelib の short 経路は ×7)。blip25c は int16 の全幅で出す。
