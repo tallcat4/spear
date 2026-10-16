@@ -83,6 +83,7 @@ Signal Processing & Emission Analysis Receiver
    `scripts/install-desktop.sh` を実行すると、KDE Plasma のメニューとデスクトップに起動アイコンが登録されます。
 
 録音・ログは `~/spear/` に保存されます。B210 個体の周波数誤差などの設定は `~/spear/site.conf` に書きます([`docs/tools.md`](docs/tools.md))。
+使いかたは [`docs/manual/README.md`](docs/manual/README.md)(共通の操作と App ごとの説明書)にあります。
 開発者向けの情報は [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) にあります。
 
 ## ライセンス
