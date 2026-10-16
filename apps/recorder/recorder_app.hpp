@@ -20,6 +20,7 @@ class RecorderApp final : public SpectrumApp {
     Q_PROPERTY(double droppedBlocks READ droppedBlocks NOTIFY recordingChanged)
     Q_PROPERTY(double bytesWritten READ bytesWritten NOTIFY recordingChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY recordingChanged)
+    Q_PROPERTY(double diskFreeGb READ diskFreeGb NOTIFY recordingChanged)   // 録音先の空き(-1 = 不明)
 public:
     explicit RecorderApp(appfw::AppInfo info, QObject* parent = nullptr);
     ~RecorderApp() override;
@@ -34,6 +35,8 @@ public:
     double droppedBlocks() const { return sub_ ? static_cast<double>(sub_->stats().dropped_blocks) : 0; }
     double bytesWritten() const { return samplesWritten() * 4; }
     QString lastError() const { return last_error_; }
+    double diskFreeGb() const { return disk_free_gb_; }
+    static constexpr double kStopBelowGb = 1.0;   // 録音先の空きがこれを切ったら録音を止める(ディスクを使い切らない)
 
     Q_INVOKABLE void record();          // 新しいファイルで録音開始
     Q_INVOKABLE void stopRecording();
@@ -54,7 +57,9 @@ private:
     std::atomic<bool> stop_{false};
     bool recording_ = false;
     QString last_error_;
+    double disk_free_gb_ = -1;
     int timer_ = 0;
+    void update_disk_free();
 };
 
 } // namespace spear::apps

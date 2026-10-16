@@ -18,6 +18,8 @@
    即時に読み直す(ポーリング周期を待たない)。
 6. GUI が編集中の値(App 起動前の RF 宣言など)は **草案(draft)** として名前で区別する(`Shell::draftFreq` 等)。
    草案は App 起動時に `Core::run_app` → `Source::configure` で宣言になる。運転中の値は必ず `sys`(Core)から読む。
+   草案の `center_freq` は **LO** を意味する(App 停止時に `Shell` が Core の RF をそのまま写す)。LO から離して受ける App(FM / AM RX)も
+   草案を別の意味(受けたい周波数など)に読み替えない。読み替えると停止 → 起動のたびに値がずれる(2026-10-16、FM / AM RX で発覚)。
 7. 新しい状態(例: 帯域)を追加するときは、1〜6 を同じ形で満たすこと。ゲイン / AGC / 受信端子(`RfConfig::port`)がその形の実例:
    シェルの草案(`Shell::draftGain / draftAgc / draftPort`、`state.conf` に保存)→ App 起動時に `Source::configure` で宣言 → `Radio::tune_rx` で適用、
    運転中の値は `sys.gain / agc / port`(Core)から読む。端子と UHD の frontend / antenna の対応表は `core/include/spear/core/rf_port.hpp` が唯一の真値。

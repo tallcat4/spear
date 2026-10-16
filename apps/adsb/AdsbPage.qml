@@ -48,7 +48,7 @@ Item {
         onAskRef: ui.askRef(app.view.dbMax, (v) => { app.view.dbMin = v - 90; app.view.dbMax = v })
     }
 
-    // ---- 中: 表 + 極座標 ----
+    // ---- 中: 表 + 地図 ----
     Item {
         id: middle
         anchors.top: wide.bottom; anchors.left: parent.left; anchors.right: parent.right

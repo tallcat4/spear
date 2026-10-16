@@ -100,6 +100,7 @@ protected:
 private:
     struct Chain;                       // DSP 段(mode ごとに再構築)
     void run();
+    double clamped_offset() const;      // lo_offset を mode の帯域で span 内に収めた値
     std::unique_ptr<Chain> build_chain(double in_rate);
 
     std::string mode_ = "NFM";

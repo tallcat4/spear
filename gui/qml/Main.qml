@@ -35,7 +35,7 @@ Window {
     // ---- App ページから呼べるシェルのサービス ----
     QtObject {
         id: uiServices
-        function askFreq(current, cb) { win.askFreq(current, cb) }
+        function askFreq(current, cb, title) { win.askFreq(current, cb, title) }   // title 省略時は CENTER FREQUENCY
         function askRate(current, cb) { win.askRate(current, cb) }
         function askGain(current, cb) { win.askGain(current, cb) }
         function askRef(current, cb) { win.askRef(current, cb) }
@@ -168,8 +168,8 @@ Window {
     }
 
     // ---- 数値入力の定型(App からは ui.ask*() で呼ぶ) ----
-    function askFreq(current, cb) {
-        entry.title = "CENTER FREQUENCY"; entry.minimum = 70e6; entry.maximum = 6e9
+    function askFreq(current, cb, title) {
+        entry.title = title !== undefined ? title : "CENTER FREQUENCY"; entry.minimum = 70e6; entry.maximum = 6e9
         entry.units = [ { label: "GHz", factor: 1e9 }, { label: "MHz", factor: 1e6 }, { label: "kHz", factor: 1e3 }, { label: "Hz", factor: 1 } ]
         entry.displayFactor = 1e6; entry.displayUnit = "MHz"; entry.displayDecimals = 6; entry.allowNegative = false
         entry.callback = cb; entry.open(current)

@@ -41,6 +41,9 @@ off-air の FM 実信号テストは 422.2 MHz の特定小電力トランシー
 ゼロ IF の DC スパイク / LO 漏れは原理的なので、復調チャネルを LO に置かない。**RX FREQ**(利用者が選ぶ値)と
 **LO OFFSET**(App の State、既定 +250 kHz)を分け、LO = RX − offset を Core に要求し、mixer で戻す。
 RX 周波数は `sys.centerFreq + app.channelOffsetHz` の導出値でコピーを持たない。wide view に RX マーカーを表示。
+起動時はシェルの草案 center を LO として宣言し、RX = LO + offset とする(2026-10-16 まで草案を RX と読んで LO を引いていたため、
+停止時に草案が LO に戻る分、起動し直すたびに RX が offset ずつ下がっていた。`docs/state-ownership.md` §6)。
+MODE を変えて offset の上限(±(rate/2 − bw))を超えるときは、RX を保って LO を移す(`DemodModeChangeKeepsChannelInSpan`)。
 テストは合成 FM を +250 kHz に置いて LO 分離状態で復調することを確認。
 
 **off-air**: 422.2 MHz の特定小電力トランシーバーを NFM で正常に復調。

@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 using namespace spear;
 using namespace spear::gui;
@@ -74,7 +75,9 @@ int main(int argc, char** argv) {
         if (eq > 0) settings[kv.left(eq)] = kv.mid(eq + 1);
     }
 
-    Core core(".");
+    // ディスクの空き(ステータスバー / DIAG / DiskLow event)は録音先のファイルシステムで測る(録音が使うのはそこ)
+    { std::error_code ec; std::filesystem::create_directories(record_dir, ec); }
+    Core core(record_dir);
     std::unique_ptr<EventLogFile> evlog;
     if (const char* p = arg(argc, argv, "--event-log", nullptr)) evlog = std::make_unique<EventLogFile>(core.events(), p);
 

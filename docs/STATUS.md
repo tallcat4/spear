@@ -43,7 +43,7 @@
 2. ADS-B(2026-09-17 実装・実機確認、`docs/apps/adsb.md`): 地上位置(TC5–8)の CPR、多数機のときの表の差分更新 model、受信機 reset の SDK 規約(generation 切替時)、ミニマップの `Spear.Widgets` への抽出(2 つ目の利用者が出たら)が残っている。
 3. STD-T98 の実地確認: 2026-10-16 にフレーム同期を状態機械にし、squelch を廃止して活動を同期で示すようにし、AMBE を blip25c(軟判定の Golay)にした。次の実地で弱い局の聞こえ方を確認する。残る改善案は SACCH / PICH の Viterbi の軟判定と、4 値のレベル判定の追従(9/20 の録音では外側のレベルが 3.4 で、下位ビットの誤りが多い)。
    以前の経緯: 2026-09-20 のイベントで「遠い局が途切れる / 空き ch が開く」症状が出た。原因は AGC で揺れる床に絶対閾値のスケルチが乗っていたこと。床相対スケルチと出力ゲートに直した(2026-09-21、`docs/apps/std_t98.md`「スケルチ」)。次の実地で AGC OFF(手動ゲイン)との比較と、弱い局の聞こえ方を確認する。引き込み(`max_deviation` の単位の修正後)は録音解析で 0.1〜0.4 s と確認した。
-4. IQ RECORDER: 録音一覧と再生元の選択(`Spear.Input` に ListPicker が必要)、ディスク残量による自動停止。
+4. IQ RECORDER: 録音一覧と再生元の選択(`Spear.Input` に ListPicker が必要)。ディスク残量による自動停止は 2026-10-16 に入れた。
 5. Source API: 運転中の gain / bandwidth / 受信端子の変更。現在は `retune` だけで、gain と端子はメニューで決めて App 起動時に適用し、rate の変更は App を再起動する。
 6. 性能: STD-T98 は 4 Msps で DSP thread が約 25–30 %(1 コア)。B210 の FPGA ロードは USB 2.0 で約 70 s。FZ-G2 は熱スロットリングが頻繁に起きる(79 °C)。損失に直結しないことは M-1 で確認したが、DSP 負荷の表示には注意する。
 7. 共通 DSP への抽出: quadrature demod が 3 つの App(DEMOD / STD-T98 / SLPR)に、一次 IIR(DC 阻止)が 2 つの App に書かれている(床相対 squelch は STD-T98 で廃止したので SLPR だけ)。`docs/dsp-boundary.md` の昇格ルール(2 つ目で抽出)に従って `dsp::quadrature_demod` などへ抽出する(数値は変えず、STD-T98 の golden で確認する)。

@@ -114,7 +114,7 @@ TEST(Apps, TemplateLifecycle) {
 TEST(Apps, DemodRecoversFmTone) {
     Core core(".");
     SyntheticSignal sig;
-    sig.fm = {250e3, 0.5, 2.5e3, 1e3, true};   // 合成源の中心から +250 kHz(= App の既定 LO offset)
+    sig.fm = {250e3, 0.5, 2.5e3, 1e3, true};   // 合成源の中心(LO)から +250 kHz(= App の既定 LO offset)
     sig.noise_amplitude = 0.002;
     core.set_source(std::make_unique<SyntheticSource>(&core.events(), sig));
     auto app = std::make_shared<apps::DemodApp>(appfw::AppInfo{"demod", "FM / AM RX", "", Direction::RX, ""});
@@ -126,9 +126,9 @@ TEST(Apps, DemodRecoversFmTone) {
     app->setSquelchDb(-90);
     ASSERT_TRUE(core.run_app(app));
     EXPECT_DOUBLE_EQ(core.source().config().sample_rate, 1.92e6);
-    // 宣言 100 MHz は RX 周波数。LO は 250 kHz 下に置かれ、RX 周波数は導出値として一致する
-    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 100e6 - 250e3);
-    EXPECT_DOUBLE_EQ(app->rxFreq(), 100e6);
+    // 草案の 100 MHz は LO。RX 周波数は LO + 250 kHz の導出値
+    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 100e6);
+    EXPECT_DOUBLE_EQ(app->rxFreq(), 100e6 + 250e3);
     auto sub = app->audio_stream().subscribe("test", DeliveryPolicy::Lossless, 256);
     std::vector<float> audio;
     const auto t0 = std::chrono::steady_clock::now();
@@ -162,6 +162,24 @@ TEST(Apps, DemodRecoversFmTone) {
     sub.reset();   // テストの購読が持つ BlockRef を App の pool より先に返す(stop で pool が消える)
     core.stop_app();
     EXPECT_EQ(core.rx().consumer_count(), 0u);
+    // 停止後、シェルは草案を Core の RF(LO)に戻して次の起動に渡す。起動し直しても RX 周波数はずれない
+    app->set_rf_config(core.source().config());
+    EXPECT_DOUBLE_EQ(app->declare_rf_config().center_freq, 100e6);
+    EXPECT_DOUBLE_EQ(app->rxFreq(), 100e6 + 250e3);
+}
+
+// mode を変えて offset の上限(±(rate/2 − bw))を超えるときは、RX 周波数を保ったまま LO を移す
+TEST(Apps, DemodModeChangeKeepsChannelInSpan) {
+    auto app = std::make_shared<apps::DemodApp>(appfw::AppInfo{"demod", "FM / AM RX", "", Direction::RX, ""});
+    RfConfig c; c.center_freq = 100e6; c.sample_rate = 1.92e6;
+    app->set_rf_config(c);
+    app->setMode("NFM");
+    app->setLoOffsetHz(900e3);                  // NFM の上限 960 − 12.5 = 947.5 kHz 以内
+    const double rx = app->rxFreq();
+    EXPECT_DOUBLE_EQ(app->channelOffsetHz(), 900e3);
+    app->setMode("WFM");                        // WFM の上限 960 − 200 = 760 kHz
+    EXPECT_DOUBLE_EQ(app->channelOffsetHz(), 760e3);
+    EXPECT_DOUBLE_EQ(app->rxFreq(), rx);
 }
 
 int main(int argc, char** argv) {
