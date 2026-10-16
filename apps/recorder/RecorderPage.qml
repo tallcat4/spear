@@ -58,7 +58,8 @@ Item {
             Readout { label: "SAMPLES"; value: app.samplesWritten.toLocaleString(Qt.locale("C"), "f", 0); width: 260 }
             Readout { label: "WRITTEN"; value: (app.bytesWritten / 1e6).toFixed(1) + " MB"; width: 200 }
             Readout { label: "RATE"; value: Theme.fmtRate(sys.sampleRate) + "  (" + (sys.sampleRate * 4 / 1e6).toFixed(1) + " MB/s)"; width: 330 }
-            Readout { label: "DISK FREE"; value: sys.diskFreeGb.toFixed(1) + " GB"; width: 200; valueColor: sys.diskFreeGb < 2 ? Theme.red : Theme.text }
+            // 録音先の空き。1 GB を切ると録音は自動で止まる
+            Readout { label: "DISK FREE"; value: app.diskFreeGb >= 0 ? app.diskFreeGb.toFixed(1) + " GB" : "--"; width: 200; valueColor: app.diskFreeGb >= 0 && app.diskFreeGb < 2 ? Theme.red : Theme.text }
         }
         // Lossless 不変条件 (§4.3): drop は 0 でなければならない。0 以外は赤で即座に分かる
         Rectangle {

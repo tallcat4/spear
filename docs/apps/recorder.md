@@ -9,4 +9,4 @@
 **残った課題**
 * 録音一覧・再生元選択(`Spear.Input` に ListPicker が要る)
 * 録音中の drop は画面に出るが、sidecar の discontinuity 数をページに出す経路が無い(SigmfRecorder::meta() を App が読む形で足りるか要検討)
-* ディスク残量による自動停止
+* (済 2026-10-16)ディスク残量による自動停止: 録音先の空きが 1 GB を切るか書き込みに失敗したら止めて理由を出す。空きは録音先で測る(Core の disk path = `--record-dir`)

@@ -40,7 +40,10 @@ Item {
         Readout { label: "PEAK"; value: spec.peakDb > -900 ? spec.peakDb.toFixed(1) + " dBFS" : "--"; valueColor: Theme.green; width: 180 }
         Readout { label: "PEAK OFFSET"; value: spec.peakDb > -900 ? Theme.fmtHz(spec.peakOffsetHz) : "--"; width: 190 }
         Readout { label: "NOISE FLOOR"; value: spec.noiseFloorDb > -900 ? spec.noiseFloorDb.toFixed(1) + " dBFS" : "--"; width: 190 }
-        Readout { label: "AVG"; value: page.source ? page.source.averaging.toString() : "-"; width: 80 }
+        // 平均回数はタップで 1 → 2 → 4 → 8 → 16 → 1。どの App の表示でも変えられる(各 App が保存する値)
+        ValueField { label: "AVG"; value: page.source ? page.source.averaging.toString() : "-"; width: 90; height: 52; valueColor: Theme.text
+                     editable: page.source !== null
+                     onActivated: page.source.averaging = page.source.averaging >= 16 ? 1 : page.source.averaging * 2 }
         Readout { label: "FPS"; value: spec.fps.toFixed(0); width: 80 }
         Rectangle {
             width: 110; height: 52; color: spec.discontinuity ? Theme.red : "transparent"; border.color: Theme.lineDim; border.width: 1

@@ -52,10 +52,11 @@ site.conf の値が state.conf より優先される。運転状態を初期化�
 ## ADS-B 録音の解析
 
 ```
-./build/tools/spear-adsb-decode ~/spear/recordings/<base> [--ref <lat>,<lon>] [--fix] [--golden ~/spear/golden/adsb/es.golden.txt]
+./build/tools/spear-adsb-decode ~/spear/recordings/<base> [--ref <lat>,<lon>] [--no-fix] [--golden ~/spear/golden/adsb/es.golden.txt]
 ```
 
 - 受理したフレーム(radio.rx の index、DF、ICAO、hex、解読内容、RSSI/SNR、位置)、統計、航空機一覧を出力する。LO オフセットは録音の中心周波数から求める。
+- 1 bit 誤りの訂正は既定で行う。`--no-fix` で訂正しない。
 - `--golden` は "index hex" を 1 行ずつ書き出す。抜粋した録音と一緒に `~/spear/golden/adsb/es.*` に置くと、`spear_adsb_tests` の golden テストが有効になる。
 
 ## 秘話モデルの更新

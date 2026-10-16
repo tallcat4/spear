@@ -8,6 +8,7 @@
 #include "source.hpp"
 
 #include <fstream>
+#include <atomic>
 #include <mutex>
 
 namespace spear {
@@ -59,8 +60,9 @@ private:
     sigmf::Meta meta_;
     ContinuityChecker cont_;
     std::mutex mu_;
-    bool ok_ = false, closed_ = false, first_ = true;
-    uint64_t written_ = 0;
+    std::atomic<bool> ok_{false};                 // write() の失敗で false(他 thread から ok() で読む)
+    bool closed_ = false, first_ = true;
+    std::atomic<uint64_t> written_{0};
     uint64_t last_gen_ = 0;
     double initial_freq_ = 0.0;
 };

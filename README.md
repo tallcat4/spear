@@ -9,7 +9,7 @@ Signal Processing & Emission Analysis Receiver
 
 ## 主な機能
 
-- **SPECTRUM** — スペクトラムとウォーターフォール。画面をタッチして選局。
+- **SPECTRUM** — スペクトラムとウォーターフォール。周波数はテンキーで入力。
 - **IQ RECORDER** — IQ データを SigMF 形式で欠落なく録音。録音は後から再生・解析できます。
 - **FM / AM RX** — NFM / WFM / AM の復調と音声再生。
 - **STD-T98 MONITOR** — デジタル簡易無線 30 チャネルを同時に受信・復号・音声再生。秘話の解除にも対応。

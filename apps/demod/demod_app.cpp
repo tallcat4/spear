@@ -73,20 +73,26 @@ RfConfig DemodApp::declare_rf_config() const {
     RfConfig c = GuiApp::declare_rf_config();
     c.sample_rate = kRfRate;            // 音声 48 kHz へ整数比で落とせる rate を App が決める
     c.bandwidth = kRfRate;
-    // シェルの草案 center を「聞きたい周波数」と解釈し、LO をそこから lo_offset 離す
-    const double max_off = kRfRate / 2 - params_for(mode_).bandwidth_hz;
-    const double off = std::clamp(lo_offset_hz_, -max_off, max_off);
-    const_cast<DemodApp*>(this)->offset_hz_ = off;
-    c.center_freq -= off;
+    // シェルの草案 center は LO(草案は「最後に Core が運転していた RF」= LO の写し)。RX 周波数 = LO + lo_offset。
+    // 草案を RX 周波数と読んで LO を引くと、止めて起動し直すたびに RX 周波数が lo_offset ずつずれる(草案は停止時に LO へ戻るため)
+    const_cast<DemodApp*>(this)->offset_hz_ = clamped_offset();
     return c;
 }
 
 void DemodApp::setMode(const QString& m) {
     const std::string v = m.toStdString();
     if (v != "WFM" && v != "NFM" && v != "AM") return;
+    const double rx = rxFreq();
     mode_ = v;
     rebuild_ = true;
+    // 帯域幅が変わると offset の上限(±(rate/2 − bw))も変わる。収まらなくなったら RX 周波数を保って LO を移す
+    if (clamped_offset() != offset_hz_) { tuneRx(rx); return; }
     Q_EMIT modeChanged();
+}
+
+double DemodApp::clamped_offset() const {
+    const double max_off = kRfRate / 2 - params_for(mode_).bandwidth_hz;
+    return std::clamp(lo_offset_hz_, -max_off, max_off);
 }
 
 double DemodApp::rxFreq() const {
@@ -96,8 +102,7 @@ double DemodApp::rxFreq() const {
 
 void DemodApp::tuneRx(double rx_hz) {
     // LO はチャネルから lo_offset 離す。offset は span 内(±(rate/2 − bw))に収める
-    const double max_off = kRfRate / 2 - params_for(mode_).bandwidth_hz;
-    const double off = std::clamp(lo_offset_hz_, -max_off, max_off);
+    const double off = clamped_offset();
     offset_hz_ = off;
     rebuild_ = true;
     if (core()) core()->source().retune(rx_hz - off);

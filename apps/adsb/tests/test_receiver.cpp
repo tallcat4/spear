@@ -178,6 +178,31 @@ TEST(AdsbReceiver, AircraftTableResolvesPositionFromPair) {
     EXPECT_EQ(t2.size(), 0u);
 }
 
+// 基準位置が実際の受信場所から遠い(移動したのに古いまま)と、基準位置からの局所解は別の緯度ゾーンに解ける。
+// それは仮の位置として扱い、偶奇ペアの大域解が出たら置き換える
+TEST(AdsbReceiver, AircraftTableReplacesRefLocalFixWithGlobal) {
+    auto mk = [](const std::string& hex, double t) { Frame f; from_hex(hex, f.bytes, &f.nbits); f.msg = decode(f.bytes, f.nbits); f.t_s = t; f.accepted = true; f.rssi_db = -30; return f; };
+    AircraftTable table;
+    table.set_reference(Position{56.0, 4.0});   // 実際の機体(52.27, 3.92)から約 420 km 北
+    table.update(mk("8D40621D58C382D690C8AC2863A7", 1.0));   // even のみ → 基準位置からの局所解(1 ゾーン北に解ける)
+    const Aircraft* a = table.find(0x40621D);
+    ASSERT_NE(a, nullptr);
+    ASSERT_TRUE(a->position.has_value());
+    EXPECT_NEAR(a->position->lat, 58.257, 1e-2);
+    EXPECT_TRUE(a->position_from_ref);
+    table.update(mk("8D40621D58C386435CC412692AD6", 1.5));   // odd → ペアの大域解で置き換える
+    ASSERT_TRUE(a->position.has_value());
+    EXPECT_NEAR(a->position->lat, 52.26578, 1e-3);
+    EXPECT_FALSE(a->position_from_ref);
+    // 基準位置から遠すぎる局所解は受け入れない(大域解を待つ)
+    AircraftTable far;
+    far.set_reference(Position{55.0, 10.0});
+    far.update(mk("8D40621D58C382D690C8AC2863A7", 1.0));
+    const Aircraft* b = far.find(0x40621D);
+    ASSERT_NE(b, nullptr);
+    if (b->position) EXPECT_LE(distance_km(Position{55.0, 10.0}, *b->position), AircraftTable::kRefLocalMaxKm);
+}
+
 // ---- golden: 実機録音 ----
 namespace {
 std::string golden_base() {

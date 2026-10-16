@@ -28,7 +28,7 @@ if(COMMAND spear_add_app)
   spear_add_app(
     ID adsb
     NAME "ADS-B"
-    DESCRIPTION "1090 MHz Mode S / ADS-B: aircraft table, polar plot, pulse trace"
+    DESCRIPTION "1090 MHz Mode S / ADS-B: aircraft table, offline map, pulse trace"
     DIRECTION RX
     CLASS spear::apps::AdsbApp
     HEADER adsb_app.hpp

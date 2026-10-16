@@ -22,19 +22,21 @@ Aircraft& AircraftTable::get_or_create(uint32_t icao, const Frame& f, bool* crea
     return list_.back();
 }
 
-bool AircraftTable::resolve_position(Aircraft& a, const Message& m, double t, Position* out) {
+AircraftTable::Fix AircraftTable::resolve_position(Aircraft& a, const Message& m, double t, Position* out) {
     auto& slot = m.cpr_odd ? a.cpr_odd : a.cpr_even;
     slot = {m.cpr_lat, m.cpr_lon, t};
-    // 前回位置があれば局所解(速く、ゾーン境界に強い)。無ければ偶奇ペアの大域解、それも無ければ基準位置からの局所解
-    if (a.position) return cpr_local(m.cpr_lat, m.cpr_lon, m.cpr_odd, *a.position, out);
+    // 確かめた前回位置があれば局所解(速く、ゾーン境界に強い)。無ければ偶奇ペアの大域解。
+    // それも無ければ仮の前回位置、最後に基準位置からの局所解(どちらも仮の位置。大域解が出るまで毎回ペアを試す)
+    if (a.position && !a.position_from_ref) return cpr_local(m.cpr_lat, m.cpr_lon, m.cpr_odd, *a.position, out) ? Fix::LocalPrev : Fix::None;
     const auto& other = m.cpr_odd ? a.cpr_even : a.cpr_odd;
     if (std::fabs(t - other.t_s) <= cfg_.cpr_pair_s) {
         const bool ok = m.cpr_odd ? cpr_global(other.lat, other.lon, m.cpr_lat, m.cpr_lon, true, out)
                                   : cpr_global(m.cpr_lat, m.cpr_lon, other.lat, other.lon, false, out);
-        if (ok) return true;
+        if (ok) return Fix::Global;
     }
-    if (ref_) return cpr_local(m.cpr_lat, m.cpr_lon, m.cpr_odd, *ref_, out);
-    return false;
+    if (a.position) return cpr_local(m.cpr_lat, m.cpr_lon, m.cpr_odd, *a.position, out) ? Fix::LocalPrev : Fix::None;
+    if (ref_ && cpr_local(m.cpr_lat, m.cpr_lon, m.cpr_odd, *ref_, out) && distance_km(*ref_, *out) <= kRefLocalMaxKm) return Fix::LocalRef;
+    return Fix::None;
 }
 
 const Aircraft& AircraftTable::update(const Frame& f) {
@@ -57,7 +59,8 @@ const Aircraft& AircraftTable::update(const Frame& f) {
     if (created && cb_.created) cb_.created(a, f);
     if (m.has_cpr) {
         Position p;
-        if (resolve_position(a, m, f.t_s, &p)) {
+        if (const Fix fix = resolve_position(a, m, f.t_s, &p); fix != Fix::None) {
+            const bool provisional = fix == Fix::LocalRef || (fix == Fix::LocalPrev && a.position_from_ref);
             bool ok = true;
             if (ref_) {
                 const double d = distance_km(*ref_, p);
@@ -67,12 +70,15 @@ const Aircraft& AircraftTable::update(const Frame& f) {
             if (ok) {
                 const bool first = !a.position.has_value();
                 a.position = p;
+                a.position_from_ref = provisional;
                 a.last_position_s = f.t_s;
                 ++a.positions;
                 ++total_positions_;
                 if (first && cb_.first_position) cb_.first_position(a, f);
             } else {
                 ++rejected_positions_;
+                // 大域解が範囲外なら、仮の位置(基準位置からの局所解)は別のゾーンの取り違えだった。捨てて取り直す
+                if (a.position_from_ref) { a.position.reset(); a.distance_km.reset(); a.bearing_deg.reset(); a.position_from_ref = false; }
                 if (!a.position) { a.cpr_even = {}; a.cpr_odd = {}; }   // 怪しいペアは捨てて取り直す
             }
         }

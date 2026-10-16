@@ -15,10 +15,10 @@ Item {
     readonly property var softKeys: [
         { label: "RX FREQ", action: "freq" }, { label: "MODE " + app.mode, action: "mode" },
         { label: "SQUELCH", action: "sq" }, { label: "LO OFS", action: "lo" },
-        { label: "MUTE", action: "mute", active: app.mute } ]
+        { label: "MUTE", action: "mute", active: app.mute }, null, { label: "DIAG", action: "diag" } ]
     function softKey(action) {
         switch (action) {
-        case "freq": ui.askFreq(page.rxFreq, (v) => app.tuneRx(v)); break
+        case "freq": ui.askFreq(page.rxFreq, (v) => app.tuneRx(v), "RX FREQUENCY"); break
         case "lo": ui.askOffset(app.loOffsetHz, (v) => app.loOffsetHz = v); break
         case "mode": app.cycleMode(); break
         case "sq": ui.askLevel("SQUELCH LEVEL", "dBFS", -150, 0, app.squelchDb, (v) => app.squelchDb = v); break
@@ -59,7 +59,7 @@ Item {
                 Text { anchors.centerIn: parent; text: app.squelchOpen ? "CARRIER" : "SQUELCHED"; color: "#000000"
                        font.family: Theme.mono; font.pixelSize: Theme.fsLarge; font.bold: true }
             }
-            ValueField { label: "RX FREQ"; value: Theme.fmtFreq(page.rxFreq); width: 260; height: 56; onActivated: ui.askFreq(page.rxFreq, (v) => app.tuneRx(v)) }
+            ValueField { label: "RX FREQ"; value: Theme.fmtFreq(page.rxFreq); width: 260; height: 56; onActivated: ui.askFreq(page.rxFreq, (v) => app.tuneRx(v), "RX FREQUENCY") }
             Readout { label: "MODE"; value: app.mode; width: 110; valueColor: Theme.textBright }
             Readout { label: "CH BW"; value: (app.channelBandwidth / 1e3).toFixed(1) + " kHz"; width: 140 }
             Readout { label: "LO / OFFSET"; value: Theme.fmtFreq(sys.centerFreq) + "  " + Theme.fmtHz(app.channelOffsetHz); width: 420 }
