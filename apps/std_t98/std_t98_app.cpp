@@ -25,19 +25,17 @@ constexpr std::size_t kMixRing = 16384;                   // 2 s
 StdT98App::StdT98App(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std::move(info), parent) {
     cfg_.in_rate = kRfRate;
     cfg_.pfb_channels = kPfb;
-    cfg_.squelch_margin_db = squelch_margin_db_;
     stats_.resize(static_cast<std::size_t>(cfg_.num_channels));
     eye_.setCapacity(200);
     eye_.set_rate(cfg_.baud);
     // 再起動をまたいで残す運転状態(個体値は site.conf、チャネル IQ 表示のレンジは帯域表示に追従する派生値なので宣言しない)
-    persist({"squelchMarginDb", "selectedChannel", "mute", "allChannelAudio", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange", "bandView.averaging"});
+    persist({"selectedChannel", "mute", "allChannelAudio", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange", "bandView.averaging"});
 }
 StdT98App::~StdT98App() = default;
 
 void StdT98App::configure(const QVariantMap& settings) {
     if (settings.contains("audio_device")) audio_device_ = settings["audio_device"].toString().toStdString();
     if (settings.contains("std_t98.band_center_hz")) band_center_hz_ = settings["std_t98.band_center_hz"].toDouble();
-    if (settings.contains("std_t98.squelch_margin_db")) squelch_margin_db_ = settings["std_t98.squelch_margin_db"].toDouble();
     if (settings.contains("std_t98.secret")) secret_enabled_ = settings["std_t98.secret"].toInt() != 0;
 }
 
@@ -82,10 +80,8 @@ QVariantList StdT98App::channels() const {
         m["ch"] = i + 1;
         m["freq"] = channelFreqHz(i);
         m["power"] = s.power_db;
-        m["floor"] = s.floor_db;
-        m["threshold"] = s.threshold_db;
-        m["open"] = s.open;
         m["locked"] = s.locked;
+        m["active"] = s.active;
         m["frames"] = static_cast<double>(s.frames);
         m["sacchOk"] = static_cast<double>(s.sacch_ok);
         m["pichOk"] = static_cast<double>(s.pich_ok);
@@ -107,10 +103,11 @@ QVariantMap StdT98App::selected() const {
     m["ch"] = selected_.load() + 1;
     m["freq"] = channelFreqHz(selected_);
     m["power"] = s.power_db;
-    m["floor"] = s.floor_db;
-    m["threshold"] = s.threshold_db;
-    m["open"] = s.open;
     m["locked"] = s.locked;
+    m["active"] = s.active;
+    m["locks"] = static_cast<double>(s.locks);
+    m["flywheel"] = static_cast<double>(s.flywheel);
+    m["dropped"] = static_cast<double>(s.dropped);
     m["frames"] = static_cast<double>(s.frames);
     m["sacchOk"] = static_cast<double>(s.sacch_ok);
     m["pichOk"] = static_cast<double>(s.pich_ok);
@@ -151,7 +148,6 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
     // 個体の LO 誤差はここでは扱わない(Core の Radio が radio.freq_err_ppm で LO 側で打ち消す。録音も補正済み)
     built_center_ = core.source().config().center_freq;
     c.freq_err_hz = band_center_hz_ - built_center_;
-    c.squelch_margin_db = squelch_margin_db_;
     auto rx = std::make_unique<Receiver>(c);
     Observer o;
     o.band = [this](std::span<const cf32> iq, uint64_t) {
@@ -166,13 +162,13 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
     };
     o.eye = [this](int ch, std::span<const float> t) { if (ch == selected_) eye_.push(t); };
     o.discriminator = [this](int ch, std::span<const float> d) {
-        // 周波数誤差の推定: 信号のある(同期中か squelch 開の)チャネルの discriminator 平均 × 偏移(315 Hz)を IIR で
+        // 周波数誤差の推定: 活動中(同期中)のチャネルの discriminator 平均 × 偏移(315 Hz)を IIR で
         double m = 0;
         for (float v : d) m += v;
         m = d.empty() ? 0 : m / static_cast<double>(d.size()) * cfg_.fsk_dev_hz;
         std::lock_guard<std::mutex> lk(mu_);
         auto& s = stats_[static_cast<std::size_t>(ch)];
-        if (s.open || s.locked) s.freq_err_est = 0.95 * s.freq_err_est + 0.05 * m;
+        if (s.active) s.freq_err_est = 0.95 * s.freq_err_est + 0.05 * m;
     };
     o.frame = [this, &core](const Frame& f) {
         ++total_frames_;
@@ -407,7 +403,6 @@ void StdT98App::run() {
         if (rebuild_.exchange(false) || !rx || (core() && core()->source().config().center_freq != built_center_)) { if (core()) rx = build_receiver(*core()); }
         if (!rx) continue;
         const auto t0 = std::chrono::steady_clock::now();
-        rx->set_squelch_margin_db(squelch_margin_db_);
         secret_drain_results();
         auto in = d->block.as<sc16>();
         iq.resize(in.size());
@@ -419,12 +414,12 @@ void StdT98App::run() {
             for (int c = 0; c < cfg_.num_channels; ++c) {
                 const auto& m = rx->metrics(c);
                 auto& s = stats_[static_cast<std::size_t>(c)];
-                // 選択 ch の信号が無くなったら(同期が外れ squelch も閉)アイを消す(IDLE で雑音の目を残さない)
-                if ((s.open || s.locked) && !m.open && !m.locked && c == selected_) eye_.clear();
-                s.power_db = m.power_db; s.floor_db = m.floor_db; s.threshold_db = m.threshold_db; s.open = m.open; s.locked = m.locked; s.frames = m.frames; s.sacch_ok = m.sacch_ok; s.pich_ok = m.pich_ok;
+                // 選択 ch の活動が終わったらアイを消す(IDLE で雑音の目を残さない)
+                if (s.active && !m.active && c == selected_) eye_.clear();
+                s.power_db = m.power_db; s.locked = m.locked; s.active = m.active; s.locks = m.locks; s.flywheel = m.flywheel_frames; s.dropped = m.dropped_frames; s.frames = m.frames; s.sacch_ok = m.sacch_ok; s.pich_ok = m.pich_ok;
                 s.syncs = m.sync_detections; s.best_sse = m.best_sse; s.sps = m.sps; s.csm = m.csm;
                 auto& sc = secret_ch_[static_cast<std::size_t>(c)];
-                if (!m.locked && sc.tracker.active()) { sc.call_secret = false; sc.tracker.on_clear(); }   // 同期喪失 = 呼の終わり(squelch ではなく)
+                if (!m.locked && sc.tracker.active()) { sc.call_secret = false; sc.tracker.on_clear(); }   // 同期喪失 = 呼の終わり
                 s.secret = sc.call_secret; s.key = sc.tracker.key(); s.secret_status = sc.tracker.status();
             }
         }

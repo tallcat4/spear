@@ -255,11 +255,10 @@ TEST(StdT98SymbolSync, AveragePeriodStaysWithinMaxDeviation) {
     EXPECT_LE(bad, 3);
 }
 
-// ---- squelch: 床相対・ヒステリシス・保持 ----
+// ---- チャネルの活動: 電力ではなく同期で決まる ----
 // 会場の広帯域雑音 + AGC で床が全チャネル一斉にブロックごとに数 dB 動く状況(2026-09-20 の実地録音)を、白色雑音の振幅を
-// 20 ms ごとに ±10 dB 段階的に変えて再現する。絶対 dB の閾値は床の真上に乗って開閉を繰り返したが、床相対なら
-//   1) 雑音だけ: 全チャネルほぼ閉のまま  2) 床 + 15 dB のトーン: そのチャネルだけ開き、床が動いても開いたまま
-//   3) トーンが消える: hold_s 後に閉じ、以後は閉のまま
+// 20 ms ごとに ±10 dB 段階的に変えて再現し、さらに 1 チャネルに強い無変調の搬送波を置く。
+// 電力の閾値なら搬送波のチャネルは開き、床の揺れで他のチャネルも開閉したが、活動は同期だけで決まるので、どのチャネルも活動しない
 namespace {
 struct PumpedNoise {
     std::mt19937 rng{11};
@@ -280,56 +279,38 @@ struct PumpedNoise {
 };
 }
 
-TEST(StdT98Squelch, TracksCommonModeFloorAndHolds) {
+TEST(StdT98Activity, PumpedNoiseAndCarrierWithoutSyncAreNeverActive) {
     ReceiverConfig cfg;   // 1.2 Msps / 48ch(テストが軽い)
     Receiver rx(cfg);
     const int ch = 10;
-    const double tone_hz = rx.channel_offset_hz(ch);
     const std::size_t block = 4800;   // 4 ms
     std::vector<cf32> buf(block);
     PumpedNoise src;
     double ph = 0;
     uint64_t idx = 0;
-    auto run = [&](int blocks, float tone_amp, auto&& per_block) {
-        for (int b = 0; b < blocks; ++b) {
-            src.fill(buf, tone_hz, tone_amp, ph, cfg.in_rate);
-            rx.process(buf, idx);
-            idx += block;
-            per_block(b);
-        }
-    };
-    // 1) 雑音だけ 1 s(フィルタの立ち上がり 50 ブロックは数えない)
-    std::vector<int> open_blocks(static_cast<std::size_t>(cfg.num_channels), 0);
-    int counted = 0;
-    run(250, 0.f, [&](int b) { if (b < 50) return; ++counted; for (int c = 0; c < cfg.num_channels; ++c) if (rx.metrics(c).open) ++open_blocks[static_cast<std::size_t>(c)]; });
-    for (int c = 0; c < cfg.num_channels; ++c) EXPECT_LE(open_blocks[static_cast<std::size_t>(c)], counted / 20) << "ch " << c << " opened on pumped noise";
-    // 床は動いている(ゲイン段 ±10 dB)のに閾値が追従していることの確認: 床の範囲が 15 dB 以上
-    // 2) トーン(床 + 約 15 dB)を 1 s: そのチャネルは 95% 以上開、他は 5% 以下
-    //    1 チャネル(6.25 kHz)あたりの雑音電力 ≈ σ² × 2 × 6250 / 1.2e6 → +15 dB のトーン振幅
+    // 床 + 約 20 dB の搬送波(1 チャネル 6.25 kHz あたりの雑音電力 ≈ σ² × 2 × 6250 / 1.2e6)
     const float sigma2 = 0.05f * 0.05f * 2;
-    const float tone_amp = std::sqrt(sigma2 * 6250.f / 1.2e6f * std::pow(10.f, 15.f / 10.f));
-    std::fill(open_blocks.begin(), open_blocks.end(), 0);
-    counted = 0;
-    double floor_min = 1e9, floor_max = -1e9;
-    run(250, tone_amp, [&](int b) {
-        if (b < 50) return;
-        ++counted;
-        for (int c = 0; c < cfg.num_channels; ++c) if (rx.metrics(c).open) ++open_blocks[static_cast<std::size_t>(c)];
-        floor_min = std::min(floor_min, rx.metrics(ch).floor_db); floor_max = std::max(floor_max, rx.metrics(ch).floor_db);
-    });
-    EXPECT_GE(open_blocks[static_cast<std::size_t>(ch)], counted * 95 / 100);
-    for (int c = 0; c < cfg.num_channels; ++c) if (c != ch) EXPECT_LE(open_blocks[static_cast<std::size_t>(c)], counted / 20) << "ch " << c;
-    EXPECT_GT(floor_max - floor_min, 15.0);   // 床は実際に揺れている
-    EXPECT_NEAR(rx.metrics(ch).threshold_db, rx.metrics(ch).floor_db + cfg.squelch_margin_db, 1e-9);
-    // 3) トーンを止める: hold_s(120 ms = 30 ブロック)+ フィルタ遅延の内に閉じ、以後開かない
-    int closed_at = -1;
-    run(100, 0.f, [&](int b) { if (closed_at < 0 && !rx.metrics(ch).open) closed_at = b; });
-    ASSERT_GE(closed_at, 0);
-    EXPECT_GE(closed_at, static_cast<int>(cfg.squelch_hold_s / 0.004) - 1);
-    EXPECT_LE(closed_at, static_cast<int>(cfg.squelch_hold_s / 0.004) + 12);
-    int reopened = 0;
-    run(100, 0.f, [&](int) { if (rx.metrics(ch).open) ++reopened; });
-    EXPECT_LE(reopened, 5);
+    const float tone_amp = std::sqrt(sigma2 * 6250.f / 1.2e6f * std::pow(10.f, 20.f / 10.f));
+    std::vector<int> active_blocks(static_cast<std::size_t>(cfg.num_channels), 0);
+    std::size_t frames = 0;
+    Observer obs;
+    obs.frame = [&](const Frame&) { ++frames; };
+    std::size_t eye = 0;
+    obs.eye = [&](int, std::span<const float>) { ++eye; };
+    rx.set_observer(obs);
+    for (int b = 0; b < 750; ++b) {   // 3 s
+        src.fill(buf, rx.channel_offset_hz(ch), tone_amp, ph, cfg.in_rate);
+        rx.process(buf, idx);
+        idx += block;
+        for (int c = 0; c < cfg.num_channels; ++c) if (rx.metrics(c).active) ++active_blocks[static_cast<std::size_t>(c)];
+    }
+    for (int c = 0; c < cfg.num_channels; ++c) {
+        EXPECT_EQ(active_blocks[static_cast<std::size_t>(c)], 0) << "ch " << c;
+        EXPECT_FALSE(rx.metrics(c).locked) << "ch " << c;
+    }
+    EXPECT_EQ(frames, 0u);
+    EXPECT_EQ(eye, 0u);
+    EXPECT_GT(rx.metrics(ch).power_db, rx.metrics(ch + 3).power_db + 10);   // 電力では搬送波のチャネルは目立っている
 }
 
 // ---- golden: 実機録音 ----
@@ -427,7 +408,7 @@ TEST(StdT98Golden, RealRecordingCh3PichAndSacch) {
         const double d = static_cast<double>(frames[i].input_sample_index - frames[i - 1].input_sample_index);
         EXPECT_NEAR(d, 320000.0, 2000.0);
     }
-    // アイパターン: 1.2 s × 2400 baud ≈ 2900 トレース(squelch 開の間)、判定点の 90% 以上が ±1/±3 上
+    // アイパターン: 1.2 s × 2400 baud ≈ 2900 トレース(活動中 = 同期中の間)、判定点の 90% 以上が ±1/±3 上
     EXPECT_GT(eye_traces, 2000u);
     std::printf("[ eye ] traces %zu, decision points on level %.1f%%\n", eye_traces, 100.0 * static_cast<double>(eye_on_level) / static_cast<double>(2 * eye_traces));
     EXPECT_GT(static_cast<double>(eye_on_level) / static_cast<double>(2 * eye_traces), 0.9);

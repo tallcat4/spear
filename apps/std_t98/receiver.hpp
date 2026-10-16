@@ -5,8 +5,8 @@
 //   → quadrature demod(315 Hz/level)→ RRC rx filter → ×0.23 → Gardner symbol sync → ×5
 //   → 同期語検出 → 192 シンボル → quantize → dewhiten → RICH / SACCH / PICH / TCH
 // ../std-t98-tools/std_t98_30ch_multi_rf_backend.py と同じ構成・定数。ただしフレームを出すかどうかは同期の状態機械
-// (捕捉 / フライホイール / 喪失、dsp/sync_correlator.hpp)と CRC だけで決め、squelch は電力の表示とアイにだけ使う。
-// squelch の閾値は絶対 dB ではなく「そのブロックの床(全チャネル電力の中央値)+ margin」(下記 ReceiverConfig)。
+// (捕捉 / フライホイール / 喪失、dsp/sync_correlator.hpp)と CRC だけで決める。squelch(電力の閾値)は持たない — 電力は AGC や
+// 会場の雑音で揺れ、閾値の近くで表示がちらつき、弱い局を切った(docs/apps/std_t98.md「チャネルの活動」)。
 //
 // 観測点(§1.1, §12 M3): Observer の各 hook が全チャネルの中間 stream を受け取る。App はそれを
 // Stream Bus に publish するだけで、この DSP コードには触れない。
@@ -41,12 +41,9 @@ struct ReceiverConfig {
     double fsk_dev_hz = 315;         // 1 level あたり
     double freq_err_hz = 0;          // 入力を -freq_err 回転する量: 帯域中心を DC へ戻す分 + そのファイル固有の残留誤差(golden / --freq-err)。
                                      // 実機の個体誤差は Core の Radio が LO 側で打ち消す(radio.freq_err_ppm)ので App は足さない
-    // squelch: チャネル電力 ≥ 床 + margin で開く。床 = そのブロックの全チャネル電力の中央値。AGC や会場の広帯域雑音で床が
-    // 全チャネル一斉に(ブロックごとに数 dB)動いても閾値が追従する — 絶対 dB の閾値(旧 squelch_db = -40)は AGC 有効時に床の
-    // 真上に乗って毎秒 30 回近く開閉した(2026-09-20 の実地録音、docs/apps/std_t98.md)。閉じるのは床 + margin − hyst を hold_s
-    // の間下回り続けたとき(フレーム 80 ms より長く)。squelch は DSP もフレームも止めない — 電力の表示(CARRIER)とアイの出力だけ。
-    // 閉で IQ を 0 にしていた頃は開くたびにシンボル同期の再引き込みになり、フレームをゲートしていた頃は弱い局が途切れた
-    double squelch_margin_db = 8, squelch_hyst_db = 3, squelch_hold_s = 0.12;
+    // チャネルの活動(表示・アイ・周波数誤差の推定)= フレーム同期中。同期を失っても active_hold_s の間は活動中とする
+    // (送信の切れ目や同期喪失の判定で表示がちらつかないように。JR TRAIN RADIO の「直近 1 秒に同期」と同じ)
+    double active_hold_s = 1.0;
     double sync_ratio = 0.2;         // 捕捉(SEARCH / TENTATIVE)の SSE 閾値 = 同期語エネルギー × ratio
     double sync_locked_ratio = 0.6;  // 同期中の予測位置 ±1 での SSE 閾値(緩い)
     int    sync_max_misses = 3;      // 同期語も CRC も取れないフレームがこれだけ続いたら同期喪失(3 × 80 ms)
@@ -71,11 +68,9 @@ struct Frame {
 };
 
 struct ChannelMetrics {
-    double power_db = -999;          // 直近ブロックのチャネル電力
-    double floor_db = -999;          // 直近ブロックの床(全チャネル電力の中央値、全チャネル共通)
-    double threshold_db = -999;      // 開く閾値 = floor + margin
-    bool   open = false;             // squelch(電力。表示だけ)
+    double power_db = -999;          // 直近ブロックのチャネル電力(数値の表示だけ。判定には使わない)
     bool   locked = false;           // フレーム同期中(呼の有無はこれで決める)
+    bool   active = false;           // 活動中 = 同期中か、同期を失って active_hold_s 以内(表示・アイ用)
     uint64_t locks = 0;              // 同期を捕捉した回数
     uint64_t flywheel_frames = 0;    // 同期語が崩れていたが出したフレーム
     uint64_t dropped_frames = 0;     // 捨てた候補(雑音の偽同期、同期喪失前の保留)
@@ -106,7 +101,6 @@ public:
     double channel_offset_hz(int ch) const { return (ch - cfg_.num_channels / 2) * cfg_.spacing_hz; }
     int channel_to_bin(int ch) const;
 
-    void set_squelch_margin_db(double db) { cfg_.squelch_margin_db = db; }
     void set_sync_ratio(double r);
     void set_observer(Observer o) { obs_ = std::move(o); }
 
@@ -133,7 +127,6 @@ private:
     double rot_phase_ = 0;
     std::vector<cf32> buf1_;
     std::vector<std::vector<cf32>> bins_;
-    std::vector<double> floor_tmp_;       // 床(中央値)計算用
     uint64_t band_index_ = 0;   // resamp1 出力の通し番号
     uint64_t in0_ = 0;          // 最初のブロックの radio.rx index(provenance の原点)
     bool have_in0_ = false;
