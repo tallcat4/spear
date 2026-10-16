@@ -230,6 +230,8 @@ private:
     // 保存(復号結果)。Recorder 自身がスレッド安全(DSP thread が push、GUI thread が start / stop)
     jr_train::Recorder saver_;
     std::atomic<bool> saving_{false};
+    std::atomic<uint64_t> saver_layout_{UINT64_MAX};   // 保存を始めたときの layout_。組み直す前の受信機のフレームは保存に渡さない(保存対象外で止まる)
+    void start_saving();
 
     // 録音(IQ。専用の Lossless 購読とスレッド。DSP thread とは独立)
     std::unique_ptr<SigmfRecorder> rec_;

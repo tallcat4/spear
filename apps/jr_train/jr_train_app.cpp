@@ -118,22 +118,28 @@ void JrTrainApp::setIncludeCommon(bool on) {
 }
 
 void JrTrainApp::applyRoutes(const QStringList& ids, bool includeCommon) {
-    // 受信対象が変わるので、復号結果の保存は区切る(保存はチャネルの組を固定して始める)
-    if (saving_) {
+    // 受信対象が変わるので、復号結果の保存は区切る(保存はチャネルの組を固定して始める)。
+    // 保存中だったら、新しいチャネルの組で保存を始め直す
+    const bool was_saving = saving_;
+    if (was_saving) {
         saving_ = false;
         saver_.stop();
-        Q_EMIT savingChanged();
     }
     include_common_ = includeCommon;
     route_selection_ = ids.join(',');
     recompute_active();
+    if (was_saving) start_saving();
+    Q_EMIT savingChanged();
 }
 
 QVariantList JrTrainApp::previewRoutes(const QStringList& ids, bool includeCommon) const {
     std::vector<std::string> v;
     for (const auto& id : ids) v.push_back(id.toStdString());
+    // recompute_active と同じ規則: 選択が空、または該当するチャネルが無ければ全チャネル
+    auto chans = v.empty() ? preset_->channels : channels_for_routes(*preset_, v, includeCommon);
+    if (chans.empty()) chans = preset_->channels;
     QVariantList out;
-    for (const auto& c : channels_for_routes(*preset_, v, includeCommon)) {
+    for (const auto& c : chans) {
         QVariantMap m;
         m["label"] = QString::fromStdString(c.short_label);
         m["freq"] = c.frequency_hz;
@@ -365,9 +371,10 @@ std::unique_ptr<Receiver> JrTrainApp::build_receiver(Core& core) {
         TAP("jr_train.band", iq.data(), iq.size());
         publish_band(iq, first);
     };
-    o.frame = [this, &core, configs = c.channels](int ch, const FrameEvent& ev, const FrameTiming& t) {
+    const uint64_t layout = built_layout_;
+    o.frame = [this, &core, configs = c.channels, layout](int ch, const FrameEvent& ev, const FrameTiming& t) {
         const auto c_index = static_cast<std::size_t>(ch);
-        if (saving_) saver_.push_frame(configs[c_index].id, ev);
+        if (saving_ && saver_layout_ == layout) saver_.push_frame(configs[c_index].id, ev);
         // 通話の推定(原本 session: 区間の切り替わりは Reset、受理した音声フレームは Voice)
         auto& ca = chan_audio_[c_index];
         const uint64_t back = static_cast<uint64_t>(ev.index) * 40'000;
@@ -396,8 +403,8 @@ std::unique_ptr<Receiver> JrTrainApp::build_receiver(Core& core) {
                                {0, t.input_sample_index, t.input_sample_index + span}, ch);
         }
     };
-    o.audio = [this](int ch, const Audio& a) {
-        if (saving_) saver_.push(a);
+    o.audio = [this, layout](int ch, const Audio& a) {
+        if (saving_ && saver_layout_ == layout) saver_.push(a);
         auto& ca = chan_audio_[static_cast<std::size_t>(ch)];
         if (a.epoch != ca.epoch) {
             ca.queue.clear();
@@ -656,11 +663,19 @@ void JrTrainApp::toggleSaving() {
     if (saving_) {
         saving_ = false;
         saver_.stop();
-    } else if (core()) {
+    } else {
+        start_saving();
+    }
+    Q_EMIT savingChanged();
+}
+
+void JrTrainApp::start_saving() {
+    if (core()) {
         std::error_code ec;
         const auto parent = std::filesystem::absolute(std::filesystem::path(record_dir_) / "jr_train", ec);
         std::filesystem::create_directories(parent, ec);
         try {
+            saver_layout_ = layout_.load();   // channel_configs() と同じ版(どちらも GUI thread で変える)
             saver_.start(parent, channel_configs(), save_options_);
             saving_ = true;
             core()->events().emit(EventKind::Info, info().id, "saving decoded output " + saver_.snapshot().directory.value_or(""));
@@ -668,7 +683,6 @@ void JrTrainApp::toggleSaving() {
             core()->events().emit(EventKind::Warning, info().id, std::string("save failed: ") + e.what());
         }
     }
-    Q_EMIT savingChanged();
 }
 
 // ---- 録音(radio.rx をそのまま SigMF に。RecorderApp と同じ経路)----

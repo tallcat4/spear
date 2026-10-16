@@ -306,7 +306,7 @@ Item {
         }
         Column {
             x: routeList.x + routeList.width + Theme.pad; y: routeList.y; width: parent.width - x - Theme.pad; spacing: 8
-            Text { text: "SELECTED " + routePicker.picked.length + "  →  " + (routePicker.picked.length ? routePicker.preview.length + " ch" : "ALL channels")
+            Text { text: "SELECTED " + routePicker.picked.length + "  →  " + (routePicker.picked.length ? routePicker.preview.length + " ch" : "ALL channels  " + routePicker.preview.length + " ch")
                    color: Theme.textBright; font.family: Theme.mono; font.pixelSize: Theme.fsBase }
             Text { width: parent.width; wrapMode: Text.WordWrap
                    text: routePicker.preview.map(c => c.label + " " + (c.freq / 1e6).toFixed(5)).join("\n")
@@ -318,7 +318,7 @@ Item {
                 MouseArea { anchors.fill: parent; onClicked: { Feedback.tap(); routePicker.common = !routePicker.common } }
             }
             Text { width: parent.width; wrapMode: Text.WordWrap; color: Theme.textDim; font.pixelSize: Theme.fsSmall
-                   text: "区間の表は原本の収録(出典: odaQshirei 氏のまとめ)。現在の運用を保証しない。同じ周波数の別路線も受信する。APPLY で受信をやり直す(保存中なら区切る)。" }
+                   text: "区間の表は原本の収録(出典: odaQshirei 氏のまとめ)。現在の運用を保証しない。同じ周波数の別路線も受信する。APPLY で受信をやり直す(保存中なら、新しいチャネルの組で保存を始め直す)。" }
         }
         Row {
             anchors.bottom: parent.bottom; anchors.bottomMargin: Theme.pad; x: Theme.pad; spacing: 8
