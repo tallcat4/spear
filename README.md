@@ -9,12 +9,14 @@ Signal Processing & Emission Analysis Receiver
 
 ## 主な機能
 
-- **SPECTRUM** — スペクトラムとウォーターフォール。周波数はテンキーで入力。
-- **IQ RECORDER** — IQ データを SigMF 形式で欠落なく録音。録音は後から再生・解析できます。
-- **FM / AM RX** — NFM / WFM / AM の復調と音声再生。
-- **STD-T98 MONITOR** — デジタル簡易無線 30 チャネルを同時に受信・復号・音声再生。秘話の解除にも対応。
-- **ADS-B** — 1090 MHz で航空機の位置を受信し、一覧と地図で表示。地図は内蔵でオフライン動作。
-- **SLPR 20CH RX** — 特定小電力トランシーバー(422 MHz 帯、単信 20 チャネル)を同時に受信して音声再生。
+App の名前から、それぞれの説明書を開けます。メニューや数値入力など、すべての App に共通する操作は [共通の操作](docs/manual/README.md) にあります。
+
+- **[SPECTRUM](docs/manual/spectrum.md)** — スペクトラムとウォーターフォール。周波数はテンキーで入力。
+- **[IQ RECORDER](docs/manual/recorder.md)** — IQ データを SigMF 形式で欠落なく録音。録音は後から再生・解析できます。
+- **[FM / AM RX](docs/manual/demod.md)** — NFM / WFM / AM の復調と音声再生。
+- **[STD-T98 MONITOR](docs/manual/std_t98.md)** — デジタル簡易無線 30 チャネルを同時に受信・復号・音声再生。秘話の解除にも対応。
+- **[ADS-B](docs/manual/adsb.md)** — 1090 MHz で航空機の位置を受信し、一覧と地図で表示。地図は内蔵でオフライン動作。
+- **[SLPR 20CH RX](docs/manual/slpr.md)** — 特定小電力トランシーバー(422 MHz 帯、単信 20 チャネル)を同時に受信して音声再生。
 
 そのほか:
 
