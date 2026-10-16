@@ -1,5 +1,5 @@
 // spear-std-t98-decode — SigMF 録音を STD-T98 Receiver に流す headless 解析 (§10.4, §10.3 golden set)
-//   spear-std-t98-decode <base> [--squelch-margin 8] [--sync-ratio 0.2] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base] [--no-secret]
+//   spear-std-t98-decode <base> [--squelch-margin 8] [--sync-ratio 0.2] [--sync-locked-ratio 0.6] [--sync-max-misses 3] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base] [--no-secret]
 //   --freq-err: 入力を回して帯域中心を DC へ戻す量。App の録音(LO = 帯域中心 − 250 kHz)なら 250000(+ そのファイル固有の残留誤差)
 // 出力: チャネルごとの電力/同期/フレーム統計、フレーム内容、推定周波数誤差。
 // 秘話呼(SACCH call=1)は GUI と同じポリシー(5 バーストで最初の探索、10 バーストごとに再確認)で鍵を同期的に探索し、以後のフレームを
@@ -36,7 +36,7 @@ bool flag(int argc, char** argv, const char* key) {   // 値を取らないオ�
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) { std::puts("usage: spear-std-t98-decode <sigmf base> [--squelch-margin dB] [--sync-ratio r] [--freq-err Hz] [--pfb N] [--dump-ch N --dump-file f [--dump-filtered]] [--log f] [--payloads f] [--wav base] [--no-secret] [--quiet]"); return 1; }
+    if (argc < 2) { std::puts("usage: spear-std-t98-decode <sigmf base> [--squelch-margin dB] [--sync-ratio r] [--sync-locked-ratio r] [--sync-max-misses n] [--freq-err Hz] [--pfb N] [--dump-ch N --dump-file f [--dump-filtered]] [--log f] [--payloads f] [--wav base] [--no-secret] [--quiet]"); return 1; }
     const std::string base = argv[1];
     sigmf::Meta meta;
     std::string err;
@@ -50,6 +50,8 @@ int main(int argc, char** argv) {
     cfg.freq_err_hz = std::stod(arg(argc, argv, "--freq-err", "0"));
     const int dump_ch = std::stoi(arg(argc, argv, "--dump-ch", "-1"));
     const bool quiet = flag(argc, argv, "--quiet");
+    cfg.sync_locked_ratio = std::stod(arg(argc, argv, "--sync-locked-ratio", "0.6"));
+    cfg.sync_max_misses = std::stoi(arg(argc, argv, "--sync-max-misses", "3"));
     std::FILE* dump = dump_ch >= 0 ? std::fopen(arg(argc, argv, "--dump-file", "ch.f32"), "wb") : nullptr;
     // --log f: 入力ブロック(65536 sample = 16.4 ms)ごとに "idx in_dB floor_dB ch01_dB sps01 ch02_dB sps02 ..." を 1 行(squelch / 同期の時系列解析用)
     std::FILE* logf = arg(argc, argv, "--log", nullptr) ? std::fopen(arg(argc, argv, "--log", ""), "w") : nullptr;
@@ -74,7 +76,7 @@ int main(int argc, char** argv) {
     std::vector<SecretCh> sec(static_cast<std::size_t>(cfg.num_channels));
     Receiver rx(cfg);
 
-    // 周波数誤差推定: 開いているチャネルの discriminator 平均(Hz = 平均 × dev)
+    // 周波数誤差推定: 信号のある(同期中か squelch 開の)チャネルの discriminator 平均(Hz = 平均 × dev)
     std::vector<double> disc_sum(cfg.num_channels, 0), disc_n(cfg.num_channels, 0);
     std::vector<double> pk_pw(cfg.num_channels, -999), pk_rel(cfg.num_channels, -999);   // ピーク電力と、床からのピーク
     int frames = 0;
@@ -82,7 +84,7 @@ int main(int argc, char** argv) {
     // --dump-ch N [--dump-file f] [--dump-filtered]: そのチャネルの discriminator(既定)か RRC 後(×0.23)の 62.5 kHz 実数列を f32 で書く
     const bool dump_filtered = flag(argc, argv, "--dump-filtered");
     obs.discriminator = [&](int ch, std::span<const float> d) {
-        if (!rx.metrics(ch).open) return;
+        if (!rx.metrics(ch).open && !rx.metrics(ch).locked) return;
         for (float v : d) { disc_sum[ch] += v; disc_n[ch] += 1; }
         if (dump && !dump_filtered && ch == dump_ch) std::fwrite(d.data(), sizeof(float), d.size(), dump);
     };
@@ -132,9 +134,9 @@ int main(int argc, char** argv) {
             std::fprintf(payloads, "\n");
         }
         if (quiet) return;
-        std::printf("FRAME ch%02d (%.5f MHz) sym=%llu in=%llu sse=%.2f RICH F=%d M=%d parity=%s", f.channel + 1,
+        std::printf("FRAME ch%02d (%.5f MHz) sym=%llu in=%llu sse=%.2f%s RICH F=%d M=%d parity=%s", f.channel + 1,
                     (band_center + rx.channel_offset_hz(f.channel)) / 1e6,
-                    (unsigned long long)f.symbol_index, (unsigned long long)f.input_sample_index, f.sync_sse, f.rich.f, f.rich.m, f.rich.parity_ok ? "ok" : "BAD");
+                    (unsigned long long)f.symbol_index, (unsigned long long)f.input_sample_index, f.sync_sse, f.sync_ok ? "" : " FLY", f.rich.f, f.rich.m, f.rich.parity_ok ? "ok" : "BAD");
         if (f.rich.f == 0) std::printf("  PICH csm=%s crc=%s err=%d", f.pich.csm.c_str(), f.pich.crc_ok ? "ok" : "BAD", f.pich.bit_errors);
         else if (f.rich.f == 1) std::printf("  SACCH msg=%d call=%d user=%d maker=%d crc=%s err=%d%s%s", f.sacch.msg_type, f.sacch.call_stat, f.sacch.user_code, f.sacch.maker_code, f.sacch.crc_ok ? "ok" : "BAD", f.sacch.bit_errors,
                                             sc.call_secret ? (sc.tracker.key() ? "  [secret K " : "  [secret") : "", sc.call_secret ? (sc.tracker.key() ? (std::to_string(sc.tracker.key()) + "]").c_str() : "]") : "");
@@ -182,15 +184,15 @@ int main(int argc, char** argv) {
         std::fwrite(v.pcm.data(), 2, v.pcm.size(), w); std::fclose(w);
         std::printf("wrote %s (%.2f s)\n", name.c_str(), v.pcm.size() / 8000.0);
     }
-    std::printf("\n%-4s %-12s %8s %8s %6s %8s %7s %7s %8s %6s %s\n", "ch", "freq[MHz]", "peak dB", "pk-floor", "sync", "best_sse", "frames", "sacch", "pich_ok", "gated", "est freq err / csm");
+    std::printf("\n%-4s %-12s %8s %8s %6s %8s %7s %7s %8s %6s %6s %6s %s\n", "ch", "freq[MHz]", "peak dB", "pk-floor", "sync", "best_sse", "frames", "sacch", "pich_ok", "locks", "fly", "drop", "est freq err / csm");
     for (int c = 0; c < cfg.num_channels; ++c) {
         const auto& m = rx.metrics(c);
         if (pk_rel[c] < cfg.squelch_margin_db && m.sync_detections == 0) continue;   // 一度も開かず同期もしなかったチャネルは省く
         const double fe = disc_n[c] > 0 ? disc_sum[c] / disc_n[c] * cfg.fsk_dev_hz : 0;
-        std::printf("%-4d %-12.5f %8.1f %8.1f %6llu %8.2f %7llu %7llu %8llu %6llu %+.0f Hz %s\n", c + 1,
+        std::printf("%-4d %-12.5f %8.1f %8.1f %6llu %8.2f %7llu %7llu %8llu %6llu %6llu %6llu %+.0f Hz %s\n", c + 1,
                     (band_center + rx.channel_offset_hz(c)) / 1e6, pk_pw[c], pk_rel[c],
                     (unsigned long long)m.sync_detections, m.best_sse, (unsigned long long)m.frames, (unsigned long long)m.sacch_ok,
-                    (unsigned long long)m.pich_ok, (unsigned long long)m.gated_frames, fe, m.csm.c_str());
+                    (unsigned long long)m.pich_ok, (unsigned long long)m.locks, (unsigned long long)m.flywheel_frames, (unsigned long long)m.dropped_frames, fe, m.csm.c_str());
     }
     std::printf("total frames %d, samples %llu (%.1f s)\n", frames, (unsigned long long)idx, static_cast<double>(idx) / rate);
     return 0;

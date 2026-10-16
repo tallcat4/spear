@@ -125,7 +125,7 @@ private:
     // 観測値(DSP thread → GUI)
     mutable std::mutex mu_;
     struct ChanStat {
-        double power_db = -999, floor_db = -999, threshold_db = -999; bool open = false; uint64_t frames = 0, sacch_ok = 0, pich_ok = 0, syncs = 0; double best_sse = 1e9, sps = 0; std::string csm; double freq_err_est = 0;
+        double power_db = -999, floor_db = -999, threshold_db = -999; bool open = false, locked = false; uint64_t frames = 0, sacch_ok = 0, pich_ok = 0, syncs = 0; double best_sse = 1e9, sps = 0; std::string csm; double freq_err_est = 0;
         bool secret = false; uint16_t key = 0; std_t98::secret::TrackerStatus secret_status = std_t98::secret::TrackerStatus::Idle;   // 秘話: 呼が秘話か / 現在鍵 / 探索状態
         std_t98::secret::ResultSource last_source = std_t98::secret::ResultSource::None; double last_search_s = 0; uint64_t searches = 0;
     };

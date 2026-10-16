@@ -85,6 +85,7 @@ QVariantList StdT98App::channels() const {
         m["floor"] = s.floor_db;
         m["threshold"] = s.threshold_db;
         m["open"] = s.open;
+        m["locked"] = s.locked;
         m["frames"] = static_cast<double>(s.frames);
         m["sacchOk"] = static_cast<double>(s.sacch_ok);
         m["pichOk"] = static_cast<double>(s.pich_ok);
@@ -109,6 +110,7 @@ QVariantMap StdT98App::selected() const {
     m["floor"] = s.floor_db;
     m["threshold"] = s.threshold_db;
     m["open"] = s.open;
+    m["locked"] = s.locked;
     m["frames"] = static_cast<double>(s.frames);
     m["sacchOk"] = static_cast<double>(s.sacch_ok);
     m["pichOk"] = static_cast<double>(s.pich_ok);
@@ -164,13 +166,13 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
     };
     o.eye = [this](int ch, std::span<const float> t) { if (ch == selected_) eye_.push(t); };
     o.discriminator = [this](int ch, std::span<const float> d) {
-        // 周波数誤差の推定: 開いているチャネルの discriminator 平均 × 偏移(315 Hz)を IIR で
+        // 周波数誤差の推定: 信号のある(同期中か squelch 開の)チャネルの discriminator 平均 × 偏移(315 Hz)を IIR で
         double m = 0;
         for (float v : d) m += v;
         m = d.empty() ? 0 : m / static_cast<double>(d.size()) * cfg_.fsk_dev_hz;
         std::lock_guard<std::mutex> lk(mu_);
         auto& s = stats_[static_cast<std::size_t>(ch)];
-        if (s.open) s.freq_err_est = 0.95 * s.freq_err_est + 0.05 * m;
+        if (s.open || s.locked) s.freq_err_est = 0.95 * s.freq_err_est + 0.05 * m;
     };
     o.frame = [this, &core](const Frame& f) {
         ++total_frames_;
@@ -417,11 +419,12 @@ void StdT98App::run() {
             for (int c = 0; c < cfg_.num_channels; ++c) {
                 const auto& m = rx->metrics(c);
                 auto& s = stats_[static_cast<std::size_t>(c)];
-                if (s.open && !m.open && c == selected_) eye_.clear();   // 選択 ch の squelch が閉じたらアイを消す(IDLE で雑音の目を残さない)
-                s.power_db = m.power_db; s.floor_db = m.floor_db; s.threshold_db = m.threshold_db; s.open = m.open; s.frames = m.frames; s.sacch_ok = m.sacch_ok; s.pich_ok = m.pich_ok;
+                // 選択 ch の信号が無くなったら(同期が外れ squelch も閉)アイを消す(IDLE で雑音の目を残さない)
+                if ((s.open || s.locked) && !m.open && !m.locked && c == selected_) eye_.clear();
+                s.power_db = m.power_db; s.floor_db = m.floor_db; s.threshold_db = m.threshold_db; s.open = m.open; s.locked = m.locked; s.frames = m.frames; s.sacch_ok = m.sacch_ok; s.pich_ok = m.pich_ok;
                 s.syncs = m.sync_detections; s.best_sse = m.best_sse; s.sps = m.sps; s.csm = m.csm;
                 auto& sc = secret_ch_[static_cast<std::size_t>(c)];
-                if (!m.open && sc.tracker.active()) { sc.call_secret = false; sc.tracker.on_clear(); }   // squelch 閉 = 呼の終わり
+                if (!m.locked && sc.tracker.active()) { sc.call_secret = false; sc.tracker.on_clear(); }   // 同期喪失 = 呼の終わり(squelch ではなく)
                 s.secret = sc.call_secret; s.key = sc.tracker.key(); s.secret_status = sc.tracker.status();
             }
         }

@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <numeric>
 #include <random>
 
@@ -26,8 +27,30 @@ double sync_energy() { return std::inner_product(kSyncWord.begin(), kSyncWord.en
 
 int feed(SyncCorrelator& c, std::span<const float> s, uint64_t idx = 0) {
     const auto before = c.stats().detections;
-    c.process(s, idx, [](std::span<const float>, uint64_t) {});
+    c.process(s, idx, [](const SyncCandidate&) { return false; }, [](uint64_t, bool) {});
     return static_cast<int>(c.stats().detections - before);
+}
+
+// 状態機械の検査用: フレーム(同期語 + 182 シンボル)を並べたシンボル列と、候補ごとの CRC を決める関数で回す
+struct Run {
+    std::vector<uint64_t> candidates, emitted, dropped;
+    std::vector<bool> candidate_sync_ok;
+};
+void append_frame(std::vector<float>& s, bool sync = true) {
+    if (sync) s.insert(s.end(), kSyncWord.begin(), kSyncWord.end());
+    else s.insert(s.end(), 10, 0.f);                       // 崩れた同期語(SSE = 74 > 緩い閾値 0.6 × 74)
+    for (int i = 0; i < 182; ++i) s.push_back(i % 2 ? 1.f : -1.f);
+}
+Run run_sync(SyncCorrelator& c, const std::vector<float>& s, const std::function<bool(uint64_t)>& crc = [](uint64_t) { return false; }) {
+    Run r;
+    // 小分けに入れる(ブロック境界をまたいでも同じになること)
+    for (std::size_t off = 0; off < s.size(); off += 37) {
+        const std::size_t n = std::min<std::size_t>(37, s.size() - off);
+        c.process(std::span<const float>(s.data() + off, n), off,
+                  [&](const SyncCandidate& k) { r.candidates.push_back(k.first_symbol_index); r.candidate_sync_ok.push_back(k.sync_ok); return crc(k.first_symbol_index); },
+                  [&](uint64_t first, bool emit) { (emit ? r.emitted : r.dropped).push_back(first); });
+    }
+    return r;
 }
 }
 
@@ -42,10 +65,11 @@ TEST(StdT98Sync, RatioChangeAltersWhatCountsAsSync) {
     // 全シンボルが 1.0 ずれた同期語: SSE = 10 = 74 × 0.135 → 0.05 では棄却、0.2 では検出(Python テストと同じ)
     std::vector<float> noisy(kSyncWord.begin(), kSyncWord.end());
     for (float& v : noisy) v += 1.f;
+    noisy.insert(noisy.end(), 182, 0.f);
     SyncCorrelator c(0.05);
     EXPECT_EQ(feed(c, noisy), 0);
-    c.set_threshold_ratio(0.2);
-    EXPECT_EQ(feed(c, noisy), 1);
+    SyncCorrelator c2(0.2);
+    EXPECT_EQ(feed(c2, noisy), 1);
 }
 
 TEST(StdT98Sync, CollectsExactly192SymbolsAfterDetection) {
@@ -55,17 +79,118 @@ TEST(StdT98Sync, CollectsExactly192SymbolsAfterDetection) {
     for (int i = 0; i < 182; ++i) stream.push_back(static_cast<float>((i % 4) * 2 - 3));   // -3,-1,1,3,...
     stream.insert(stream.end(), 20, 0.f);
     int frames = 0;
-    c.process(stream, 1000, [&](std::span<const float> pkt, uint64_t first) {
+    c.process(stream, 1000, [&](const SyncCandidate& k) {
         ++frames;
-        ASSERT_EQ(pkt.size(), 192u);
-        EXPECT_EQ(first, 1050u);                      // provenance: 同期語先頭のシンボル番号
-        for (std::size_t i = 0; i < 10; ++i) EXPECT_FLOAT_EQ(pkt[i], kSyncWord[i]);
-        EXPECT_FLOAT_EQ(pkt[10], -3.f);
-        EXPECT_FLOAT_EQ(pkt[191], static_cast<float>((181 % 4) * 2 - 3));
-    });
+        EXPECT_EQ(k.symbols.size(), 192u);
+        EXPECT_EQ(k.first_symbol_index, 1050u);                      // provenance: 同期語先頭のシンボル番号
+        for (std::size_t i = 0; i < 10; ++i) EXPECT_FLOAT_EQ(k.symbols[i], kSyncWord[i]);
+        EXPECT_FLOAT_EQ(k.symbols[10], -3.f);
+        EXPECT_FLOAT_EQ(k.symbols[191], static_cast<float>((181 % 4) * 2 - 3));
+        EXPECT_TRUE(k.sync_ok);
+        return false;
+    }, [](uint64_t, bool) { ADD_FAILURE() << "resolved before the next frame position was seen"; });
     EXPECT_EQ(frames, 1);
     EXPECT_EQ(c.stats().detections, 1u);
-    EXPECT_FALSE(c.collecting());
+    EXPECT_EQ(c.state(), SyncCorrelator::State::Tentative);   // CRC 不良の 1 つだけでは出さない
+}
+
+TEST(StdT98Sync, CrcOkLocksAndEmitsImmediately) {
+    SyncCorrelator c;
+    std::vector<float> s(5, 0.f);
+    append_frame(s);
+    const auto r = run_sync(c, s, [](uint64_t) { return true; });
+    EXPECT_EQ(r.emitted, (std::vector<uint64_t>{5}));
+    EXPECT_TRUE(c.locked());
+}
+
+TEST(StdT98Sync, SecondSyncAtPredictedPositionConfirmsTentative) {
+    SyncCorrelator c;
+    std::vector<float> s(5, 0.f);
+    append_frame(s); append_frame(s);
+    s.insert(s.end(), 20, 0.f);
+    const auto r = run_sync(c, s);
+    EXPECT_EQ(r.emitted, (std::vector<uint64_t>{5, 197}));
+    EXPECT_TRUE(r.dropped.empty());
+    EXPECT_TRUE(c.locked());
+}
+
+TEST(StdT98Sync, CrcAloneDoesNotConfirmTentative) {
+    // 雑音の偽同期の次の予測位置で 6 bit の SACCH CRC が偶然通っても捕捉しない(同期語が要る)
+    std::vector<float> s;
+    append_frame(s); append_frame(s, false);
+    s.insert(s.end(), 20, 0.f);
+    SyncCorrelator c;
+    const auto r = run_sync(c, s, [](uint64_t first) { return first == 192; });
+    EXPECT_TRUE(r.emitted.empty());
+    EXPECT_EQ(r.dropped, (std::vector<uint64_t>{0, 192}));
+    EXPECT_FALSE(c.locked());
+}
+
+TEST(StdT98Sync, FalseSyncIsDroppedAndTheRealOneInsideItIsFound) {
+    // 偽同期(5)の 192 シンボルの中に本物の呼の先頭(60)がある: 偽同期を捨て、5 の次から探し直して 60, 252 を出す
+    std::vector<float> s(5, 0.f);
+    s.insert(s.end(), kSyncWord.begin(), kSyncWord.end());
+    s.insert(s.end(), 45, 0.f);
+    append_frame(s); append_frame(s);
+    s.insert(s.end(), 20, 0.f);
+    SyncCorrelator c;
+    const auto r = run_sync(c, s);
+    EXPECT_EQ(r.dropped, (std::vector<uint64_t>{5, 197}));
+    EXPECT_EQ(r.emitted, (std::vector<uint64_t>{60, 252}));
+    EXPECT_EQ(c.stats().dropped, 2u);
+}
+
+TEST(StdT98Sync, FlywheelKeepsFrameWithCorruptedSyncWord) {
+    // 同期中に同期語が崩れたフレーム(CRC も不良)は保留し、次の良いフレームで出す(フライホイール)
+    std::vector<float> s;
+    append_frame(s); append_frame(s); append_frame(s, false); append_frame(s);
+    s.insert(s.end(), 20, 0.f);
+    SyncCorrelator c;
+    const auto r = run_sync(c, s);
+    EXPECT_EQ(r.emitted, (std::vector<uint64_t>{0, 192, 384, 576}));
+    EXPECT_EQ(c.stats().flywheel, 1u);
+    EXPECT_TRUE(c.locked());
+}
+
+TEST(StdT98Sync, CrcOkAtPredictedPositionCountsAsGoodWithoutSyncWord) {
+    std::vector<float> s;
+    append_frame(s); append_frame(s); append_frame(s, false);
+    s.insert(s.end(), 20, 0.f);
+    SyncCorrelator c;
+    const auto r = run_sync(c, s, [](uint64_t first) { return first == 384; });
+    EXPECT_EQ(r.emitted, (std::vector<uint64_t>{0, 192, 384}));   // 3 つ目は保留せずすぐ出る
+    EXPECT_EQ(c.stats().flywheel, 1u);
+}
+
+TEST(StdT98Sync, LosesLockAfterMaxMissesAndDropsHeldFrames) {
+    // 2 フレームの呼 → 3 フレーム分の崩れ(送信の終わり)→ 喪失。崩れの途中(+100)から始まる次の呼を見つける
+    std::vector<float> s;
+    append_frame(s); append_frame(s);
+    const uint64_t miss0 = s.size();
+    s.insert(s.end(), 100, 0.f);
+    const uint64_t next_call = s.size();
+    append_frame(s); append_frame(s);
+    s.insert(s.end(), 3 * 192 + 20, 0.f);
+    SyncCorrelator c;
+    const auto r = run_sync(c, s);
+    EXPECT_EQ(r.emitted, (std::vector<uint64_t>{0, 192, next_call, next_call + 192}));
+    // 1 回目の喪失で 3 つ捨てる(384 = miss0, 576, 768)。次の呼の後ろの崩れでもう一度喪失する
+    ASSERT_GE(r.dropped.size(), 3u);
+    EXPECT_EQ(r.dropped[0], miss0);
+    EXPECT_FALSE(c.locked());
+}
+
+TEST(StdT98Sync, FollowsOneSymbolSlip) {
+    std::vector<float> s;
+    append_frame(s); append_frame(s);
+    s.push_back(0.f);                // symbol sync が 1 シンボル余分に出した
+    append_frame(s); append_frame(s);
+    s.insert(s.end(), 20, 0.f);
+    SyncCorrelator c;
+    const auto r = run_sync(c, s);
+    EXPECT_EQ(r.emitted, (std::vector<uint64_t>{0, 192, 385, 577}));
+    EXPECT_EQ(c.stats().flywheel, 0u);
+    EXPECT_TRUE(c.locked());
 }
 
 TEST(StdT98SymbolSync, RecoversSymbolsFromFractionalSpsStaircase) {

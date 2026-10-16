@@ -30,7 +30,7 @@
 | `apps/spectrum` | 汎用。FREQ / RATE(再起動)/ REF / AVG / HOLD | 実信号で確認済み |
 | `apps/recorder` | Lossless 録音、sidecar。録音中は FREQ 無効 | gtest(drop 0)、実機 |
 | `apps/demod` | NFM / WFM / AM。LO を RX から 250 kHz 離す。channel IQ と audio を Stream Bus に publish | 合成 FM トーンの gtest、実信号の FM |
-| `apps/std_t98` | 30ch 受信機(C++ のみ、Qt / UHD 非依存)、プロトコル、AMBE(C++ に移植)、秘話(PN、ffnn の C++ 推論、hybrid の ONNX Runtime 推論、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照実装との一致(プロトコル・AMBE・秘話)、実機の送信で確認(平文・秘話) |
+| `apps/std_t98` | 30ch 受信機(C++ のみ、Qt / UHD 非依存)、プロトコル、同期の状態機械(フライホイール)、AMBE(C++ に移植)、秘話(PN、ffnn の C++ 推論、hybrid の ONNX Runtime 推論、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照実装との一致(プロトコル・AMBE・秘話)、実機の送信で確認(平文・秘話) |
 | `apps/adsb` | 1090 MHz Mode S / ADS-B 受信機(C++ のみ: 回転 → 低域 FIR → 電力 → プリアンブル / PPM → CRC-24、DF17/18/11 + AP 形式)、航空機表(CPR 偶奇 / 局所)、GUI(表 / ミニマップ(埋め込みのオフライン地図 Natural Earth + OurAirports。全機が入るよう自動で範囲を合わせる)/ 電力窓 / 統計)。radio.rx を 8 Msps のまま Lossless で消費 | 既知ベクトル(The 1090MHz Riddle)、合成 PPM で provenance をサンプル単位で確認、ライフサイクル、実録音 golden(`~/spear/golden/adsb`、羽田近傍 3 s / 136 フレーム)、実機で動作(`docs/apps/adsb.md`) |
 | `apps/slpr` | 特定小電力(422 MHz 帯、単信 20 ch、ICOM 準拠の 01–20)の同時 NFM 受信機(C++ のみ: 回転 → resamp1 → PFB 32 × 12.5 kHz → quadrature demod → LPF → DC 阻止 → 床相対 squelch(attack / hold))、加算ミキサ、GUI(帯域スペクトラム / 20ch 格子 / 選択 ch の IQ) | 合成 NFM(2 ch 同時、隣接の漏れ、provenance、hold)、ライフサイクル、実機で ch12 の実信号(`docs/apps/slpr.md`) |
 | `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード。秘話呼は鍵を探索して復号)、`spear-adsb-decode`(録音 → フレーム表 / 航空機一覧 / golden) | — |
@@ -39,7 +39,8 @@
 
 1. STD-T98 秘話の golden: 実機の秘話呼で動作は確認した(2026-09-17)。その録音の抜粋(鍵つき)を `~/spear/golden/std_t98/` に加え、受信 → 鍵探索 → 復号を通しで回帰テストにする。現在の E2E テストは、平文の実音声を自分でスクランブルしたもの。
 2. ADS-B(2026-09-17 実装・実機確認、`docs/apps/adsb.md`): 地上位置(TC5–8)の CPR、多数機のときの表の差分更新 model、受信機 reset の SDK 規約(generation 切替時)、ミニマップの `Spear.Widgets` への抽出(2 つ目の利用者が出たら)が残っている。
-3. STD-T98 の実地確認: 2026-09-20 のイベントで「遠い局が途切れる / 空き ch が開く」症状が出た。原因は AGC で揺れる床に絶対閾値のスケルチが乗っていたこと。床相対スケルチと出力ゲートに直した(2026-09-21、`docs/apps/std_t98.md`「スケルチ」)。次の実地で AGC OFF(手動ゲイン)との比較と、弱い局の聞こえ方を確認する。引き込み(`max_deviation` の単位の修正後)は録音解析で 0.1〜0.4 s と確認した。
+3. STD-T98 の実地確認: 2026-10-16 にフレーム同期を状態機械にした(squelch はフレームに関与しない)。次の実地で弱い局の聞こえ方を確認する。残る改善案は軟判定(SACCH / PICH の Viterbi)。
+   以前の経緯: 2026-09-20 のイベントで「遠い局が途切れる / 空き ch が開く」症状が出た。原因は AGC で揺れる床に絶対閾値のスケルチが乗っていたこと。床相対スケルチと出力ゲートに直した(2026-09-21、`docs/apps/std_t98.md`「スケルチ」)。次の実地で AGC OFF(手動ゲイン)との比較と、弱い局の聞こえ方を確認する。引き込み(`max_deviation` の単位の修正後)は録音解析で 0.1〜0.4 s と確認した。
 4. IQ RECORDER: 録音一覧と再生元の選択(`Spear.Input` に ListPicker が必要)、ディスク残量による自動停止。
 5. Source API: 運転中の gain / bandwidth / 受信端子の変更。現在は `retune` だけで、gain と端子はメニューで決めて App 起動時に適用し、rate の変更は App を再起動する。
 6. 性能: STD-T98 は 4 Msps で DSP thread が約 25–30 %(1 コア)。B210 の FPGA ロードは USB 2.0 で約 70 s。FZ-G2 は熱スロットリングが頻繁に起きる(79 °C)。損失に直結しないことは M-1 で確認したが、DSP 負荷の表示には注意する。
@@ -71,6 +72,7 @@
 - 位置・方位を前提にしない(2026-09-17、ADS-B)。可搬機で GPS も方位センサも無いため。地図の範囲は受信した機体の位置だけから決め(自動フィット)、地図データはリポジトリに同梱してバイナリに埋め込む(オフライン、パブリックドメインの Natural Earth + OurAirports)。
 - 高頻度の事象はフレームごとに Event にしない(ADS-B では新規機 / 初回位置 / 消失だけ。フレーム数は統計で出す)。イベントログが溢れるのを防ぐ。
 - SLPR(特定小電力)は STD-T98 と同じ骨格の App として追加し、squelch に attack(20 ms)を足した(2026-09-27、`docs/apps/slpr.md`)。4 Msps、LO = 422.1750 − 0.25 MHz、PFB 32 × 12.5 kHz(16 tap/branch。隣接の強い局が漏れて開かないようにするため)。復調も音声も 12.5 kHz のままで、リサンプルは PipeWire に任せる。全チャネルの音声が同じ歩みで出るのでミキサは加算だけでよい。attack は、1 ブロックだけの過渡(隣のキーアップ、インパルス雑音)で 150 ms の雑音を鳴らさないため(合成テストで隣接チャネルが 1 ブロックだけ開いたことから)。`ViewProcessor` が nfft より短いブロックを捨てていた不具合は、この App の 12.5 kHz の観測点で見つかり、溜める形に直した。
+- STD-T98 のフレームは同期の状態機械(SEARCH / TENTATIVE / LOCKED、フライホイール、3 フレームで喪失)と CRC だけで出し、squelch は電力の表示にだけ使う(2026-10-16、`docs/apps/std_t98.md`「フレーム同期」)。呼の区切りも同期の喪失で決める。弱い局の SACCH CRC OK が 9/20 の録音で 48 → 72。捕捉の確認に CRC だけは使わない(SACCH の CRC は 6 bit)。
 - STD-T98 のスケルチは床相対(全 ch 電力の中央値 + margin)にし、DSP は止めずに出力だけをゲートする(2026-09-21)。絶対 dB の閾値は AGC が効いていると床のすぐ上に乗って毎秒 30 回近く開閉し、閉で IQ を 0 にしていたのでシンボル同期が開くたびに引き込み直しになった(2026-09-20 の実地録音)。CRC が通ったフレームは閉でも出して開く(遠い局)。会場では AGC より手動ゲインの方が良いと見込んでいる(未検証)。
 - 受信系の golden には実録音を使う。合成の変調器は規格に無いパラメータの調整になるので作らない(STD-T98 で試して失敗した)。
 - 個体の設定は `~/spear/site.conf` に置く(例: `radio.freq_err_ppm=<ppm>`)。コードにも要件にも書かない。
