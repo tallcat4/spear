@@ -25,8 +25,7 @@ struct Receiver::Channel {
     std::deque<Frame> pending;            // 同期の状態機械が出す / 捨てるを決めるまでの復号済み候補(候補の順)
     uint64_t symbol_index = 0;            // 出力シンボルの通し番号
     uint64_t sample_index = 0;            // 62.5 kHz sample の通し番号(このチャネル)
-    bool open = false;
-    double closing_s = 0;                 // 閉じる閾値を下回り続けている時間(hold)
+    double unlocked_s = 1e9;              // 同期を失ってからの時間(活動の保持)
 };
 
 Receiver::Receiver(ReceiverConfig cfg) : cfg_(cfg) {
@@ -94,38 +93,16 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
     // 2) PFB
     for (auto& b : bins_) b.clear();
     pfb_->process(std::span<const cf32>(buf1_.data(), n1), bins_);
-    // 3a) 全チャネルのブロック電力と床(中央値)。床は全チャネル共通 — AGC のゲイン変化や広帯域雑音は全チャネルに同じだけ乗る
-    bool any = false;
-    for (int c = 0; c < cfg_.num_channels; ++c) {
-        const auto& bin = bins_[static_cast<std::size_t>(channel_to_bin(c))];
-        if (bin.empty()) continue;
-        double pw = 0;
-        for (auto x : bin) pw += std::norm(x);
-        metrics_[static_cast<std::size_t>(c)].power_db = 10.0 * std::log10(pw / static_cast<double>(bin.size()) + 1e-20);
-        any = true;
-    }
-    if (!any) return;
-    floor_tmp_.clear();
-    for (const auto& m : metrics_) floor_tmp_.push_back(m.power_db);
-    std::nth_element(floor_tmp_.begin(), floor_tmp_.begin() + static_cast<long>(floor_tmp_.size() / 2), floor_tmp_.end());
-    const double floor_db = floor_tmp_[floor_tmp_.size() / 2];
-    const double thr_open = floor_db + cfg_.squelch_margin_db, thr_close = thr_open - cfg_.squelch_hyst_db;
-    // 3b) チャネルごと
+    // 3) チャネルごと。復調・シンボル同期・フレーム同期は常に全チャネルで回す(止めたり 0 を入れたりしない)
     for (int c = 0; c < cfg_.num_channels; ++c) {
         auto& ch = *ch_[c];
         auto& m = metrics_[static_cast<std::size_t>(c)];
         const auto& bin = bins_[static_cast<std::size_t>(channel_to_bin(c))];
         if (bin.empty()) continue;
-        // squelch: 開くのは即時、閉じるのは hold_s の間 thr_close を下回り続けたとき(フェードや AGC の一瞬の落ち込みで切らない)
-        const double dt = static_cast<double>(bin.size()) / cfg_.spacing_hz;
-        if (m.power_db >= thr_open) { ch.open = true; ch.closing_s = 0; }
-        else if (ch.open && m.power_db < thr_close) { ch.closing_s += dt; if (ch.closing_s >= cfg_.squelch_hold_s) { ch.open = false; ch.closing_s = 0; } }
-        else ch.closing_s = 0;
-        m.open = ch.open;
-        m.floor_db = floor_db;
-        m.threshold_db = thr_open;
-        // 補間 ×10。以降の復調・シンボル同期・フレーム同期は squelch に関係なく回す(閉で 0 を入れると同期ループが凍り、開くたびに
-        // 再引き込みになる)。squelch は電力の表示(CARRIER)とアイの出力にだけ使う
+        double pw = 0;
+        for (auto x : bin) pw += std::norm(x);
+        m.power_db = 10.0 * std::log10(pw / static_cast<double>(bin.size()) + 1e-20);
+        // 補間 ×10
         ch.iq_up.resize(bin.size() * static_cast<std::size_t>(cfg_.resamp2) + 2);
         const std::size_t n2 = ch.up.process(bin, ch.iq_up);
         const uint64_t iq_first = ch.sample_index;
@@ -153,7 +130,7 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
         m.sps = ch.sync.period();
         // アイパターン: symbol sync の判定点 p を基準に [p − sps/2, p + 1.5 sps] の 2 シンボル幅を切り出す
         // (判定点がトレースの 1/4 と 3/4 に来る)。振幅はシンボルと同じ ±1/±3 スケール。履歴は常に進め、
-        // トレースを出すのは信号があるとき(同期中か squelch 開)だけ(バッファを捨てると出し始めに先頭が欠ける)
+        // トレースを出すのは活動中だけ(バッファを捨てると出し始めに先頭が欠ける)
         if (obs_.eye) {
             const double sps = ch.sync.period();
             if (ch.eye_buf.empty()) ch.eye_base = ch.eye_fed;
@@ -172,7 +149,7 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
                     const double mu = t - static_cast<double>(i0);
                     trace[static_cast<std::size_t>(k)] = (ch.eye_buf[i0] + static_cast<float>(mu) * (ch.eye_buf[i0 + 1] - ch.eye_buf[i0])) * cfg_.post_sync_gain;
                 }
-                if (ch.open || ch.corr.locked()) obs_.eye(c, trace);
+                if (m.active) obs_.eye(c, trace);
             }
             // 未処理の判定点より前は捨てる(4 シンボル分は残す)
             const double keep_from = (ch.eye_pending.empty() ? avail : ch.eye_pending.front()) - 2.0 * sps - 2.0;
@@ -188,7 +165,7 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
         ch.symbol_index += ns;
         for (std::size_t i = 0; i < ns; ++i) ch.pos_hist.emplace_back(sym_first + i, ch.sym_pos[i]);
         while (ch.pos_hist.size() > 600) ch.pos_hist.pop_front();
-        // フレームを出すかどうかは同期の状態機械と CRC だけで決める(squelch は関与しない、dsp/sync_correlator.hpp)。
+        // フレームを出すかどうかは同期の状態機械と CRC だけで決める(dsp/sync_correlator.hpp)。
         // 候補はここで復号して CRC を返し、出す / 捨てるの通知(候補の順)を待って出す
         auto on_candidate = [&](const SyncCandidate& cand) {
             const uint64_t sym_idx = cand.first_symbol_index;
@@ -230,6 +207,9 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
         };
         ch.corr.process(ch.syms, sym_first, on_candidate, on_resolve);
         m.locked = ch.corr.locked();
+        // 活動 = 同期中、または同期を失って active_hold_s 以内(アイは次のブロックから。1 ブロック = 数 ms)
+        ch.unlocked_s = m.locked ? 0 : ch.unlocked_s + static_cast<double>(bin.size()) / cfg_.spacing_hz;
+        m.active = ch.unlocked_s < cfg_.active_hold_s;
         m.locks = ch.corr.stats().locks;
         m.flywheel_frames = ch.corr.stats().flywheel;
         m.dropped_frames = ch.corr.stats().dropped;

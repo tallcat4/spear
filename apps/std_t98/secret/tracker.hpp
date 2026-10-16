@@ -36,7 +36,7 @@ public:
 
     // 秘話 TCH フレームを 1 つ受け取った。要求を出すべきなら true と request を返す(呼び出し側がワーカーへ渡す)
     bool on_secret_burst(const Burst& b, Request* request);
-    // 平文フレーム / 同期バースト / squelch 閉 → セッション終了(鍵は保持)
+    // 平文フレーム / 同期バースト / 同期喪失 → セッション終了(鍵は保持)
     void on_clear();
     // 探索結果。セッションが違えば無視
     void on_result(uint32_t session, uint16_t key);

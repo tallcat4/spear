@@ -19,23 +19,17 @@ Item {
     // 帯域中心・LO オフセットは規格と App が決める値なので操作キーは置かない(誤設定で受信できなくなる)。個体差は site.conf。
     readonly property var softKeys: [
         { label: "ALL CH AUDIO", action: "all", active: app.allChannelAudio },
-        { label: "SQUELCH", action: "sq" }, { label: "MUTE", action: "mute", active: app.mute },
-        null, null, null, { label: "DIAG", action: "diag" } ]
+        { label: "MUTE", action: "mute", active: app.mute },
+        null, null, null, null, { label: "DIAG", action: "diag" } ]
     function softKey(action) {
         switch (action) {
         case "all": app.allChannelAudio = !app.allChannelAudio; break
-        case "sq": ui.askLevel("SQUELCH  MARGIN ABOVE NOISE FLOOR", "dB", 0, 40, app.squelchMarginDb, (v) => app.squelchMarginDb = v); break
         case "diag": ui.showDiagnostics(); break
         case "mute": app.mute = !app.mute; break
         }
     }
-    // 緑 = フレーム同期中(呼がある。電力が squelch に届かない遠い局も)、琥珀 / シアン = 同期していない電力(squelch 開)
-    function chColor(c) {
-        if (c.locked) return Theme.green
-        if (c.syncs > 0 && c.open) return Theme.amber
-        if (c.open) return Theme.cyan
-        return Theme.gray
-    }
+    // チャネルの活動はフレーム同期(と CRC)だけで示す。緑 = 同期中(同期を失って 1 s 以内も含む)。電力は判定に使わない
+    function chColor(c) { return c.active ? Theme.green : Theme.gray }
     // チャネルマーカー(帯域中心からのオフセット)。選択 ch は琥珀
     readonly property var markers: {
         var m = []
@@ -75,15 +69,11 @@ Item {
                 color: selectedCh ? "#141414" : Theme.panel
                 border.color: selectedCh ? Theme.amber : Theme.line; border.width: selectedCh ? 2 : 1
                 Text { x: 8; y: 3; text: "CH " + modelData.ch; color: selectedCh ? Theme.amber : Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
-                Text { anchors.right: parent.right; anchors.rightMargin: 8; y: 5; text: modelData.open || modelData.locked ? modelData.power.toFixed(0) : ""; color: page.chColor(modelData); font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+                Text { anchors.right: parent.right; anchors.rightMargin: 8; y: 5; text: modelData.active ? "SYNC" : ""; color: Theme.green; font.family: Theme.mono; font.pixelSize: Theme.fsSmall; font.bold: true }
                 Text { x: 8; y: 24; text: modelData.csm.length ? "CSM " + modelData.csm : (modelData.freq / 1e6).toFixed(5) + " MHz"
                        color: modelData.csm.length ? Theme.textBright : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
-                // 電力バー(-100..-20 dB)。琥珀の目印は開く閾値 = 床(全 ch 中央値)+ 余裕。床が動けば目印も動く
-                Rectangle {
-                    x: 8; y: 44; width: parent.width - 16; height: 10; color: Theme.bg; border.color: Theme.lineDim; border.width: 1
-                    Rectangle { x: 1; y: 1; height: 8; width: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (modelData.power + 100) / 80))); color: page.chColor(modelData) }
-                    Rectangle { x: Math.round((parent.width - 2) * Math.max(0, Math.min(1, (modelData.threshold + 100) / 80))); y: -2; width: 2; height: 14; color: Theme.amber; opacity: 0.8; visible: modelData.threshold > -900 }
-                }
+                // 活動の帯(同期中は緑)。電力のバーは置かない(AGC で揺れて閾値の近くでちらつくため)
+                Rectangle { x: 8; y: 46; width: parent.width - 16; height: 6; color: page.chColor(modelData); opacity: modelData.active ? 1 : 0.25 }
                 MouseArea { anchors.fill: parent; onClicked: if (index !== app.selectedChannel) { Feedback.tap(); app.selectedChannel = index } }
             }
         }
@@ -124,21 +114,21 @@ Item {
                 Row {
                     spacing: 6
                     Rectangle {
-                        width: 130; height: 52; color: page.sel.locked ? Theme.green : page.sel.open ? Theme.cyan : Theme.gray
-                        Text { anchors.centerIn: parent; text: page.sel.locked ? "SYNC" : page.sel.open ? "CARRIER" : "IDLE"; color: "#000000"
+                        width: 130; height: 52; color: page.chColor(page.sel)
+                        Text { anchors.centerIn: parent; text: page.sel.active ? "SYNC" : "IDLE"; color: "#000000"
                                font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
                     }
                     Readout { label: "POWER"; value: page.sel.power > -900 ? page.sel.power.toFixed(1) + " dB" : "--"; width: 130; height: 52 }
                     Readout { label: "SYNC / BEST SSE"; value: page.sel.syncs + " / " + (page.sel.bestSse < 1e8 ? page.sel.bestSse.toFixed(2) : "--"); width: 200; height: 52 }
                     Readout { label: "SPS"; value: page.sel.sps > 0 ? page.sel.sps.toFixed(3) : "--"; width: 110; height: 52 }
-                    Readout { label: "FREQ ERR"; value: page.sel.open || page.sel.locked ? page.sel.freqErrEst.toFixed(0) + " Hz" : "--"; width: 130; height: 52 }
+                    Readout { label: "FREQ ERR"; value: page.sel.active ? page.sel.freqErrEst.toFixed(0) + " Hz" : "--"; width: 130; height: 52 }
                 }
                 Row {
                     spacing: 6
                     Readout { label: "FRAMES"; value: String(page.sel.frames); width: 110; height: 52; valueColor: Theme.green }
                     Readout { label: "SACCH OK"; value: String(page.sel.sacchOk); width: 120; height: 52 }
                     Readout { label: "PICH OK"; value: String(page.sel.pichOk); width: 110; height: 52 }
-                    Readout { label: "FLOOR / SQL"; value: page.sel.floor > -900 ? page.sel.floor.toFixed(0) + " / +" + app.squelchMarginDb.toFixed(0) + " dB" : "--"; width: 170; height: 52 }
+                    Readout { label: "LOCK / FLY / DROP"; value: page.sel.locks + " / " + page.sel.flywheel + " / " + page.sel.dropped; width: 170; height: 52 }
                     Readout { label: "CSM"; value: page.sel.csm.length ? page.sel.csm : "--"; width: 170; height: 52; valueColor: Theme.textBright }
                     Readout { label: "TOTAL / DROPS / DSP"; value: app.totalFrames.toFixed(0) + " / " + app.losslessDrops.toFixed(0) + " / " + (app.dspLoad * 100).toFixed(0) + "%"; width: 200; height: 52
                               valueColor: app.losslessDrops > 0 ? Theme.red : Theme.text }
