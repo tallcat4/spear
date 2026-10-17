@@ -1,4 +1,5 @@
 #include "cracker.hpp"
+#include "silence.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,7 @@ const char* to_string(ResultSource s) {
     case ResultSource::CurrentKey: return "current key verified";
     case ResultSource::GlobalCache: return "global cache hit";
     case ResultSource::FullSearch: return "full search hit";
+    case ResultSource::AnalyticSilence: return "analytic silence hit";
     }
     return "?";
 }
@@ -57,6 +59,13 @@ float Cracker::ffnn_margin(const Block& raw, uint16_t key) const {
 }
 
 Resolution Cracker::resolve(uint16_t current_key, std::span<const Burst> bursts, const std::atomic<bool>* cancel) {
+    if (cancel && cancel->load(std::memory_order_relaxed)) return {0, ResultSource::None, cache_};
+    if (const auto key = recover_silence_key(bursts, cancel)) {
+        if (*key == 0) return {0, ResultSource::None, cache_};
+        remember(*key);
+        return {*key, ResultSource::AnalyticSilence, cache_};
+    }
+    if (cancel && cancel->load(std::memory_order_relaxed)) return {0, ResultSource::None, cache_};
     const auto blocks = to_blocks(bursts);
     if (blocks.empty()) return {0, ResultSource::None, cache_};
 

@@ -1,7 +1,8 @@
 // 秘話鍵探索 — ../std-t98-tools/core/secret/cracker.py(SecretCracker)の移植。
 //
 // 入力: 直近の秘話 TCH フレーム(FEC 後・スクランブル解除前の 49 bit × 4)を 5 バースト = 1 ブロック(980 bit)にまとめたもの(最大 2 ブロック)。
-// 手順(Python と同じ順・同じ判定):
+// 手順(解析的な無音検出を先行し、不成立なら従来の Python と同じ探索):
+//   0. 無音の既知ビットから鍵を線形計算。異なる TCH 内位置で一致する鍵だけ採用
 //   1. 今の鍵(current_key)を ffnn で検証(平文票 > 0 なら採用)
 //   2. 全チャネル共通の鍵キャッシュ(直近 16、上位 2 つを検証)
 //   3. 全鍵探索: hybrid で「そもそも平文か」→ 全 32767 鍵を ffnn でふるう → 候補を hybrid で採点 → ブロック 2 で順位付け
@@ -22,7 +23,7 @@ namespace spear::std_t98::secret {
 
 inline constexpr int kBurstsPerBlock = 5;
 
-enum class ResultSource : uint8_t { None = 0, CurrentKey = 1, GlobalCache = 2, FullSearch = 3 };
+enum class ResultSource : uint8_t { None = 0, CurrentKey = 1, GlobalCache = 2, FullSearch = 3, AnalyticSilence = 4 };
 const char* to_string(ResultSource s);
 
 struct Resolution {

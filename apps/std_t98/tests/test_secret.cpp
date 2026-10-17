@@ -10,6 +10,7 @@
 #include "secret/ffnn.hpp"
 #include "secret/hybrid.hpp"
 #include "secret/models.hpp"
+#include "secret/silence.hpp"
 #include "secret/pn.hpp"
 #include "secret/tracker.hpp"
 #include "secret/worker.hpp"
@@ -111,6 +112,15 @@ Burst scramble(const Burst& b, uint16_t key) {
         for (int i = 0; i < kBitsPerFrame; ++i) out[static_cast<std::size_t>(f)][static_cast<std::size_t>(i)] ^= ks[static_cast<std::size_t>(i)];
     }
     return out;
+}
+Burst measured_silence_burst() {
+    Burst plain{};
+    const char* samples[] = {"deba0301a6e600", "9f9ac301a64500", "de9cc909b6e600", "df9ac201a64c00"};
+    for (int f = 0; f < 4; ++f) {
+        const auto bits = hex_to_bits(samples[f], 49);
+        std::copy(bits.begin(), bits.end(), plain[f].begin());
+    }
+    return plain;
 }
 // TSan では全鍵探索が約 25 倍遅い(0.6 s → 14 s)ので、E2E は先頭 2 ケースだけにして CI を伸ばさない(スレッドの検証は Worker のテストで足りる)
 #if defined(__SANITIZE_THREAD__)
@@ -219,6 +229,50 @@ TEST(StdT98Secret, HybridLogitsMatchTorch) {
 
 // ---------------------------------------------------------------- 鍵探索 E2E
 
+TEST(StdT98Secret, AnalyticSilenceBypassesModelsAndUpdatesCache) {
+    // No models loaded: the analytical path must not depend on NN inference.
+    Ffnn ffnn;
+    Hybrid hybrid;
+    Cracker cracker(ffnn, hybrid);
+    const auto plain = measured_silence_burst();
+    const auto encrypted = scramble(plain, 12345);
+    const auto result = cracker.resolve(777, std::array<Burst, 1>{encrypted});
+    EXPECT_EQ(result.key, 12345);
+    EXPECT_EQ(result.source, ResultSource::AnalyticSilence);
+    EXPECT_STREQ(to_string(result.source), "analytic silence hit");
+    EXPECT_EQ(result.cache, (std::vector<uint16_t>{12345}));
+    const auto clear = cracker.resolve(12345, std::array<Burst, 1>{plain});
+    EXPECT_EQ(clear.key, 0);
+    EXPECT_EQ(clear.source, ResultSource::None);
+    EXPECT_EQ(clear.cache, result.cache);
+    const std::atomic<bool> cancel{true};
+    EXPECT_EQ(cracker.resolve(0, std::array<Burst, 1>{encrypted}, &cancel).key, 0);
+    EXPECT_EQ(cracker.cache(), result.cache);
+}
+
+TEST(StdT98Secret, NonSilenceStillUsesCurrentKeyVerification) {
+    Ffnn ffnn;
+    Hybrid hybrid;
+    std::string err;
+    ASSERT_TRUE(ffnn.load_embedded(&err)) << err;
+    ASSERT_TRUE(hybrid.load_embedded(&err)) << err;
+    Cracker cracker(ffnn, hybrid);
+    // DMR background silence is valid AMBE but outside the default-mode
+    // analytical profile. Keep the existing classifier/cache path usable.
+    Burst plain{};
+    const auto bits = hex_to_bits("f74ad80926b400", 49);
+    for (auto& f : plain) std::copy(bits.begin(), bits.end(), f.begin());
+    const std::vector<Burst> bursts(5, scramble(plain, 12345));
+    ASSERT_FALSE(recover_silence_key(bursts));
+    ASSERT_GT(cracker.ffnn_margin(Cracker::to_blocks(bursts)[0], 12345), 0.f);
+    const auto result = cracker.resolve(12345, bursts);
+    EXPECT_EQ(result.key, 12345);
+    EXPECT_EQ(result.source, ResultSource::CurrentKey);
+    const auto cached = cracker.resolve(0, bursts);
+    EXPECT_EQ(cached.key, 12345);
+    EXPECT_EQ(cached.source, ResultSource::GlobalCache);
+}
+
 TEST(StdT98Secret, CrackerRecoversKeyFromScrambledRealSpeech) {
     const Golden g = load_golden();
     const auto real = load_real_bursts();
@@ -240,7 +294,11 @@ TEST(StdT98Secret, CrackerRecoversKeyFromScrambledRealSpeech) {
         const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         std::printf("crack key=%5d bursts=%2d current=%5d -> %5u (%s) %.2f s  [python: %d src %d]\n", c.key, c.bursts, c.current, r.key, to_string(r.source), dt, c.resolved, c.source);
         EXPECT_EQ(r.key, c.resolved) << "key " << c.key;
-        EXPECT_EQ(static_cast<int>(r.source), c.source) << "key " << c.key;
+        // A silence hit may now bypass the legacy path; key identity must
+        // still match the independent Python golden in every case.
+        if (r.source != ResultSource::AnalyticSilence) {
+            EXPECT_EQ(static_cast<int>(r.source), c.source) << "key " << c.key;
+        }
     }
 }
 
@@ -324,6 +382,26 @@ TEST(StdT98Secret, WorkerStopsCleanlyDuringSearch) {
     EXPECT_LT(std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), 5.0);
 }
 
+TEST(StdT98Secret, WorkerReturnsAnalyticResultWithoutExternalGolden) {
+    std::mutex mu;
+    std::condition_variable cv;
+    std::vector<Worker::Result> results;
+    Worker w([&](const Worker::Result& r) { std::lock_guard<std::mutex> lk(mu); results.push_back(r); cv.notify_all(); });
+    w.wait_ready();
+    ASSERT_TRUE(w.status().ready) << w.status().error;
+    Worker::Request rq;
+    rq.channel = 2; rq.session = 7;
+    rq.bursts.assign(5, scramble(measured_silence_burst(), 31337));
+    w.submit(rq);
+    std::unique_lock<std::mutex> lk(mu);
+    ASSERT_TRUE(cv.wait_for(lk, std::chrono::seconds(10), [&] { return !results.empty(); }));
+    EXPECT_EQ(results[0].channel, 2);
+    EXPECT_EQ(results[0].session, 7u);
+    EXPECT_EQ(results[0].key, 31337);
+    EXPECT_EQ(results[0].source, ResultSource::AnalyticSilence);
+    std::printf("worker: analytic silence %.6f s\n", results[0].seconds);
+}
+
 TEST(StdT98Secret, WorkerResolvesSubmittedRequestOnItsOwnThread) {
     const auto real = load_real_bursts();
     if (real.size() < 5) GTEST_SKIP() << "payloads not present";
@@ -342,6 +420,6 @@ TEST(StdT98Secret, WorkerResolvesSubmittedRequestOnItsOwnThread) {
     EXPECT_EQ(results[0].channel, 2);
     EXPECT_EQ(results[0].session, 7u);
     EXPECT_EQ(results[0].key, 31337);
-    EXPECT_EQ(results[0].source, ResultSource::FullSearch);
-    std::printf("worker: full search %.2f s\n", results[0].seconds);
+    EXPECT_TRUE(results[0].source == ResultSource::FullSearch || results[0].source == ResultSource::AnalyticSilence);
+    std::printf("worker: %s %.2f s\n", to_string(results[0].source), results[0].seconds);
 }

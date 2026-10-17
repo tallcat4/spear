@@ -135,7 +135,7 @@ Item {
                 }
                 Row {
                     spacing: 6
-                    // 秘話: 呼の状態と鍵。鍵は探索器(ffnn 全鍵 → hybrid)が見つけた値、呼をまたいで保持される
+                    // 秘話: 呼の状態と鍵。無音の解析またはモデルによる探索で見つけ、呼をまたいで保持する
                     Readout { label: "SECRET"; width: 214; height: 52
                               value: !page.sel.secret ? (page.sel.key > 0 ? "clear  (last K " + page.sel.key + ")" : "clear")
                                      : (page.sel.key > 0 ? "KEY " + page.sel.key + (page.sel.secretStatus === "searching" ? "  ..." : "")
