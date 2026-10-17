@@ -1,0 +1,45 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "experiments",
+      "displayName": "All experimental features (B210)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-experiments",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "SPEAR_BUILD_GUI": "ON",
+        "SPEAR_BUILD_TOOLS": "ON",
+        "SPEAR_BUILD_TESTS": "ON",
+        "SPEAR_WITH_UHD": "ON",
+        "SPEAR_TSAN": "OFF"
+      }
+    },
+    {
+      "name": "experiments-no-hardware",
+      "displayName": "All experimental features (recordings and synthetic source)",
+      "inherits": "experiments",
+      "binaryDir": "${sourceDir}/build-experiments-nohw",
+      "cacheVariables": { "SPEAR_WITH_UHD": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "experiments", "configurePreset": "experiments" },
+    { "name": "experiments-no-hardware", "configurePreset": "experiments-no-hardware" }
+  ],
+  "testPresets": [
+    {
+      "name": "experiments",
+      "configurePreset": "experiments",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 4, "noTestsAction": "error" }
+    },
+    {
+      "name": "experiments-no-hardware",
+      "configurePreset": "experiments-no-hardware",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 4, "noTestsAction": "error" }
+    }
+  ]
+}

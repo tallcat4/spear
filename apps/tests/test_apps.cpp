@@ -14,6 +14,7 @@
 #include <QCoreApplication>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <thread>
@@ -34,12 +35,16 @@ struct Rig {
 };
 } // namespace
 
-TEST(Apps, RegistryListsSpectrumAndRecorder) {
+TEST(Apps, RegistryListsAllIntegratedApps) {
     const auto& apps = appfw::registered_apps();
     ASSERT_GE(apps.size(), 2u);
     EXPECT_EQ(apps[0].info.id, "spectrum");
     EXPECT_EQ(apps[1].info.id, "recorder");
     EXPECT_NE(apps[0].info.page_url.find("SpectrumPage.qml"), std::string::npos);
+    // 統合した試験機能も既存 App と同じ GUI のメニューに 1 回ずつ登録されること。
+    for (const auto* id : {"spectrum", "recorder", "demod", "std_t98", "adsb", "slpr", "jr_train"}) {
+        EXPECT_EQ(std::count_if(apps.begin(), apps.end(), [id](const auto& e) { return e.info.id == id; }), 1) << id;
+    }
 }
 
 // 受信端子はシェルの草案で決まり、App はそのまま Core へ宣言する。center / rate を自分で決める App(DEMOD / STD-T98 / ADS-B)も

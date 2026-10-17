@@ -8,7 +8,7 @@
 
 FZ-G2(タブレット、タッチ操作のみ)+ USRP B210 上で動く SDR の基盤。C++20 / Qt 6 / UHD。
 構成要素は RF バックエンド、フレームワーク(Stream Bus、provenance、App SDK、観測点)、再利用部品(DSP、Widgets、入力)で、
-その上に App(SPECTRUM / IQ RECORDER / FM-AM RX / STD-T98 MONITOR / ADS-B / SLPR 20CH RX)が載る。
+その上に App(SPECTRUM / IQ RECORDER / FM-AM RX / STD-T98 MONITOR / ADS-B / SLPR 20CH RX / JR TRAIN RADIO)が載る。
 App を作り終えたら、基盤に足りなかった点を `docs/apps/<id>.md` に記録し、基盤に反映する。
 要件は `docs/requirements.md`(v5.0、コード中の §番号はこの文書の節)。
 
@@ -29,6 +29,39 @@ ctest --test-dir build -j4                            # 全テスト(ハード�
 ```
 
 ハードウェアなしの CI 一式: `scripts/ci.sh`(UHD OFF + TSan)。ヘッドレス実行: `build/tools/spear-headless`、`spear-std-t98-decode`。
+
+### 全試験機能の統合ビルド
+
+`integration/all-experiments` は `feat/std-t98-analytic-key-recovery` (STD-T98 の無音による鍵復元) と
+`feature/jr-train` (JR TRAIN RADIO) を統合したブランチ。既存の App と合わせて 1 つの GUI に組み込む。
+2026-10-17 に origin の全ブランチを取得して統合対象を確認した。
+
+**統合版は未テスト (2026-10-17)**。統合後の全体ビルド・一括テスト・GUI 起動・B210 実機試験は未実施。
+無音による鍵復元は統合前に単体・探索器・ワーカーのテストを実施したが、統合版の動作保証ではない。
+実機での検証用に公開している。
+
+対象機では通常の依存パッケージとパッチ済み libuhd を入れ、次で全機能をビルド・一括テストする。
+
+```sh
+cmake --preset experiments
+cmake --build --preset experiments -j4
+ctest --preset experiments
+./build-experiments/gui/spear-gui --source b210
+```
+
+B210 を使わず試す場合も GUI と全 App を含める。Qt 6.6 以上などの依存は必要。
+
+```sh
+cmake --preset experiments-no-hardware
+cmake --build --preset experiments-no-hardware -j4
+ctest --preset experiments-no-hardware
+./build-experiments-nohw/gui/spear-gui --source synthetic --set audio_device=null
+```
+
+メニューから STD-T98 MONITOR と JR TRAIN RADIO の両方を選べる。STD-T98 の解析経路は Event の
+`analytic silence hit` で確認する。JR の受信・音声合成テストと STD-T98 の鍵解析テストは同じ CTest 実行に含まれる。
+実録音の golden がないテストはスキップされるため、一括テスト成功だけで実電波での動作確認済みとはしない。
+`spear.sh` は従来の `build/` を起動するため、上の preset の成果物は表示したパスで直接起動する。
 
 ## 規約
 
