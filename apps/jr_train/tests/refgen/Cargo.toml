@@ -1,0 +1,20 @@
+# 参照ベクトル生成器(開発用。CMake の対象外 — docs/apps/jr_train.md「参照ベクトル」)。
+# 原本の Rust 実装(jr-conventional-line-radio-receiver)を spear と並べて置いた前提: ../jr-conventional-line-radio-receiver
+#   src/main.rs        DSP + フレーム同期(tests/vectors/)
+#   src/bin/voice.rs   音声合成(tests/vectors/voice/)
+#   src/bin/protocol.rs フレーム復号・データ電文・パイプライン(tests/vectors/protocol/)
+[package]
+name = "jr-train-refgen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+default-run = "jr-train-refgen"
+
+[dependencies]
+jr_conventional_dsp = { path = "../../../../../jr-conventional-line-radio-receiver/crates/jr-conventional-dsp" }
+jr_conventional_voice = { path = "../../../../../jr-conventional-line-radio-receiver/crates/jr-voice" }
+receiver-core = { path = "../../../../../jr-conventional-line-radio-receiver/crates/receiver-core", default-features = false }
+serde_json = "1"
+encoding_rs = "0.8"
+
+[workspace]

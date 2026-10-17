@@ -12,3 +12,6 @@ target_link_libraries(spear-std-t98-decode PRIVATE spear_std_t98_rx spear_core s
 
 add_executable(spear-adsb-decode adsb_decode/main.cpp)
 target_link_libraries(spear-adsb-decode PRIVATE spear_adsb_rx spear_core spear_dsp)
+
+add_executable(spear-jr-train-decode jr_train_decode/main.cpp)
+target_link_libraries(spear-jr-train-decode PRIVATE spear_jr_train_rx spear_core spear_dsp)

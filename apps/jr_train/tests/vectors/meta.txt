@@ -1,0 +1,10 @@
+# jr_train 参照ベクトル(tests/refgen が生成。手で編集しない)
+rate 240000
+center 352603125
+samples 288000
+block 4096
+channel 0 352537500 1
+channel 1 352600000 1
+channel 2 352625000 1
+channel 3 352643750 0
+channel 4 352668750 1

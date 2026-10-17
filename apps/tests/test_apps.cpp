@@ -1,8 +1,10 @@
 // App SDK の検証: 各 App が SyntheticSource 上で start → 出力 → stop できること。
 #include "spear/appfw/app.hpp"
+#include "spear/core/sigmf.hpp"
 #include "spear/core/synthetic_source.hpp"
 #include "adsb_app.hpp"
 #include "demod_app.hpp"
+#include "jr_train_app.hpp"
 #include "recorder_app.hpp"
 #include "slpr_app.hpp"
 #include "spectrum_app.hpp"
@@ -292,4 +294,55 @@ TEST(Apps, SlprReceivesOneChannelOnSynthetic) {
     core.stop_app();
     EXPECT_FALSE(app->running());
     EXPECT_EQ(core.rx().consumer_count(), 0u) << "stop 後に consumer が残ってはならない";
+}
+
+TEST(Apps, JrTrainLifecycleAndRecordingOnSynthetic) {
+    // 22 波受信機を合成源(無変調トーンと雑音)で start → 観測点が動く → 録音 → stop。
+    // 実信号の検証は apps/jr_train/tests(原本の Rust 実装と同じ結果になること)
+    Core core(".");
+    SyntheticSignal sig; sig.tones = {{352.6e6 - (352.603125e6 - 250e3), 0.05}};   // 352.6 MHz(D4 V2)の位置。LO は帯域中心 − 250 kHz
+    sig.noise_amplitude = 0.002;
+    core.set_source(std::make_unique<SyntheticSource>(&core.events(), sig));
+    auto app = std::make_shared<apps::JrTrainApp>(appfw::AppInfo{"jr_train", "JR TRAIN RADIO", "", Direction::RX, ""});
+    const auto dir = std::filesystem::temp_directory_path() / "spear_jr_train_test";
+    std::filesystem::remove_all(dir);
+    QVariantMap settings; settings["jr_train.preset"] = "east"; settings["record_dir"] = QString::fromStdString(dir.string()); settings["audio_device"] = "null";
+    app->configure(settings);
+    RfConfig c; c.center_freq = 100e6; c.sample_rate = 1e6;   // App が 1.92 MS/s / 帯域中心 − 250 kHz に上書きする
+    app->set_rf_config(c);
+    ASSERT_TRUE(core.run_app(app));
+    EXPECT_DOUBLE_EQ(core.source().config().sample_rate, 1.92e6);
+    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 352.603125e6 - 250e3);
+    EXPECT_EQ(app->numChannels(), 22);
+    app->toggleRecording();
+    EXPECT_TRUE(app->recording()) << app->recordError().toStdString();
+    std::this_thread::sleep_for(1000ms);
+    app->toggleRecording();
+    EXPECT_FALSE(app->recording());
+    EXPECT_GT(app->recordSeconds(), 0.3);
+    EXPECT_TRUE(std::filesystem::exists(sigmf::data_path(app->recordPath().toStdString())));
+    // 復号結果の保存: 開始 → 停止で session.json / result.json ができ、INCOMPLETE が消える(音声は無いので WAV は 0)
+    app->toggleSaving();
+    EXPECT_TRUE(app->saving());
+    std::this_thread::sleep_for(300ms);
+    app->toggleSaving();
+    EXPECT_FALSE(app->saving());
+    const auto save = app->saveStatus();
+    EXPECT_EQ(save["state"].toString().toStdString(), "completed") << save["error"].toString().toStdString();
+    const std::filesystem::path save_dir = save["directory"].toString().toStdString();
+    EXPECT_TRUE(std::filesystem::exists(save_dir / "session.json"));
+    EXPECT_TRUE(std::filesystem::exists(save_dir / "result.json"));
+    EXPECT_FALSE(std::filesystem::exists(save_dir / "INCOMPLETE"));
+    EXPECT_EQ(app->monitoredChannel(), app->selectedChannel()) << "通話が無ければ選択中のチャネルを聴く";
+    EXPECT_TRUE(app->activeCalls().isEmpty());
+    ASSERT_NE(app->bandView()->processor(), nullptr);
+    EXPECT_GT(app->bandView()->processor()->rows_written(), 3u) << "帯域の観測点(jr_train.band)が流れていること";
+    const auto chans = app->channels();
+    ASSERT_EQ(chans.size(), 22);
+    for (const auto& ch : chans) EXPECT_FALSE(ch.toMap()["active"].toBool()) << "無変調トーンでフレーム同期してはならない";
+    EXPECT_EQ(app->losslessDrops(), 0.0);
+    core.stop_app();
+    EXPECT_FALSE(app->running());
+    EXPECT_EQ(core.rx().consumer_count(), 0u) << "stop 後に consumer が残ってはならない";
+    std::filesystem::remove_all(dir);
 }
