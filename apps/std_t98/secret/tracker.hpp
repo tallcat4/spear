@@ -2,7 +2,7 @@
 //
 // 秘話フレーム(SACCH call_stat = 1)が続く間を 1 セッションとし、FEC 後のバーストを窓に溜めて鍵探索の要求を出す:
 //   * 窓が min_window(5)に達したら最初の要求(直近 5 バースト)
-//   * 以後は recheck_interval(10)バーストごと、窓が max_window(10)に満ちているときに再確認(直近 10 バースト)
+//   * 以後は recheck_interval(既定 5)バーストごと、窓が max_window(10)に満ちているときに再確認(直近 10 バースト)
 //   * 要求は 1 チャネルに同時 1 つ。結果はセッション番号が一致するときだけ採用し、鍵 > 0 なら現在鍵を更新
 // 現在鍵はセッションをまたいで保持する(同じ相手はたいてい同じ鍵。次の呼でまず「今の鍵」を検証する)。
 // 純ロジック(スレッド・時刻・I/O なし)。App が DSP thread 上で 1 チャネル 1 インスタンス持つ。
@@ -21,7 +21,7 @@ const char* to_string(TrackerStatus s);
 struct TrackerConfig {
     int min_window = 5;
     int max_window = 10;
-    int recheck_interval = 10;
+    int recheck_interval = 5;  // 軽量なソルバー単独評価では短い PTT 中にも再確認する
 };
 
 class Tracker {

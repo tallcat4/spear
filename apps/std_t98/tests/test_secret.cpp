@@ -5,6 +5,8 @@
 //   4) 要求ポリシー(Tracker)と Worker
 // モデルはバイナリに埋め込み。golden(~/spear/golden/std_t98、SPEAR_GOLDEN_DIR)は音声由来でリポジトリ外、無ければ skip。
 #include "ambe.hpp"
+#include "receiver.hpp"
+#include "spear/core/sigmf.hpp"
 #include "ambe/bits.hpp"
 #include "secret/cracker.hpp"
 #include "secret/ffnn.hpp"
@@ -250,17 +252,33 @@ TEST(StdT98Secret, AnalyticSilenceBypassesModelsAndUpdatesCache) {
     EXPECT_EQ(cracker.cache(), result.cache);
 }
 
+TEST(StdT98Secret, SolverOnlyRejectsNonSilenceEvenWithCurrentAndCachedKey) {
+    Ffnn ffnn;
+    Hybrid hybrid;
+    Cracker cracker(ffnn, hybrid);
+    ASSERT_EQ(cracker.resolve(0, std::array<Burst, 1>{scramble(measured_silence_burst(), 12345)}).key, 12345);
+    Burst plain{};
+    const auto bits = hex_to_bits("deba0381a6e600", 49);
+    for (auto& f : plain) std::copy(bits.begin(), bits.end(), f.begin());
+    const std::vector<Burst> bursts(5, scramble(plain, 12345));
+    ASSERT_FALSE(recover_silence_key(bursts));
+    for (const uint16_t current : {uint16_t{0}, uint16_t{12345}}) {
+        const auto result = cracker.resolve(current, bursts);
+        EXPECT_EQ(result.key, 0);
+        EXPECT_EQ(result.source, ResultSource::None);
+    }
+}
+
 TEST(StdT98Secret, NonSilenceStillUsesCurrentKeyVerification) {
     Ffnn ffnn;
     Hybrid hybrid;
     std::string err;
     ASSERT_TRUE(ffnn.load_embedded(&err)) << err;
     ASSERT_TRUE(hybrid.load_embedded(&err)) << err;
-    Cracker cracker(ffnn, hybrid);
-    // DMR background silence is valid AMBE but outside the default-mode
-    // analytical profile. Keep the existing classifier/cache path usable.
+    Cracker cracker(ffnn, hybrid, {.ai_fallback = true});
+    // 非ゼロゲインの通常フレームは解析対象外。AI 明示指定の経路も維持する。
     Burst plain{};
-    const auto bits = hex_to_bits("f74ad80926b400", 49);
+    const auto bits = hex_to_bits("deba0381a6e600", 49);
     for (auto& f : plain) std::copy(bits.begin(), bits.end(), f.begin());
     const std::vector<Burst> bursts(5, scramble(plain, 12345));
     ASSERT_FALSE(recover_silence_key(bursts));
@@ -282,7 +300,7 @@ TEST(StdT98Secret, CrackerRecoversKeyFromScrambledRealSpeech) {
     std::string err;
     ASSERT_TRUE(ffnn.load_embedded(&err)) << err;
     ASSERT_TRUE(hybrid.load_embedded(&err)) << err;
-    Cracker cracker(ffnn, hybrid);
+    Cracker cracker(ffnn, hybrid, {.ai_fallback = true});
     std::size_t n = 0;
     for (const auto& c : g.crack) {
         if (n++ >= kMaxCrackCases) break;
@@ -305,7 +323,7 @@ TEST(StdT98Secret, CrackerRecoversKeyFromScrambledRealSpeech) {
 // ---------------------------------------------------------------- ポリシー / ワーカー
 
 TEST(StdT98Secret, TrackerRequestsAt5ThenEvery10WithFullWindow) {
-    Tracker t;
+    Tracker t({.recheck_interval = 10});
     Burst b{};
     Tracker::Request rq;
     EXPECT_EQ(t.status(), TrackerStatus::Idle);
@@ -342,7 +360,7 @@ TEST(StdT98Secret, TrackerRequestsAt5ThenEvery10WithFullWindow) {
 }
 
 TEST(StdT98Secret, TrackerMissWithoutKeyIsReported) {
-    Tracker t;
+    Tracker t({.recheck_interval = 10});
     Burst b{};
     Tracker::Request rq;
     for (int i = 0; i < 5; ++i) t.on_secret_burst(b, &rq);
@@ -419,7 +437,71 @@ TEST(StdT98Secret, WorkerResolvesSubmittedRequestOnItsOwnThread) {
     ASSERT_TRUE(cv.wait_for(lk, std::chrono::seconds(60), [&] { return !results.empty(); }));
     EXPECT_EQ(results[0].channel, 2);
     EXPECT_EQ(results[0].session, 7u);
-    EXPECT_EQ(results[0].key, 31337);
-    EXPECT_TRUE(results[0].source == ResultSource::FullSearch || results[0].source == ResultSource::AnalyticSilence);
+    const auto expected = recover_silence_key(rq.bursts);
+    EXPECT_EQ(results[0].key, expected.value_or(0));
+    EXPECT_EQ(results[0].source, expected && *expected ? ResultSource::AnalyticSilence : ResultSource::None);
     std::printf("worker: %s %.2f s\n", to_string(results[0].source), results[0].seconds);
+}
+
+// 実録音はリポジトリ外。3 回の PTT をそれぞれ鍵なしから復元する。
+TEST(StdT98Secret, RecordedThreePttRecovers32767UsingSolverOnly) {
+    const char* path = std::getenv("SPEAR_STD_T98_SECRET_IQ");
+    const char* home = std::getenv("HOME");
+    const std::string base = path ? path : std::string(home ? home : "") + "/spear/recordings/rec_20261021_035250";
+    spear::sigmf::Meta meta;
+    std::string err;
+    if (!spear::sigmf::read(base, meta, &err)) GTEST_SKIP() << "secret IQ recording not present: " << base;
+    ASSERT_EQ(meta.sample_rate, 4000000);
+    ReceiverConfig cfg;
+    cfg.in_rate = meta.sample_rate; cfg.pfb_channels = 64; cfg.freq_err_hz = 250000;
+    Receiver rx(cfg);
+    Ffnn ffnn;
+    Hybrid hybrid;
+    Cracker cracker(ffnn, hybrid);  // AI モデルはロードしない
+    Tracker tracker;
+    int calls = 0, recovered = 0;
+    bool secret_call = false, have_call = false, resolved = false;
+    uint64_t last_sym = 0;
+    Observer obs;
+    obs.frame = [&](const Frame& f) {
+        if (f.channel != 8) return;
+        if (f.rich.f == 0 || (last_sym && f.symbol_index > last_sym + 4*192)) {
+            tracker = Tracker(); secret_call = false; have_call = false; resolved = false;
+            cracker.clear_cache();
+        }
+        last_sym = f.symbol_index;
+        if (f.rich.f != 1 || f.tch_payload.size() != 36) return;
+        if (f.sacch.crc_ok) secret_call = f.sacch.call_stat == 1;
+        if (!secret_call) return;
+        if (!have_call) { ++calls; have_call = true; }
+        Burst burst{};
+        for (int phase = 0; phase < 4; ++phase)
+            burst[phase] = unpack_frame49(fec_soft_3600_to_2450(std::span<const int8_t,72>(f.tch_llr.data()+phase*72,72)));
+        Tracker::Request request;
+        if (!tracker.on_secret_burst(burst, &request)) return;
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto result = cracker.resolve(request.current_key, request.bursts);
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();
+        EXPECT_TRUE(result.key == 0 || result.key == 32767);
+        if (result.key) {
+            EXPECT_EQ(result.source, ResultSource::AnalyticSilence);
+            if (!resolved) { ++recovered; resolved = true; }
+            std::printf("PTT %d: solver key=%u at symbol=%llu, %.6f s\n", calls, result.key, static_cast<unsigned long long>(f.symbol_index), seconds);
+        }
+        tracker.on_result(request.session, result.key);
+    };
+    rx.set_observer(obs);
+    std::ifstream input(spear::sigmf::data_path(base), std::ios::binary);
+    ASSERT_TRUE(input.good());
+    std::vector<spear::sc16> raw(65536);
+    std::vector<spear::cf32> iq(raw.size());
+    uint64_t index = 0;
+    while (input.read(reinterpret_cast<char*>(raw.data()), static_cast<std::streamsize>(raw.size()*sizeof(spear::sc16))) || input.gcount()>0) {
+        const auto n = static_cast<std::size_t>(input.gcount()) / sizeof(spear::sc16);
+        for (std::size_t i = 0; i < n; ++i) iq[i] = spear::cf32(raw[i].real()/32768.f, raw[i].imag()/32768.f);
+        rx.process(std::span<const spear::cf32>(iq.data(), n), index);
+        index += n;
+    }
+    EXPECT_EQ(calls, 3);
+    EXPECT_EQ(recovered, 3);
 }

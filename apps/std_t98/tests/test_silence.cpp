@@ -106,7 +106,7 @@ TEST(StdT98Silence, UnsupportedModesAndInvalidInputsAbstain) {
     EXPECT_FALSE(silence_key_candidate(frame(kMeasured[0]), 4));
     auto invalid = frame(kMeasured[0]); invalid[0] = 2;
     EXPECT_FALSE(silence_key_candidate(invalid, 0));
-    // DMR silence, background mode, and the chip's two startup frames.
+    // 背景雑音は 1 バーストだけでは証拠不足。起動直後の非対応フレームも棄却。
     for (auto hex : {"f74ad80926b400", "f74ac1432ea100", "cd4ac301b6e600", "8d4ac009a64d00"}) {
         Burst b{};
         for (int phase = 0; phase < 4; ++phase)
@@ -125,4 +125,34 @@ TEST(StdT98Silence, RandomNonSilenceDoesNotProduceConfirmedKeys) {
             bit = static_cast<uint8_t>(rng() & 1u);
         EXPECT_FALSE(recover_silence_key(window)) << "trial " << trial;
     }
+}
+
+TEST(StdT98Silence, BackgroundRecoversAllKeysWithoutGainOrSpectrumAssumptions) {
+    for (uint32_t key = 0; key <= kMaxKey; ++key) {
+        std::array<Burst, 2> window{};
+        for (int bi = 0; bi < 2; ++bi) for (int phase = 0; phase < 4; ++phase)
+            window[bi][phase] = encrypt(frame((bi+phase)%2 ? "f74ad80926b400" : "f74ac1432ea100"), pn_sequence(static_cast<uint16_t>(key)), phase);
+        ASSERT_EQ(recover_silence_key(window), key);
+    }
+}
+
+TEST(StdT98Silence, BackgroundRequiresCorroborationAndRejectsAmbiguity) {
+    auto background = [](uint16_t key) {
+        Burst b{};
+        for (int phase = 0; phase < 4; ++phase)
+            b[phase] = encrypt(frame("f74ac1432ea100"), pn_sequence(key), phase);
+        return b;
+    };
+    const auto a = background(12345), b = background(777), clear = background(0);
+    EXPECT_FALSE(recover_silence_key(std::array<Burst,1>{a}));
+    EXPECT_EQ(recover_silence_key(std::array{a,a}), 12345);
+    EXPECT_FALSE(recover_silence_key(std::array{a,a,b,b}));
+    EXPECT_FALSE(recover_silence_key(std::array{a,a,clear,clear}));
+    EXPECT_FALSE(recover_silence_key(std::array{a,a,two_silences(777,0,1)}));
+    auto partial = a;
+    partial[2] = {}; partial[3] = {};
+    EXPECT_FALSE(recover_silence_key(std::array{partial,partial,partial}));
+    auto damaged = a;
+    damaged[0][0] ^= 1;
+    EXPECT_EQ(recover_silence_key(std::array{damaged,a}), 12345);
 }

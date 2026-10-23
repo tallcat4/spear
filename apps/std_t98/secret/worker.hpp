@@ -1,4 +1,4 @@
-// 鍵探索ワーカー — 専用スレッド 1 本でモデルをロードし、要求を順に Cracker で解く(DSP thread では走らせない)。
+// 鍵探索ワーカー — 専用スレッド 1 本で要求を順に Cracker で解く(DSP thread では走らせない)。
 // tools では別プロセス(std_t98_multi_secret_service.py)+ UDS だったものを、単一プロセス内のキュー + コールバックにした(要件 §2.5)。
 // 要求は同じチャネルの未処理分を置き換える(古い窓を解いても意味がない)。結果コールバックはワーカースレッド上で呼ばれる。
 #pragma once
@@ -34,11 +34,11 @@ public:
         std::vector<uint16_t> cache;     // 全チャネル共通のキャッシュ(新しい順)
     };
     struct Status {
-        bool ready = false;              // 両モデルがロードでき、要求を受け付けられる
-        std::string error;               // ロード失敗の理由(ready = false のとき。埋め込みモデルなので通常は起きない)
+        bool ready = false;              // 初期化でき、要求を受け付けられる
+        std::string error;               // 初期化失敗の理由(ready = false のとき)
         uint64_t requests = 0, results = 0, queued = 0;
     };
-    // 埋め込みモデル(secret/models.hpp)をワーカースレッド上でロードする。
+    // 既定はソルバー単独。AI 有効時のみ埋め込みモデルをロードする。
     explicit Worker(std::function<void(const Result&)> on_result, std::function<void(const std::string&)> on_log = {});
     ~Worker();
     Worker(const Worker&) = delete;
@@ -46,7 +46,7 @@ public:
 
     void submit(Request r);
     Status status() const;
-    void wait_ready() const;   // テスト用: モデルのロード完了(成否どちらでも)まで待つ
+    void wait_ready() const;   // テスト用: 初期化完了(成否どちらでも)まで待つ
 
 private:
     void run();

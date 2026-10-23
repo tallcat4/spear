@@ -2,8 +2,8 @@
 //   spear-std-t98-decode <base> [--sync-ratio 0.2] [--sync-locked-ratio 0.6] [--sync-max-misses 3] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base] [--hard] [--llr base] [--no-secret]
 //   --freq-err: 入力を回して帯域中心を DC へ戻す量。App の録音(LO = 帯域中心 − 250 kHz)なら 250000(+ そのファイル固有の残留誤差)
 // 出力: チャネルごとの電力/同期/フレーム統計、フレーム内容、推定周波数誤差。
-// 秘話呼(SACCH call=1)は GUI と同じポリシー(5 バーストで最初の探索、10 バーストごとに再確認)で鍵を同期的に探索し、以後のフレームを
-//   復号する(埋め込みモデル)。--no-secret で探索を止める。
+// 秘話呼(SACCH call=1)は GUI と同じポリシー(5 バーストで最初の探索、5 バーストごとに再確認)で鍵を同期的に探索し、以後のフレームを
+//   復号する(既定はソルバーのみ)。--no-secret で探索を止める。
 //   AMBE の FEC は軟判定(App と同じ)。--hard で 9 byte の硬判定に戻す(比較用)。--llr base でチャネルごとの LLR 列(golden 用)を書く。
 #include "ambe.hpp"
 #include "receiver.hpp"
@@ -66,13 +66,13 @@ int main(int argc, char** argv) {
     const double band_center = (meta.captures.empty() ? 0.0 : meta.captures[0].frequency) + cfg.freq_err_hz;
     std::printf("rate=%.0f pfb=%d post1=%.0f center=%.6f MHz freq_err=%+.1f Hz (band center %.6f MHz)\n", rate, cfg.pfb_channels, cfg.pfb_channels * cfg.spacing_hz,
                 meta.captures.empty() ? 0.0 : meta.captures[0].frequency / 1e6, cfg.freq_err_hz, band_center / 1e6);
-    // 秘話の鍵探索(同期、埋め込みモデル)。--no-secret なら秘話呼はスクランブルのまま
+    // 秘話の鍵探索(同期、既定はソルバーのみ)。--no-secret なら秘話呼はスクランブルのまま
     secret::Ffnn ffnn;
     secret::Hybrid hybrid;
     std::unique_ptr<secret::Cracker> cracker;
     if (!flag(argc, argv, "--no-secret")) {
         std::string e;
-        if (!ffnn.load_embedded(&e) || !hybrid.load_embedded(&e)) { std::fprintf(stderr, "secret: %s\n", e.c_str()); return 1; }
+        if (secret::Cracker::Config().ai_fallback && (!ffnn.load_embedded(&e) || !hybrid.load_embedded(&e))) { std::fprintf(stderr, "secret: %s\n", e.c_str()); return 1; }
         cracker = std::make_unique<secret::Cracker>(ffnn, hybrid);
     }
     struct SecretCh { secret::Tracker tracker; bool call_secret = false; uint16_t pn_key = 0; secret::Pn196 pn{}; };

@@ -19,6 +19,7 @@ const char* to_string(ResultSource s) {
 }
 
 Cracker::Cracker(const Ffnn& ffnn, const Hybrid& hybrid, Config cfg) : ffnn_(ffnn), hybrid_(hybrid), cfg_(cfg) {
+    if (!cfg_.ai_fallback) return;  // ソルバーだけなら全鍵の PN 表も不要
     pnm_.resize(static_cast<std::size_t>(kMaxKey) * kPnBits);
     for (uint32_t key = 1; key <= kMaxKey; ++key) {
         const Pn196 pn = pn_sequence(static_cast<uint16_t>(key));
@@ -42,7 +43,15 @@ std::vector<Cracker::Block> Cracker::to_blocks(std::span<const Burst> bursts) {
 }
 
 void Cracker::descramble(const Block& raw, uint16_t key, uint8_t out[kInputDim]) const {
-    const uint8_t* row = key ? &pnm_[static_cast<std::size_t>(key - 1) * kPnBits] : nullptr;
+    std::array<uint8_t, kPnBits> mapped{};
+    if (key && pnm_.empty()) {
+        const auto pn = pn_sequence(key);
+        for (int phase = 0; phase < kFramesPerBurst; ++phase) {
+            const auto ks = keystream_thumbdv(pn, phase);
+            std::copy(ks.begin(), ks.end(), mapped.begin() + phase*kBitsPerFrame);
+        }
+    }
+    const uint8_t* row = !key ? nullptr : pnm_.empty() ? mapped.data() : &pnm_[static_cast<std::size_t>(key - 1) * kPnBits];
     for (int fr = 0; fr < kFramesPerBlock; ++fr) {
         const uint8_t* src = raw[static_cast<std::size_t>(fr)].data();
         uint8_t* dst = out + fr * kBitsPerFrame;
@@ -66,6 +75,7 @@ Resolution Cracker::resolve(uint16_t current_key, std::span<const Burst> bursts,
         return {*key, ResultSource::AnalyticSilence, cache_};
     }
     if (cancel && cancel->load(std::memory_order_relaxed)) return {0, ResultSource::None, cache_};
+    if (!cfg_.ai_fallback) return {0, ResultSource::None, cache_};
     const auto blocks = to_blocks(bursts);
     if (blocks.empty()) return {0, ResultSource::None, cache_};
 

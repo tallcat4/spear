@@ -1,7 +1,7 @@
 // 秘話鍵探索 — ../std-t98-tools/core/secret/cracker.py(SecretCracker)の移植。
 //
 // 入力: 直近の秘話 TCH フレーム(FEC 後・スクランブル解除前の 49 bit × 4)を 5 バースト = 1 ブロック(980 bit)にまとめたもの(最大 2 ブロック)。
-// 手順(解析的な無音検出を先行し、不成立なら従来の Python と同じ探索):
+// 手順(既定は 0 のみ。ai_fallback=true の場合は不成立時に 1〜3 も行う):
 //   0. 無音の既知ビットから鍵を線形計算。異なる TCH 内位置で一致する鍵だけ採用
 //   1. 今の鍵(current_key)を ffnn で検証(平文票 > 0 なら採用)
 //   2. 全チャネル共通の鍵キャッシュ(直近 16、上位 2 つを検証)
@@ -33,6 +33,7 @@ struct Resolution {
 };
 
 struct CrackerConfig {
+    bool ai_fallback = false;  // ソルバー単独の性能評価中。従来の AI 探索は明示指定時のみ
     int global_cache_limit = 16;
     int cache_verify_limit = 2;
     int hybrid_batch = 512;
@@ -41,7 +42,7 @@ struct CrackerConfig {
 class Cracker {
 public:
     using Config = CrackerConfig;
-    Cracker(const Ffnn& ffnn, const Hybrid& hybrid, Config cfg = Config());   // 両モデルともロード済みであること
+    Cracker(const Ffnn& ffnn, const Hybrid& hybrid, Config cfg = Config());   // ai_fallback=true の場合のみ両モデルのロードが必要
     // cancel が true になったら全鍵探索を打ち切って「見つからず」を返す(App 停止時にワーカーを待たせない)
     Resolution resolve(uint16_t current_key, std::span<const Burst> bursts, const std::atomic<bool>* cancel = nullptr);
     const std::vector<uint16_t>& cache() const { return cache_; }

@@ -72,6 +72,96 @@ bool matches_silence(const ambe::Bits49& d) {
            one_of(field(d, {34,47,48}), {1,3,5,7});
 }
 
+// 背景雑音 (b0=124, b1=16) はゲイン・スペクトルが変動する。
+// 1 枚の既知 12 bit では鍵を確定できないため、異なる位置の 2 枚で解く。
+constexpr std::array<int, 12> kBackgroundPositions = {0,1,2,3,37,38,39,4,5,6,7,35};
+constexpr std::array<uint8_t, 12> kBackgroundPlain = {1,1,1,1,1,0,0,1,0,0,0,0};
+struct BackgroundSolver {
+    std::array<Row, 15> basis{};
+    std::array<uint16_t, 24> equations{};
+};
+constexpr auto make_background_solvers() {
+    std::array<uint16_t, kPnBits> pn{};
+    for (int i = 0; i < 15; ++i) pn[i] = static_cast<uint16_t>(1u << i);
+    for (int i = 15; i < kPnBits; ++i) pn[i] = pn[i-15] ^ pn[i-14];
+    std::array<std::array<BackgroundSolver, 4>, 4> out{};
+    for (int a = 0; a < 4; ++a) for (int b = a+1; b < 4; ++b) {
+        auto& s = out[a][b];
+        for (int i = 0; i < 24; ++i) {
+            s.equations[i] = pn[(i < 12 ? a : b)*49 + kBackgroundPositions[i%12]];
+            Row r{s.equations[i], uint32_t{1} << i};
+            for (int bit = 14; bit >= 0; --bit) {
+                if (!(r.coefficients & (1u << bit))) continue;
+                if (!s.basis[bit].coefficients) { s.basis[bit] = r; break; }
+                r.coefficients ^= s.basis[bit].coefficients;
+                r.observations ^= s.basis[bit].observations;
+            }
+        }
+    }
+    return out;
+}
+constexpr auto kBackgroundSolvers = make_background_solvers();
+static_assert([] {
+    for (int a = 0; a < 4; ++a) for (int b = a+1; b < 4; ++b)
+        for (const auto& row : kBackgroundSolvers[a][b].basis)
+            if (!row.coefficients) return false;
+    return true;
+}(), "Background constraints must have rank 15 for every phase pair");
+
+struct BackgroundResult { std::optional<uint16_t> key; bool ambiguous = false; };
+BackgroundResult recover_background_key(std::span<const Burst> bursts, const std::atomic<bool>* cancel) {
+    struct Observation { uint32_t bits; int phase; std::size_t burst; };
+    std::vector<Observation> observations;
+    for (std::size_t bi = 0; bi < bursts.size(); ++bi) for (int phase = 0; phase < 4; ++phase) {
+        const auto& f = bursts[bi][phase];
+        if (std::any_of(f.begin(), f.end(), [](uint8_t bit) { return bit > 1; })) continue;
+        ambe::Bits49 d{};
+        for (int i = 0; i < 49; ++i) d[ambe::kThumbDv[i]] = f[i];
+        uint32_t bits = 0;
+        for (int i = 0; i < 12; ++i)
+            bits |= static_cast<uint32_t>(d[kBackgroundPositions[i]] ^ kBackgroundPlain[i]) << i;
+        observations.push_back({bits, phase, bi});
+    }
+    std::vector<uint16_t> candidates;
+    for (const auto& a : observations) for (const auto& b : observations) {
+        if (a.phase >= b.phase) continue;
+        if (cancel && cancel->load(std::memory_order_relaxed)) return {};
+        const auto& s = kBackgroundSolvers[a.phase][b.phase];
+        const uint32_t bits = a.bits | (b.bits << 12);
+        uint16_t key = 0;
+        for (int bit = 0; bit < 15; ++bit) {
+            const auto& r = s.basis[bit];
+            if ((std::popcount(r.observations & bits) ^ std::popcount(static_cast<unsigned>(r.coefficients & key))) & 1)
+                key |= static_cast<uint16_t>(1u << bit);
+        }
+        bool valid = true;
+        for (int i = 0; i < 24; ++i)
+            if ((std::popcount(static_cast<unsigned>(s.equations[i] & key)) & 1) != static_cast<int>((bits >> i) & 1u)) { valid = false; break; }
+        if (valid) candidates.push_back(key);
+    }
+    std::sort(candidates.begin(), candidates.end());
+    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    BackgroundResult result;
+    for (const auto key : candidates) {
+        const auto pn = pn_sequence(key);
+        std::array<uint32_t, 4> expected{};
+        for (int phase = 0; phase < 4; ++phase) for (int i = 0; i < 12; ++i)
+            expected[phase] |= static_cast<uint32_t>(pn[phase*49 + kBackgroundPositions[i]]) << i;
+        std::array<unsigned, 4> phase_votes{};
+        std::size_t votes = 0, burst_count = 0, last_burst = bursts.size();
+        for (const auto& o : observations) if (o.bits == expected[o.phase]) {
+            ++votes; ++phase_votes[o.phase];
+            if (o.burst != last_burst) { ++burst_count; last_burst = o.burst; }
+        }
+        // ペアだけでは偶然一致する。3 位置で各 2 枚・2 バースト以上で裏付ける。
+        const auto supported_phases = std::count_if(phase_votes.begin(), phase_votes.end(), [](unsigned count) { return count >= 2; });
+        if (votes < 6 || supported_phases < 3 || burst_count < 2) continue;
+        if (result.key) return {std::nullopt, true};
+        result.key = key;
+    }
+    return result;
+}
+
 } // namespace
 
 std::optional<uint16_t> silence_key_candidate(const Frame49& frame, int phase) {
@@ -121,7 +211,10 @@ std::optional<uint16_t> recover_silence_key(std::span<const Burst> bursts, const
         if (result) return std::nullopt;   // conflicting supported keys, including plaintext
         result = e.key;
     }
-    return result;
+    const auto background = recover_background_key(bursts, cancel);
+    if (cancel && cancel->load(std::memory_order_relaxed)) return std::nullopt;
+    if (background.ambiguous || (result && background.key && result != background.key)) return std::nullopt;
+    return result ? result : background.key;
 }
 
 } // namespace spear::std_t98::secret

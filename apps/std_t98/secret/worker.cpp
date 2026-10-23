@@ -46,9 +46,10 @@ void Worker::run() {
     Ffnn ffnn;
     Hybrid hybrid;
     std::string err;
-    const bool ok = ffnn.load_embedded(&err) && hybrid.load_embedded(&err);
+    const Cracker::Config cfg;
+    const bool ok = !cfg.ai_fallback || (ffnn.load_embedded(&err) && hybrid.load_embedded(&err));
     std::unique_ptr<Cracker> cracker;
-    if (ok) cracker = std::make_unique<Cracker>(ffnn, hybrid);
+    if (ok) cracker = std::make_unique<Cracker>(ffnn, hybrid, cfg);
     {
         std::lock_guard<std::mutex> lk(mu_);
         st_.ready = ok;
@@ -57,7 +58,7 @@ void Worker::run() {
         if (!ok) queue_.clear();
     }
     cv_.notify_all();
-    if (on_log_) on_log_(ok ? std::string("secret: models ready (ffnn C++, hybrid onnxruntime)") : "secret disabled: " + err);
+    if (on_log_) on_log_(ok ? std::string(cfg.ai_fallback ? "secret: AI fallback enabled" : "secret: solver only (AI fallback disabled)") : "secret disabled: " + err);
     if (!ok) return;
 
     // ---- 要求ループ ----
