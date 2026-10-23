@@ -8,7 +8,7 @@
 //   --decode-out: 原本の `jr-receiver decode-wave` と同じ形式(チャネル ID ごとに audio.wav / data.jsonl / messages.json、
 //                 全体の report.json)。原本の出力と diff で比べられる
 //   --save:       GUI の保存と同じ形式(recording-…/ に WAV・raw-frames.jsonl・data-messages.jsonl)
-//   --frames-dir: チャネル・連続区間ごとに frames.bin(48 byte/フレーム)+ indices.txt(原本の `decode-frames` の入力)
+//   --frames-dir: チャネル・連続区間ごとに frames.bin(48 byte/フレーム)+ indices.txt(原本の `decode-frames` の入力)+ samples.txt(各フレームの radio.rx sample index(概算)と音声の訂正ビット数、不合格は -1)
 //   --export-wav: 回転・間引き後の帯域 IQ(work_rate、ステレオ float32、左 I・右 Q)。原本の `decode-wave` に渡せる
 #include "presets.hpp"
 #include "receiver.hpp"
@@ -86,7 +86,7 @@ private:
 
 // 原本 decode-frames の入力(1 チャネル・1 連続区間)。bit_offset が 384 の倍数で進む間は同じ区間
 struct FrameStream {
-    std::ofstream bin, idx;
+    std::ofstream bin, idx, smp;   // smp: フレームの radio.rx sample index(FrameTiming。概算 ±数シンボル)
     uint64_t epoch = 0, origin = 0, last = 0;
     int segment = -1;
     bool open = false;
@@ -324,6 +324,7 @@ int main(int argc, char** argv) {
             if (!cont) {
                 s.bin.close();
                 s.idx.close();
+                s.smp.close();
                 ++s.segment;
                 char name[64];
                 std::snprintf(name, sizeof name, "%sHz-%02d", cfg.channels[c].id.c_str(), s.segment);
@@ -331,6 +332,7 @@ int main(int argc, char** argv) {
                 std::filesystem::create_directories(dir);
                 s.bin.open(dir / "frames.bin", std::ios::binary);
                 s.idx.open(dir / "indices.txt");
+                s.smp.open(dir / "samples.txt");
                 std::ofstream(dir / "format.txt") << protocol::to_string(cfg.channels[c].format) << "\n";
                 s.epoch = ev.epoch;
                 s.origin = ev.frame.bit_offset;
@@ -339,6 +341,8 @@ int main(int argc, char** argv) {
             s.last = ev.frame.bit_offset;
             s.bin.write(reinterpret_cast<const char*>(ev.frame.received.data()), static_cast<std::streamsize>(ev.frame.received.size()));
             s.idx << (ev.frame.bit_offset - s.origin) / protocol::kFrameBits << "\n";
+            // sample index と音声の誤り訂正の結果(訂正したビット数。音声フレームとして通らなければ -1)
+            s.smp << t.input_sample_index << " " << (ev.corrected_bits ? static_cast<int>(*ev.corrected_bits) : -1) << "\n";
         }
         message_counts[c] += ev.messages.size();
         if (quiet) return;
