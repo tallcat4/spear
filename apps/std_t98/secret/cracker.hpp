@@ -34,6 +34,7 @@ struct Resolution {
 
 struct CrackerConfig {
     bool ai_fallback = false;  // ソルバー単独の性能評価中。従来の AI 探索は明示指定時のみ
+    bool analytic = true;  // 比較計測時だけ false にして AI 単独経路を測る
     int global_cache_limit = 16;
     int cache_verify_limit = 2;
     int hybrid_batch = 512;

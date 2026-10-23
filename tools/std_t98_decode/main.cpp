@@ -37,7 +37,7 @@ bool flag(int argc, char** argv, const char* key) {   // 値を取らないオ�
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) { std::puts("usage: spear-std-t98-decode <sigmf base> [--sync-ratio r] [--sync-locked-ratio r] [--sync-max-misses n] [--freq-err Hz] [--pfb N] [--dump-ch N --dump-file f [--dump-filtered]] [--log f] [--payloads f] [--wav base] [--hard] [--llr base] [--no-secret] [--quiet]"); return 1; }
+    if (argc < 2) { std::puts("usage: spear-std-t98-decode <sigmf base> [--sync-ratio r] [--sync-locked-ratio r] [--sync-max-misses n] [--freq-err Hz] [--pfb N] [--dump-ch N --dump-file f [--dump-filtered]] [--log f] [--payloads f] [--raw2450 f] [--wav base] [--hard] [--llr base] [--no-secret] [--quiet]"); return 1; }
     const std::string base = argv[1];
     sigmf::Meta meta;
     std::string err;
@@ -62,6 +62,8 @@ int main(int argc, char** argv) {
     const char* wav_base = arg(argc, argv, "--wav", nullptr);
     // --payloads f: トラフィックフレームの TCH ペイロード(4 × 9 byte)を "ch sym hex" で 1 行ずつ(golden 生成用)
     std::FILE* payloads = arg(argc, argv, "--payloads", nullptr) ? std::fopen(arg(argc, argv, "--payloads", ""), "w") : nullptr;
+    // --raw2450 f: ソルバー入力の FEC 後・秘話解除前 49 bit を保存する。
+    std::ofstream raw2450(arg(argc, argv, "--raw2450", "/dev/null"));
     // チャネルの表示周波数: 録音中心 + freq_err(回転で DC に持ってきた周波数 = 帯域中心)+ チャネルオフセット
     const double band_center = (meta.captures.empty() ? 0.0 : meta.captures[0].frequency) + cfg.freq_err_hz;
     std::printf("rate=%.0f pfb=%d post1=%.0f center=%.6f MHz freq_err=%+.1f Hz (band center %.6f MHz)\n", rate, cfg.pfb_channels, cfg.pfb_channels * cfg.spacing_hz,
@@ -112,6 +114,14 @@ int main(int argc, char** argv) {
             auto block = [&](int k) { return std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9); };
             auto llr = [&](int k) { return std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72); };
             for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(hard ? fec_demod_3600_to_2450(block(k)) : fec_soft_3600_to_2450(llr(k)));
+            raw2450 << f.channel << ' ' << f.symbol_index;
+            for (const auto& frame : raw) {
+                const auto packed = secret::pack_frame49(frame);
+                char hex[15]{};
+                for (std::size_t i = 0; i < packed.size(); ++i) std::snprintf(hex + 2 * i, 3, "%02x", packed[i]);
+                raw2450 << ' ' << hex;
+            }
+            raw2450 << '\n';
             if (wav_base) {
                 auto& v = voice[f.channel];
                 // 欠落フレーム(192 シンボル間隔でない)は無音で埋めて時間軸を保つ

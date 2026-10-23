@@ -69,7 +69,7 @@ float Cracker::ffnn_margin(const Block& raw, uint16_t key) const {
 
 Resolution Cracker::resolve(uint16_t current_key, std::span<const Burst> bursts, const std::atomic<bool>* cancel) {
     if (cancel && cancel->load(std::memory_order_relaxed)) return {0, ResultSource::None, cache_};
-    if (const auto key = recover_silence_key(bursts, cancel)) {
+    if (const auto key = cfg_.analytic ? recover_silence_key(bursts, cancel) : std::nullopt) {
         if (*key == 0) return {0, ResultSource::None, cache_};
         remember(*key);
         return {*key, ResultSource::AnalyticSilence, cache_};
