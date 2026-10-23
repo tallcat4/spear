@@ -63,6 +63,10 @@ class SystemModel : public QObject {
     Q_PROPERTY(bool loLocked READ loLocked NOTIFY changed)
     Q_PROPERTY(double rxTemp READ rxTemp NOTIFY changed)
     Q_PROPERTY(double rssi READ rssi NOTIFY changed)
+    // AD9361 が今かけている受信ゲイン [dB](AGC 中は AGC の値)。RxGain event(AGC 中に変化のたび、最大 10 回/s)から。
+    // valid = 受信中かつ読めている(パッチ済み libuhd)。changed(250 ms)とは別の信号で、変化に即応する
+    Q_PROPERTY(bool rxGainValid READ rxGainValid NOTIFY rxGainChanged)
+    Q_PROPERTY(double rxGain READ rxGain NOTIFY rxGainChanged)
     Q_PROPERTY(double driftPpm READ driftPpm NOTIFY changed)
     Q_PROPERTY(double driftUncertaintyPpm READ driftUncertaintyPpm NOTIFY changed)
     // ---- 受信統計(event 集計)----
@@ -116,6 +120,8 @@ public:
     bool loLocked() const { return ds_.sensors.lo_locked; }
     double rxTemp() const { return ds_.sensors.rx_temp_c; }
     double rssi() const { return ds_.sensors.rssi_db; }
+    bool rxGainValid() const { return live_gain_valid_; }
+    double rxGain() const { return live_gain_db_; }
     double driftPpm() const { return ds_.sensors.drift_ppm; }
     double driftUncertaintyPpm() const { return ds_.sensors.drift_uncertainty_ppm; }
     int overflowCount() const { return static_cast<int>(core_.events().count(EventKind::Overflow)); }
@@ -146,12 +152,16 @@ public:
 
 Q_SIGNALS:
     void changed();
+    void rxGainChanged();
     void eventArrived(int severity, const QString& kind, const QString& detail);
 
 protected:
     void timerEvent(QTimerEvent*) override;
 
 private:
+    bool live_gain_valid_ = false;
+    double live_gain_db_ = 0;
+    bool was_streaming_ = false;
     Core& core_;
     DeviceStatus ds_;
     bool warming_ = false;

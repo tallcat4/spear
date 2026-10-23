@@ -36,6 +36,8 @@
 * `SpectrumView` の `markers`(多チャネルのマーカー列)と `compact`(読み出し行なし・軸ラベル間引き)。
 * AGC 表示: 数値は残し白線の X + 中央の白箱に黒字 `AGC SLOW` / `AGC FAST`(「AGC が gain をオーバーライドしている」が読める)。
   入力パネルは dB のほか `AGC SLOW` / `AGC FAST` キー。
+* 受信ゲインはステータスバーの右端(App 名・時計の左、幅固定)に常時: 手動は枠に `GAIN 50 dB`、AGC は白箱に黒字 `AGC SLOW` / `AGC FAST` と
+  AD9361 が今かけている実際のゲイン(RxGain event で即時更新。受信していない・パッチ前の libuhd では `-- dB`)。
 * DIAG のイベント行は 1 行固定(複数行の detail は ` | ` で畳む)。
 
 ## 検証

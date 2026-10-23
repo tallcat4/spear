@@ -40,6 +40,7 @@ struct B210SourceOptions {
     double   probe_period_s = 0.5;      // device 不在時の probe 周期(副作用なし)
     double   fault_retry_s = 5.0;       // Fault 状態からの再試行間隔
     double   sensor_period_s = 1.0;     // 受信中のセンサ監視周期(lo_locked / temp / rssi / time drift)
+    double   agc_gain_period_s = 0.1;   // AGC 中に実際の受信ゲインを読む周期。変わったら RxGain event(rssi と同じ経路で転送を止めない)
     // 注: 受信中に FX3 状態レジスタを周期的に読むことはしない。EP0 ベンダ要求はバルク転送を
     // 約 13 ms 止める(USB 2.0 で実測、= 毎回 overflow)。受信中の一次ソースはデータ経路そのもので、
     // レジスタは遷移時と異常時(recv timeout)にのみ読んで原因を分類する。

@@ -16,8 +16,8 @@ pkgname=(
   libuhd-utils
 )
 pkgver=4.9.0.1
-pkgrel=8.2
-pkgdesc="Universal Software Radio Peripheral (USRP) userspace driver (spear: usb release() no-throw, b2xx probe/fx3_state)"
+pkgrel=8.3
+pkgdesc="Universal Software Radio Peripheral (USRP) userspace driver (spear: usb release() no-throw, b2xx probe/fx3_state, ad9361 rx gain readback)"
 arch=(x86_64)
 url="https://github.com/EttusResearch/uhd"
 license=(GPL-3.0-or-later)
@@ -36,8 +36,10 @@ source=(
   "git+$url.git#tag=v$pkgver"
   0001-usb-do-not-throw-from-buffer-release.patch
   0002-b2xx-public-probe-and-fx3-state.patch
+  0003-ad9361-rx-gain-readback-sensors.patch
 )
 sha256sums=('74830b4ceffc05173cf21073bf25a8e32458a91bf083f634d349ad1593d86bf8'
+            'SKIP'
             'SKIP'
             'SKIP')
 
@@ -48,6 +50,7 @@ prepare() {
   git clean -fdq
   patch -Np1 -i "$srcdir/0001-usb-do-not-throw-from-buffer-release.patch"
   patch -Np1 -i "$srcdir/0002-b2xx-public-probe-and-fx3-state.patch"
+  patch -Np1 -i "$srcdir/0003-ad9361-rx-gain-readback-sensors.patch"
 }
 
 build() {

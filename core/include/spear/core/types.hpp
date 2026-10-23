@@ -142,6 +142,11 @@ struct LiveSensors {
     bool   ref_locked = false;     // external/gpsdo のときのみ意味を持つ
     double rx_temp_c = 0;          // AD9361 温度
     double rssi_db = 0;
+    // AD9361 が今かけている受信ゲイン(AGC 中は AGC が選んだ値)。gain = full gain table の index(UHD の RX gain [dB] と同じ尺度)、
+    // digital = デジタルゲイン [dB]。パッチ済み libuhd の rx sensor "gain" / "digital_gain"(packaging/libuhd 0003)。無ければ rx_gain_valid = false
+    bool   rx_gain_valid = false;
+    double rx_gain_db = 0;
+    double rx_digital_gain_db = 0;
     double hw_time_s = 0;          // get_time_now
     uint64_t host_ns = 0;
     double drift_ppm = 0;          // 時刻基準からの hw clock vs host monotonic の乖離 (§3.4 精度推定)

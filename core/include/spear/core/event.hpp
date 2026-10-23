@@ -39,6 +39,7 @@ enum class EventKind : uint8_t {
     UhdLog,             // UHD 自身のログ(warning 以上、または B200 の info)。detail = message
     TimeReference,      // 時刻基準の記録 (§3.4)。range.generation/begin = 対応点, value = utc_ns, detail = "hw=<s> mono=<ns>"
     LoUnlock,           // 受信中に lo_locked が false になった / 復帰した(value: 0=unlock, 1=relock)
+    RxGain,             // AD9361 が実際にかけている受信ゲインが変わった(AGC 中)。value = gain [dB], detail = "gain=<dB> digital=<dB> agc=<mode>"
     // App
     Info,
     Warning,

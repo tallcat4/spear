@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -68,6 +69,9 @@ struct Meta {
     std::string time_accuracy  = "TCXO ~2ppm, no GPSDO"; // §3.4: 推定精度
     double      lo_correction_ppm = 0;   // 録音時に Radio が LO 側で打ち消した個体誤差 [ppm](provenance。0 なら書かない)
     std::string rx_port;                 // 受信に使った装置の端子(TRXA / RXA / RXB / TRXB。provenance。空なら書かない)
+    // 受信ゲインの設定(provenance)。手動なら rx_gain_db、AGC なら agc に方式("slow" / "fast")。AGC 中の実際の値は sidecar の rx_gain event
+    double      rx_gain_db = std::numeric_limits<double>::quiet_NaN();
+    std::string agc;
     std::vector<Capture>       captures;
     std::vector<Discontinuity> discontinuities;
     std::vector<Tuning>        tuning;

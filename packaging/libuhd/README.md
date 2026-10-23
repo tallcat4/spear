@@ -13,6 +13,10 @@ device object の破棄すらできず、`uhd::device::make` は死んだ object
 `uhd/usrp/b2xx_probe.hpp` の `uhd::usrp::b2xx::probe()`(副作用なしの列挙 + FX3 状態レジスタ)と、
 open 中の device 用 property `/mboards/0/fx3_state` / `fx3_state_code`。
 
+`0003-ad9361-rx-gain-readback-sensors.patch` は AD9361 が今かけている受信ゲインを読む rx sensor `gain`(full gain table の
+index = UHD の RX gain と同じ尺度)と `digital_gain` を足す。`get_rx_gain()` は最後に設定した値を返すだけで、AGC 中に AGC が選んだ値は
+UHD から見えないため(spear の Radio が AGC 中のゲインを RxGain event に残す。無ければ読まないだけで動作は変わらない)。
+
 upstream には送らない(このプロジェクト固有の運用とする)。
 
 ## 2 つのプロファイル
@@ -29,7 +33,7 @@ upstream には送らない(このプロジェクト固有の運用とする)。
 ```
 cd packaging/libuhd
 makepkg -s            # 20〜40 分 (i5-10310U)
-sudo pacman -U libuhd-4.9.0.1-8.2-x86_64.pkg.tar.zst libuhd-utils-4.9.0.1-8.2-x86_64.pkg.tar.zst
+sudo pacman -U libuhd-4.9.0.1-8.3-x86_64.pkg.tar.zst libuhd-utils-4.9.0.1-8.3-x86_64.pkg.tar.zst
 ```
 
 `/etc/pacman.conf` に `IgnorePkg = libuhd libuhd-utils` を追加し、公式更新で上書きされないようにする。

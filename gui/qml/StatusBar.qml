@@ -15,8 +15,31 @@ Rectangle {
         text: (sys.activeApp.length ? sys.activeApp + "   " : "") + sys.clock
         color: Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsBase
     }
+    // 受信ゲイン(右上に常時)。手動 = 枠に「GAIN 50 dB」。AGC = 白箱に黒字「AGC SLOW / FAST」で明示し、横に AD9361 が今かけている
+    // 実際のゲイン(RxGain event。受信していない・読めない(パッチ前の libuhd)ときは「-- dB」)。幅は固定(値で他の欄が動かない)
+    Rectangle {
+        id: gainBlock
+        anchors.right: rightText.left; anchors.rightMargin: Theme.pad; anchors.verticalCenter: parent.verticalCenter
+        width: 250; height: Theme.statusBarH - 8
+        color: "transparent"; border.color: sys.agc ? Theme.textBright : Theme.line; border.width: 1
+        Rectangle {
+            id: gainMode
+            anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+            width: 118; color: sys.agc ? Theme.textBright : "transparent"
+            Text { anchors.centerIn: parent
+                   text: sys.agc ? (sys.agcMode === "fast" ? "AGC FAST" : "AGC SLOW") : "GAIN"
+                   color: sys.agc ? Theme.invertText : Theme.textDim
+                   font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: sys.agc }
+        }
+        Text {
+            anchors.left: gainMode.right; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            horizontalAlignment: Text.AlignHCenter
+            text: (sys.agc ? (sys.rxGainValid ? sys.rxGain.toFixed(0) : "--") : sys.gain.toFixed(0)) + " dB"
+            color: Theme.textBright; font.family: Theme.mono; font.pixelSize: Theme.fsLarge; font.bold: true
+        }
+    }
     Item {
-        anchors.left: parent.left; anchors.right: rightText.left; anchors.rightMargin: Theme.pad; height: parent.height
+        anchors.left: parent.left; anchors.right: gainBlock.left; anchors.rightMargin: Theme.pad; height: parent.height
         clip: true
     Row {
         anchors.verticalCenter: parent.verticalCenter
@@ -37,7 +60,6 @@ Rectangle {
         Sep {}
         Cell { text: Theme.fmtFreq(sys.centerFreq); bright: true }
         Cell { text: Theme.fmtRate(sys.sampleRate) }
-        Cell { text: sys.agc ? "AGC" : "G" + sys.gain.toFixed(0) }
         Cell { text: sys.port }   // 受信端子。運転中にどの端子で受けているかを常時見せる(端子の LED と一致するはず)
         Sep {}
         Cell { text: "OVF " + sys.overflowCount; warn: sys.overflowCount > 0 }

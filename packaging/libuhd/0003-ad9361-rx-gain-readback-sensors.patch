@@ -1,0 +1,135 @@
+From: spear <tallcat1021@gmail.com>
+Subject: [PATCH] ad9361: read back the RX gain the chip applies (also under AGC)
+
+multi_usrp::get_rx_gain() only returns the value last written by
+set_rx_gain(); with the AD9361 AGC enabled it does not change, so the gain
+the AGC actually chose cannot be observed through UHD.
+
+Add two RX frontend sensors on ad936x devices (B2xx):
+  sensors/gain          full gain table index now applied (Reg 0x2B0 / 0x2B5
+                        bits <6:0>), the same scale as the RX gain value
+  sensors/digital_gain  digital gain now applied [dB] (Reg 0x2B2 / 0x2B7
+                        bits <4:0>)
+Register definitions: Analog Devices no-OS ad9361.h (REG_GAIN_RX1/2,
+REG_DIG_GAIN_RX1/2, FULL_TABLE_GAIN_INDEX, DIGITAL_GAIN_RX).
+
+They are SPI reads on the same control path as the existing rssi sensor
+and do not stall streaming (B210 on USB 2.0, 1.92 MS/s, 10 Hz polling:
+no overflow in 90 s).
+
+The new ad9361_ctrl methods are virtual with a throwing default, so other
+ad9361_ctrl implementations (e3xx RPC) keep compiling unchanged.
+---
+diff --git a/host/lib/include/uhdlib/usrp/common/ad9361_ctrl.hpp b/host/lib/include/uhdlib/usrp/common/ad9361_ctrl.hpp
+index 6fa9d0e74..4ca429f6e 100644
+--- a/host/lib/include/uhdlib/usrp/common/ad9361_ctrl.hpp
++++ b/host/lib/include/uhdlib/usrp/common/ad9361_ctrl.hpp
+@@ -142,6 +142,18 @@ public:
+     //! read internal RSSI sensor
+     virtual sensor_value_t get_rssi(const std::string& which) = 0;
+ 
++    //! read back the RX gain applied now (full gain table index; with AGC, the AGC's choice)
++    virtual sensor_value_t get_rx_gain_readback(const std::string& /*which*/)
++    {
++        throw uhd::not_implemented_error("ad9361_ctrl::get_rx_gain_readback");
++    }
++
++    //! read back the RX digital gain applied now [dB]
++    virtual sensor_value_t get_rx_digital_gain_readback(const std::string& /*which*/)
++    {
++        throw uhd::not_implemented_error("ad9361_ctrl::get_rx_digital_gain_readback");
++    }
++
+     //! read the internal temp sensor
+     virtual sensor_value_t get_temperature() = 0;
+ 
+diff --git a/host/lib/usrp/common/ad9361_ctrl.cpp b/host/lib/usrp/common/ad9361_ctrl.cpp
+index 55abd025c..6802f691c 100644
+--- a/host/lib/usrp/common/ad9361_ctrl.cpp
++++ b/host/lib/usrp/common/ad9361_ctrl.cpp
+@@ -204,6 +204,24 @@ public:
+         return sensor_value_t("RSSI", _device.get_rssi(chain), "dB");
+     }
+ 
++    sensor_value_t get_rx_gain_readback(const std::string& which) override
++    {
++        std::lock_guard<std::mutex> lock(_mutex);
++
++        ad9361_device_t::chain_t chain = _get_chain_from_antenna(which);
++        return sensor_value_t(
++            "gain", static_cast<double>(_device.get_rx_gain_index(chain)), "dB");
++    }
++
++    sensor_value_t get_rx_digital_gain_readback(const std::string& which) override
++    {
++        std::lock_guard<std::mutex> lock(_mutex);
++
++        ad9361_device_t::chain_t chain = _get_chain_from_antenna(which);
++        return sensor_value_t(
++            "digital_gain", static_cast<double>(_device.get_rx_digital_gain(chain)), "dB");
++    }
++
+     //! read the internal temp sensor. Average over 3 results
+     sensor_value_t get_temperature() override
+     {
+diff --git a/host/lib/usrp/common/ad9361_driver/ad9361_device.cpp b/host/lib/usrp/common/ad9361_driver/ad9361_device.cpp
+index 13ff8e3d9..5cbbb710b 100644
+--- a/host/lib/usrp/common/ad9361_driver/ad9361_device.cpp
++++ b/host/lib/usrp/common/ad9361_driver/ad9361_device.cpp
+@@ -2277,6 +2277,22 @@ void ad9361_device_t::data_port_loopback(const bool loopback_enabled)
+     _io_iface->poke8(0x3F5, (loopback_enabled ? 0x01 : 0x00));
+ }
+ 
++/* Read back the RX gain applied now. With the AGC enabled this is the gain
++ * the AGC chose, not the last value written by set_gain().
++ * Reg 0x2B0 / 0x2B5 (Gain Rx1/Rx2) bits <6:0>: full gain table index.
++ * Reg 0x2B2 / 0x2B7 (Dig gain Rx1/Rx2) bits <4:0>: digital gain [dB]. */
++uint8_t ad9361_device_t::get_rx_gain_index(chain_t chain)
++{
++    std::lock_guard<std::recursive_mutex> lock(_mutex);
++    return _io_iface->peek8(chain == CHAIN_1 ? 0x2B0 : 0x2B5) & 0x7F;
++}
++
++uint8_t ad9361_device_t::get_rx_digital_gain(chain_t chain)
++{
++    std::lock_guard<std::recursive_mutex> lock(_mutex);
++    return _io_iface->peek8(chain == CHAIN_1 ? 0x2B2 : 0x2B7) & 0x1F;
++}
++
+ /* Read back the internal RSSI measurement data. The result is in dB
+  * but not in absolute units. If absolute units are required
+  * a bench calibration should be done.
+diff --git a/host/lib/usrp/common/ad9361_driver/ad9361_device.h b/host/lib/usrp/common/ad9361_driver/ad9361_device.h
+index 1ace074f8..4e8a9fc7f 100644
+--- a/host/lib/usrp/common/ad9361_driver/ad9361_device.h
++++ b/host/lib/usrp/common/ad9361_driver/ad9361_device.h
+@@ -192,6 +192,11 @@ public:
+     /* Read back the internal RSSI measurement data. */
+     double get_rssi(chain_t chain);
+ 
++    /* Read back the RX gain the chip is applying now (also while the AGC runs):
++     * full gain table index (= the RX gain value set_gain() takes) and digital gain [dB]. */
++    uint8_t get_rx_gain_index(chain_t chain);
++    uint8_t get_rx_digital_gain(chain_t chain);
++
+     /*! Read the internal temperature sensor
+      *\param calibrate return raw sensor readings or apply calibration factor.
+      *\param num_samples number of measurements to average over
+diff --git a/host/lib/usrp/common/ad936x_manager.cpp b/host/lib/usrp/common/ad936x_manager.cpp
+index 97ea60163..795a1bf1e 100644
+--- a/host/lib/usrp/common/ad936x_manager.cpp
++++ b/host/lib/usrp/common/ad936x_manager.cpp
+@@ -224,6 +224,13 @@ public:
+             subtree->create<sensor_value_t>("sensors/rssi").set_publisher([this, key]() {
+                 return this->_codec_ctrl->get_rssi(key);
+             });
++            subtree->create<sensor_value_t>("sensors/gain").set_publisher([this, key]() {
++                return this->_codec_ctrl->get_rx_gain_readback(key);
++            });
++            subtree->create<sensor_value_t>("sensors/digital_gain")
++                .set_publisher([this, key]() {
++                    return this->_codec_ctrl->get_rx_digital_gain_readback(key);
++                });
+         }
+ 
+         // Gains

@@ -71,8 +71,18 @@ void EventListModel::push(const Event& e) {
 SystemModel::SystemModel(Core& core, QObject* parent) : QObject(parent), core_(core) {
     // 既存の履歴を取り込む(古い順に push すると新しい順に並ぶ)
     auto hist = core_.events().history();
-    for (auto it = hist.rbegin(); it != hist.rend(); ++it) events_.push(*it);
+    for (auto it = hist.rbegin(); it != hist.rend(); ++it)
+        if (it->kind != EventKind::RxGain) events_.push(*it);
     listener_ = core_.events().subscribe([this](const Event& e) {
+        // AGC の実ゲイン(最大 10 回/s)は一覧に出さない: 他の event を押し流すため。値はステータスバー、記録は event log と録音の sidecar
+        if (e.kind == EventKind::RxGain) {
+            QMetaObject::invokeMethod(this, [this, v = e.value] {
+                live_gain_db_ = static_cast<double>(v);
+                live_gain_valid_ = true;
+                Q_EMIT rxGainChanged();
+            }, Qt::QueuedConnection);
+            return;
+        }
         // dispatch thread → GUI thread
         QMetaObject::invokeMethod(this, [this, e] {
             events_.push(e);
@@ -98,6 +108,10 @@ void SystemModel::timerEvent(QTimerEvent*) {
         cfg_ = core_.source().config();
         lo_corr_ppm_ = core_.source().lo_correction_ppm();
         warming_ = core_.source().warming_up();
+        // 受信が止まったら実ゲインは無い(次の受信の最初の RxGain event で戻る。その event は stage 6 より前に来るので、止まった時だけ消す)
+        const bool streaming = ds_.state == DeviceState::Streaming;
+        if (was_streaming_ && !streaming && live_gain_valid_) { live_gain_valid_ = false; Q_EMIT rxGainChanged(); }
+        was_streaming_ = streaming;
         report_.clear();
         for (const auto& l : core_.source().startup_report()) report_ << QString::fromStdString(l);
         state_version_ = core_.source().state_version();

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
+#include <utility>
 
 #include <uhd/exception.hpp>
 #include <uhd/types/stream_cmd.hpp>
@@ -109,7 +111,10 @@ void B210LiveSource::warm_run() {
     // tune 確認(LO ロック)。運転の RF は App が決めるので、ここは草案での動作確認だけ
     char buf[160];
     const LoCorrection corr = radio_.lo_correction();
-    std::snprintf(buf, sizeof buf, "tune check: %.6f MHz @ %.3f Msps gain %.1f dB port %s (LO corr %+.2f ppm = %+.0f Hz)", cfg.center_freq / 1e6, cfg.sample_rate / 1e6, cfg.gain,
+    char gain_s[48];
+    if (cfg.agc) std::snprintf(gain_s, sizeof gain_s, "AGC(%s)", std::string(agc_mode_name(cfg.agc_mode)).c_str());
+    else std::snprintf(gain_s, sizeof gain_s, "%.1f dB", cfg.gain);
+    std::snprintf(buf, sizeof buf, "tune check: %.6f MHz @ %.3f Msps gain %s port %s (LO corr %+.2f ppm = %+.0f Hz)", cfg.center_freq / 1e6, cfg.sample_rate / 1e6, gain_s,
                   std::string(rf_port_name(cfg.port)).c_str(), corr.ppm, corr.error_hz(cfg.center_freq));
     if (!radio_.tune_rx(cfg, &err)) report(std::string(buf) + " FAILED: " + err);
     else report(std::string(buf) + " lo_locked");
@@ -233,11 +238,30 @@ void B210LiveSource::run() {
         radio_.set_generation(generation_.load());
         first_up = false;
         sensor_stop_ = false;
-        sensor_th_ = std::thread([this] {
+        sensor_th_ = std::thread([this, agc = config().agc, agc_mode = config().agc_mode] {
             bool lo_was_locked = true;
+            // AGC 中は実際の受信ゲインを細かく読み、変わったときだけ event にする(event log と録音の sidecar に残る)
+            std::optional<std::pair<double, double>> last_gain;
+            auto poll_gain = [&] {
+                const auto g = radio_.read_rx_gain();
+                if (!g.valid) return;
+                const std::pair<double, double> now{g.gain_db, g.digital_db};
+                if (last_gain && *last_gain == now) return;
+                last_gain = now;
+                char d[96];
+                std::snprintf(d, sizeof d, "gain=%.0f digital=%.0f agc=%s", g.gain_db, g.digital_db, std::string(agc_mode_name(agc_mode)).c_str());
+                if (events_) events_->emit(EventKind::RxGain, "radio", d, {}, std::llround(g.gain_db));
+            };
+            if (agc) poll_gain();
+            auto next_sensors = std::chrono::steady_clock::now();
+            const auto sensor_period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(opt_.sensor_period_s));
+            const auto slice = std::chrono::duration<double>(agc ? std::min(opt_.agc_gain_period_s, opt_.sensor_period_s / 10) : opt_.sensor_period_s / 10);
             while (!sensor_stop_) {
-                for (int i = 0; i < 10 && !sensor_stop_; ++i)
-                    std::this_thread::sleep_for(std::chrono::duration<double>(opt_.sensor_period_s / 10));
+                next_sensors += sensor_period;
+                while (!sensor_stop_ && std::chrono::steady_clock::now() < next_sensors) {
+                    std::this_thread::sleep_for(slice);
+                    if (agc && !sensor_stop_) poll_gain();
+                }
                 if (sensor_stop_) break;
                 const auto ls = radio_.read_live_sensors();
                 if (!ls.valid) continue;

@@ -27,7 +27,7 @@ IQ → DSP → 軟判定 FEC → Tracker → ソルバーの回帰試験では�
 
 | 領域 | 内容 | 検証 |
 |---|---|---|
-| `core/` Radio | UHD を扱う唯一のコンポーネント。stage 0–6 の自己診断、`DeviceState`(判定元: libusb 列挙 / FX3 レジスタ / センサ / UHD ログ)、timed retune、AGC | 実機。USB 抜き差しからの再接続はパッチ済み libuhd が必要(`packaging/libuhd`) |
+| `core/` Radio | UHD を扱う唯一のコンポーネント。stage 0–6 の自己診断、`DeviceState`(判定元: libusb 列挙 / FX3 レジスタ / センサ / UHD ログ)、timed retune、AGC(slow / fast。AGC 中の実際のゲインを 0.1 s ごとに読み、変わったら `rx_gain` event = event log と録音の sidecar。読み出しはパッチ済み libuhd 0003)| 実機。USB 抜き差しからの再接続はパッチ済み libuhd が必要(`packaging/libuhd`) |
 | `core/` Stream Bus | `Stream<T>` / `Subscription`、Lossless(溢れは event + flag で報告)/ LatestOnly、`BlockPool` + opaque `BlockRef` | gtest + TSan(`scripts/ci.sh`) |
 | `core/` Sources | `B210LiveSource`(再接続・watchdog・generation)、`SyntheticSource`(トーン / FM / AM)、`RecordingSource`(SigMF) | gtest、実機 |
 | `core/` その他 | `EventBus`(履歴、dispatch thread)、`TAP()`、`HealthMonitor`、`EventLogFile`、`AudioSink`(ALSA / PipeWire) | gtest、実機 |

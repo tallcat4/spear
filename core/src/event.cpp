@@ -28,6 +28,7 @@ std::string_view to_string(EventKind k) {
     case EventKind::UhdLog:           return "uhd_log";
     case EventKind::TimeReference:    return "time_reference";
     case EventKind::LoUnlock:         return "lo_unlock";
+    case EventKind::RxGain:           return "rx_gain";
     case EventKind::Info:             return "info";
     case EventKind::Warning:          return "warning";
     case EventKind::Error:            return "error";

@@ -93,6 +93,10 @@ public:
 
     // 受信中に安全に読めるセンサ(実測: temp/rssi/lo_locked/ref_locked/time は転送を止めない)
     LiveSensors read_live_sensors();
+    // AD9361 が今かけている受信ゲイン(AGC 中は AGC の選んだ値)。rssi と同じ制御経路の SPI 読み出し。
+    // パッチ済み libuhd(sensor "gain")が無ければ valid = false。get_rx_gain() は最後に設定した値を返すだけで AGC 中の値ではない
+    struct RxGainReadback { bool valid = false; double gain_db = 0, digital_db = 0; };
+    RxGainReadback read_rx_gain();
     const TimeReference& time_reference() const { return time_ref_; }
     void set_time_reference(const TimeReference& t);
 
@@ -131,6 +135,7 @@ private:
     std::atomic<uint64_t> state_version_{0};
     TimeReference time_ref_;
     std::string clock_source_ = "internal";
+    bool has_gain_sensor_ = false, has_digital_gain_sensor_ = false;   // tune_rx で端子を決めたあとに調べる
 };
 
 } // namespace spear

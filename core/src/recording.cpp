@@ -114,6 +114,8 @@ SigmfRecorder::SigmfRecorder(std::string base_path, const StreamMeta& sm, const 
     meta_.dtype = sm.dtype;
     meta_.lo_correction_ppm = lo_correction_ppm;
     meta_.rx_port = std::string(rf_port_name(cfg.port));
+    if (cfg.agc) meta_.agc = std::string(agc_mode_name(cfg.agc_mode));
+    else meta_.rx_gain_db = cfg.gain;
     meta_.sample_rate = sm.sample_rate;
     meta_.description = "spear recording, stream=" + sm.id;
     initial_freq_ = cfg.center_freq;

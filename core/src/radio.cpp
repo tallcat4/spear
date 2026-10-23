@@ -106,6 +106,10 @@ LiveSensors Radio::read_live_sensors() {
         if (clock_source_ != "internal") ls.ref_locked = usrp_->get_mboard_sensor("ref_locked").to_bool();
         ls.rx_temp_c = usrp_->get_rx_sensor("temp").to_real();
         ls.rssi_db = usrp_->get_rx_sensor("rssi").to_real();
+        const auto g = read_rx_gain();
+        ls.rx_gain_valid = g.valid;
+        ls.rx_gain_db = g.gain_db;
+        ls.rx_digital_gain_db = g.digital_db;
         const uint64_t t0 = host_now_ns();
         const auto hw = usrp_->get_time_now();
         const uint64_t t1 = host_now_ns();
@@ -129,6 +133,19 @@ LiveSensors Radio::read_live_sensors() {
         st_.sensors = ls;
     }
     return ls;
+}
+
+Radio::RxGainReadback Radio::read_rx_gain() {
+    RxGainReadback g;
+    if (!usrp_ || !has_gain_sensor_) return g;
+    try {
+        g.gain_db = usrp_->get_rx_sensor("gain").to_real();
+        if (has_digital_gain_sensor_) g.digital_db = usrp_->get_rx_sensor("digital_gain").to_real();
+        g.valid = true;
+    } catch (const std::exception&) {
+        g.valid = false;
+    }
+    return g;
 }
 
 void Radio::set_time_reference(const TimeReference& t) {
@@ -479,8 +496,13 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
             else if (cfg.agc && cfg.agc_mode != AgcMode::Slow)
                 throw uhd::value_error("AGC mode " + std::string(agc_mode_name(cfg.agc_mode)) + " not available on this device");
         }
-        usrp_->set_rx_agc(cfg.agc);   // AD9361 の AGC。ON なら gain は装置が決める(以後 get_rx_gain は実測値)
+        usrp_->set_rx_agc(cfg.agc);   // AD9361 の AGC。ON なら gain は装置が決める。get_rx_gain() は設定値のままで AGC の値ではない(read_rx_gain)
         const double actual_gain = usrp_->get_rx_gain();
+        {
+            const auto names = usrp_->get_rx_sensor_names();
+            has_gain_sensor_ = std::find(names.begin(), names.end(), "gain") != names.end();
+            has_digital_gain_sensor_ = std::find(names.begin(), names.end(), "digital_gain") != names.end();
+        }
         usrp_->set_rx_antenna(std::string(port.uhd_antenna));
         usrp_->set_rx_bandwidth(cfg.bandwidth > 0 ? cfg.bandwidth : cfg.sample_rate);
         const double actual_bw = usrp_->get_rx_bandwidth();
@@ -511,10 +533,14 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
             if (err) *err = e;
             return false;
         }
-        char buf[240];
-        std::snprintf(buf, sizeof buf, "rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f corr=%+.2fppm/%+.0fHz) gain=%.1f%s port=%s (%s %s) lo_locked",
+        // AGC のときは設定値(AGC を切ったときに戻る値)を書かない: 実際のゲインは受信中に RxGain event で残す
+        char gain_s[64];
+        if (cfg.agc) std::snprintf(gain_s, sizeof gain_s, "AGC(%s)%s", std::string(agc_mode_name(cfg.agc_mode)).c_str(), has_gain_sensor_ ? "" : " readback n/a");
+        else std::snprintf(gain_s, sizeof gain_s, "%.1f", actual_gain);
+        char buf[260];
+        std::snprintf(buf, sizeof buf, "rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f corr=%+.2fppm/%+.0fHz) gain=%s port=%s (%s %s) lo_locked",
                       actual_rate_, usrp_->get_master_clock_rate(), actual_freq_ / 1e6, res.actual_rf_freq / 1e6,
-                      res.actual_dsp_freq, corr.ppm, corr.error_hz(cfg.center_freq), usrp_->get_rx_gain(), cfg.agc ? " (AGC)" : "",
+                      res.actual_dsp_freq, corr.ppm, corr.error_hz(cfg.center_freq), gain_s,
                       std::string(port.name).c_str(), usrp_->get_rx_subdev_spec().to_string().c_str(), usrp_->get_rx_antenna().c_str());
         stage(4, buf, true);
         set_state(DeviceState::Ready, std::string("sensors: lo_locked=true; ") + buf, 4);
