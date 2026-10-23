@@ -174,6 +174,16 @@ struct TimeReference {
     bool valid = false;
 };
 
+// AD9361 の AGC の方式(UHD の gain/agc/mode: "slow" / "fast")。slow = 平均電力を見てゆっくり追う(UHD の既定)、
+// fast = 入力の立ち上がり(ADC の過大入力)に素早く下げ、捕捉後はゲインを固定する(バースト向き)
+enum class AgcMode : unsigned char { Slow = 0, Fast };
+constexpr std::string_view agc_mode_name(AgcMode m) { return m == AgcMode::Fast ? "fast" : "slow"; }
+constexpr bool parse_agc_mode(std::string_view s, AgcMode* out) {
+    if (s == "slow") { if (out) *out = AgcMode::Slow; return true; }
+    if (s == "fast") { if (out) *out = AgcMode::Fast; return true; }
+    return false;
+}
+
 // ---- RF 宣言 (§7.1) -------------------------------------------------------------
 // App が Core へ宣言する RF 条件。Core はそのまま適用する(適用不能なら App 起動失敗)。
 struct RfConfig {
@@ -183,6 +193,7 @@ struct RfConfig {
     double      bandwidth   = 0.0;   // 0 = sample_rate 準拠
     double      gain        = 30.0;  // dB(agc のときは AGC を切ったときに戻る値)
     bool        agc         = false; // 受信 AGC(AD9361)。true なら gain は装置が決める
+    AgcMode     agc_mode    = AgcMode::Slow;   // AGC の追従(AD9361 の slow / fast attack)。agc のときだけ意味を持つ
     RfPort      port        = RfPort::RxA;   // 装置パネルの端子(§7.1 の antenna)。UHD の frontend/antenna への分解は Radio(rf_port.hpp)
     std::string clock_source = "internal";
 };

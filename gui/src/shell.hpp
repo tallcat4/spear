@@ -33,6 +33,7 @@ class Shell : public QObject {
     Q_PROPERTY(double draftRate READ draftRate WRITE setDraftRate NOTIFY draftChanged)
     Q_PROPERTY(double draftGain READ draftGain WRITE setDraftGain NOTIFY draftChanged)
     Q_PROPERTY(bool draftAgc READ draftAgc WRITE setDraftAgc NOTIFY draftChanged)
+    Q_PROPERTY(QString draftAgcMode READ draftAgcMode WRITE setDraftAgcMode NOTIFY draftChanged)   // AGC の方式 "slow" / "fast"(AD9361)
     Q_PROPERTY(QString draftPort READ draftPort WRITE setDraftPort NOTIFY draftChanged)   // 受信端子(TRXA / RXA / RXB / TRXB)。GAIN と同じ装置共通の設定
 public:
     Shell(Core& core, RfConfig draft, QObject* parent = nullptr);
@@ -55,6 +56,9 @@ public:
     void setDraftGain(double v) { draft_.gain = v; draft_.agc = false; Q_EMIT draftChanged(); }   // 数値を入れたら AGC は切れる
     bool draftAgc() const { return draft_.agc; }
     void setDraftAgc(bool on) { draft_.agc = on; Q_EMIT draftChanged(); }
+    QString draftAgcMode() const { const auto n = agc_mode_name(draft_.agc_mode); return QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())); }
+    // 未知の名前は無視する(draftPort と同じ)
+    void setDraftAgcMode(const QString& name) { AgcMode m; if (!parse_agc_mode(name.toStdString(), &m)) return; draft_.agc_mode = m; Q_EMIT draftChanged(); }
     QString draftPort() const { const auto n = rf_port_name(draft_.port); return QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())); }
     // 未知の名前(古い state.conf 等)は黙って無視する(既定に落とさない、emit もしない)
     void setDraftPort(const QString& name) { RfPort p; if (!parse_rf_port(name.toStdString(), &p)) return; draft_.port = p; Q_EMIT draftChanged(); }

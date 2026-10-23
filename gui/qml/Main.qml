@@ -73,7 +73,7 @@ Window {
             MenuPage {
                 anchors.fill: parent; visible: !win.appOpen && !win.diagOpen && !win.splashOpen
                 onSelected: (i) => { if (!shell.busy) { Feedback.tap(); shell.startApp(i) } }
-                onAskGain: win.askGain(shell.draftGain, (v) => { if (v < 0) shell.draftAgc = true; else shell.draftGain = v })
+                onAskGain: win.openGainEntry()
                 onAskPort: win.askPort(shell.draftPort, (v) => shell.draftPort = v)
             }
             // App のページ: レジストリの page_url を Loader で読む。ページには app / sys / ui が見える。
@@ -180,10 +180,10 @@ Window {
         entry.displayFactor = 1e6; entry.displayUnit = "Msps"; entry.displayDecimals = 3; entry.allowNegative = false
         entry.callback = cb; entry.open(current)
     }
-    // 戻り値 < 0 は AGC(AGC キーは -1 を返す)。数値なら手動 gain
+    // 戻り値 < 0 は AGC(AGC SLOW キーは -1、AGC FAST キーは -2 を返す)。数値なら手動 gain
     function askGain(current, cb) {
-        entry.title = "RX GAIN  (or AGC)"; entry.minimum = 0; entry.maximum = 76
-        entry.units = [ { label: "dB", factor: 1 }, { label: "AGC", value: -1 } ]
+        entry.title = "RX GAIN  (or AGC: SLOW tracks average power / FAST reacts to bursts)"; entry.minimum = 0; entry.maximum = 76
+        entry.units = [ { label: "dB", factor: 1 }, { label: "AGC SLOW", value: -1 }, { label: "AGC FAST", value: -2 } ]
         entry.displayFactor = 1; entry.displayUnit = "dB"; entry.displayDecimals = 1; entry.allowNegative = false
         entry.callback = cb; entry.open(current)
     }
@@ -222,5 +222,11 @@ Window {
     function demoEntryTune(mhzText) { openFreqEntry(); for (var i = 0; i < mhzText.length; ++i) entry.type(mhzText[i]); entry.commit(1e6, "MHz") }
     function openExitDialog() { exitDialog.open() }
     function openPortEntry() { askPort(shell.draftPort, (v) => shell.draftPort = v) }
+    function openGainEntry() {
+        askGain(shell.draftGain, (v) => {
+            if (v === -1 || v === -2) { shell.draftAgcMode = v === -2 ? "fast" : "slow"; shell.draftAgc = true }
+            else shell.draftGain = v
+        })
+    }
     function demoAppAction(action) { if (win.appOpen && appPage.item && appPage.item.softKey) appPage.item.softKey(action) }
 }

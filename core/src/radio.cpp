@@ -471,6 +471,14 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
         const auto res = usrp_->set_rx_freq(uhd::tune_request_t(corr.to_device(cfg.center_freq)));
         actual_freq_ = corr.to_true(usrp_->get_rx_freq());
         usrp_->set_rx_gain(cfg.gain);
+        // AGC の方式(slow / fast)は frontend の tree にしか無い(multi_usrp に API が無い)。AGC を切っていても設定だけはしておく
+        {
+            const uhd::fs_path mode_path = uhd::fs_path("/mboards/0/dboards/A/rx_frontends") / std::string(port.frontend) / "gain/agc/mode/value";
+            if (usrp_->get_tree()->exists(mode_path))
+                usrp_->get_tree()->access<std::string>(mode_path).set(std::string(agc_mode_name(cfg.agc_mode)));
+            else if (cfg.agc && cfg.agc_mode != AgcMode::Slow)
+                throw uhd::value_error("AGC mode " + std::string(agc_mode_name(cfg.agc_mode)) + " not available on this device");
+        }
         usrp_->set_rx_agc(cfg.agc);   // AD9361 の AGC。ON なら gain は装置が決める(以後 get_rx_gain は実測値)
         const double actual_gain = usrp_->get_rx_gain();
         usrp_->set_rx_antenna(std::string(port.uhd_antenna));

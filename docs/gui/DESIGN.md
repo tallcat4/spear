@@ -34,7 +34,8 @@
 * `TraceSource` / `EyeDiagramItem`: App の DSP が切り出した固定長トレース(アイパターン)を任意スレッドから push、
   `DrawLines` で重ね描き(古いトレースは薄く、直近は明るく)。目盛・判定点は `EyeDiagram.qml`。
 * `SpectrumView` の `markers`(多チャネルのマーカー列)と `compact`(読み出し行なし・軸ラベル間引き)。
-* AGC 表示: 数値は残し白線の X + 中央の白箱に黒字 `AGC`(「AGC が gain をオーバーライドしている」が読める)。
+* AGC 表示: 数値は残し白線の X + 中央の白箱に黒字 `AGC SLOW` / `AGC FAST`(「AGC が gain をオーバーライドしている」が読める)。
+  入力パネルは dB のほか `AGC SLOW` / `AGC FAST` キー。
 * DIAG のイベント行は 1 行固定(複数行の detail は ` | ` で畳む)。
 
 ## 検証

@@ -87,7 +87,7 @@ Item {
                                 rotation: -Math.atan2(parent.height, parent.width) * 180 / Math.PI }
                     Rectangle {
                         anchors.centerIn: parent; width: agcLabel.implicitWidth + 16; height: agcLabel.implicitHeight + 6; color: Theme.textBright
-                        Text { id: agcLabel; anchors.centerIn: parent; text: "AGC"; color: Theme.invertText; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
+                        Text { id: agcLabel; anchors.centerIn: parent; text: shell.draftAgcMode === "fast" ? "AGC FAST" : "AGC SLOW"; color: Theme.invertText; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
                     }
                 }
             }
