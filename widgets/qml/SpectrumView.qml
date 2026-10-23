@@ -10,7 +10,7 @@ Item {
     id: page
     required property ViewSource source
     property double centerFreq: 0          // 表示用(軸ラベル・CENTER 欄)。App が Core の状態を渡す
-    property bool maxHold: true
+    property bool maxHold: false           // MAX HOLD の線。リセット操作(HOLD ボタン)を持つ App だけが true にする(現状 Spectrum)
     property bool centerEditable: true
     property double markerHz: NaN          // 中心からのオフセット位置にマーカー線(選局チャネル等)
     property string markerLabel: ""
