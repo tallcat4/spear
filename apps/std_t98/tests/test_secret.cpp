@@ -105,9 +105,9 @@ std::vector<Burst> load_real_bursts() {
     }
     return out;
 }
-Burst scramble(const Burst& b, uint16_t key) {
+Burst scramble(const Burst& b, uint16_t key, uint8_t series = 0) {
     if (!key) return b;
-    const Pn196 pn = pn_sequence(key);
+    const Pn196 pn = pn_sequence(key, series);
     Burst out = b;
     for (int f = 0; f < kFramesPerBurst; ++f) {
         const Frame49 ks = keystream_thumbdv(pn, f);
@@ -400,7 +400,7 @@ TEST(StdT98Secret, WorkerStopsCleanlyDuringSearch) {
     EXPECT_LT(std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), 5.0);
 }
 
-TEST(StdT98Secret, WorkerReturnsAnalyticResultWithoutExternalGolden) {
+TEST(StdT98Secret, WorkerReturnsGuidedResultWithoutExternalGolden) {
     std::mutex mu;
     std::condition_variable cv;
     std::vector<Worker::Result> results;
@@ -409,15 +409,16 @@ TEST(StdT98Secret, WorkerReturnsAnalyticResultWithoutExternalGolden) {
     ASSERT_TRUE(w.status().ready) << w.status().error;
     Worker::Request rq;
     rq.channel = 2; rq.session = 7;
-    rq.bursts.assign(5, scramble(measured_silence_burst(), 31337));
+    rq.bursts.assign(10, scramble(measured_silence_burst(), 31337));
     w.submit(rq);
     std::unique_lock<std::mutex> lk(mu);
     ASSERT_TRUE(cv.wait_for(lk, std::chrono::seconds(10), [&] { return !results.empty(); }));
     EXPECT_EQ(results[0].channel, 2);
     EXPECT_EQ(results[0].session, 7u);
     EXPECT_EQ(results[0].key, 31337);
-    EXPECT_EQ(results[0].source, ResultSource::AnalyticSilence);
-    std::printf("worker: analytic silence %.6f s\n", results[0].seconds);
+    EXPECT_EQ(results[0].source, ResultSource::GuidedAI);
+    EXPECT_TRUE(results[0].accepted);
+    std::printf("worker: guided AI %.6f s\n", results[0].seconds);
 }
 
 TEST(StdT98Secret, WorkerResolvesSubmittedRequestOnItsOwnThread) {
@@ -437,9 +438,9 @@ TEST(StdT98Secret, WorkerResolvesSubmittedRequestOnItsOwnThread) {
     ASSERT_TRUE(cv.wait_for(lk, std::chrono::seconds(60), [&] { return !results.empty(); }));
     EXPECT_EQ(results[0].channel, 2);
     EXPECT_EQ(results[0].session, 7u);
-    const auto expected = recover_silence_key(rq.bursts);
-    EXPECT_EQ(results[0].key, expected.value_or(0));
-    EXPECT_EQ(results[0].source, expected && *expected ? ResultSource::AnalyticSilence : ResultSource::None);
+    // Five bursts cannot provide the two disjoint AI verification blocks.
+    EXPECT_FALSE(results[0].accepted);
+    EXPECT_EQ(results[0].source, ResultSource::None);
     std::printf("worker: %s %.2f s\n", to_string(results[0].source), results[0].seconds);
 }
 
@@ -504,4 +505,44 @@ TEST(StdT98Secret, RecordedThreePttRecovers32767UsingSolverOnly) {
     }
     EXPECT_EQ(calls, 3);
     EXPECT_EQ(recovered, 3);
+}
+
+TEST(StdT98Secret, GuidedWorkerEnhancedSeriesOverlapPttAndOverrun) {
+    std::mutex mu;
+    std::condition_variable cv;
+    std::vector<Worker::Result> results;
+    Worker w([&](const Worker::Result& r) { std::lock_guard<std::mutex> lk(mu); results.push_back(r); cv.notify_all(); });
+    w.wait_ready();
+    ASSERT_TRUE(w.status().ready) << w.status().error;
+    auto submit = [&](Worker::Request request) {
+        std::unique_lock<std::mutex> lk(mu);
+        const auto size = results.size();
+        w.submit(std::move(request));
+        if (!cv.wait_for(lk, std::chrono::seconds(10), [&] { return results.size() > size; })) {
+            ADD_FAILURE() << "worker timeout";
+            return Worker::Result{};
+        }
+        return results.back();
+    };
+    for (uint8_t series = 0; series < 16; ++series) {
+        Worker::Request r;
+        r.channel = series;
+        r.session = 1;
+        r.bursts.assign(5, scramble(measured_silence_burst(), 12345, series));
+        EXPECT_FALSE(submit(r).accepted);
+        EXPECT_FALSE(submit(r).accepted) << "overlap must not count twice";
+        r.first_burst = 5;
+        const auto result = submit(r);
+        EXPECT_TRUE(result.accepted) << "series " << int(series);
+        EXPECT_EQ(result.series, series);
+        EXPECT_EQ(result.key, 12345);
+        r.first_burst = 100;
+        EXPECT_FALSE(submit(r).accepted) << "gap must reset evidence";
+        r.session = 2;
+        r.first_burst = 0;
+        EXPECT_FALSE(submit(r).accepted) << "PTT must reset evidence";
+        r.first_burst = 5;
+        r.valid.assign(5, {true, false, true, true});
+        EXPECT_FALSE(submit(r).accepted) << "invalid bursts cannot form AI blocks";
+    }
 }

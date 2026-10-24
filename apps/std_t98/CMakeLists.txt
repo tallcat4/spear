@@ -30,6 +30,7 @@ add_library(spear_std_t98_rx STATIC
   dsp/symbol_sync.cpp
   dsp/sync_correlator.cpp
   secret/pn.cpp
+  secret/guided.cpp
   secret/silence.cpp
   secret/models.cpp
   secret/safetensors.cpp

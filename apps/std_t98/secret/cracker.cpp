@@ -13,6 +13,7 @@ const char* to_string(ResultSource s) {
     case ResultSource::CurrentKey: return "current key verified";
     case ResultSource::GlobalCache: return "global cache hit";
     case ResultSource::FullSearch: return "full search hit";
+    case ResultSource::GuidedAI: return "solver-guided AI";
     case ResultSource::AnalyticSilence: return "analytic silence hit";
     }
     return "?";

@@ -141,6 +141,10 @@ TEST(StdT98Ambe, SoftDecisionMatchesBlip25Rust) {
             const auto* e = reinterpret_cast<const uint8_t*>(fec.data()) + k * 11;
             EXPECT_EQ(0, std::memcmp(packed.data(), e, 7)) << "ch" << ch << " block " << k;
             const bool c0_lost = e[7] == 255;
+            bool valid = false;
+            fec_soft_3600_to_2450(std::span<const int8_t, 72>(reinterpret_cast<const int8_t*>(llr.data()) + k * 72, 72), &valid);
+            EXPECT_EQ(valid, !c0_lost);
+            EXPECT_EQ(r.valid, !c0_lost);
             EXPECT_EQ(r.total_errors, c0_lost ? 4 : e[7] + e[8]) << "ch" << ch << " block " << k;
             ASSERT_EQ(0, std::memcmp(out.data(), pcm.data() + k * 320, 320)) << "ch" << ch << " block " << k;
             lost += c0_lost;

@@ -135,13 +135,13 @@ Item {
                 }
                 Row {
                     spacing: 6
-                    // 秘話: 呼の状態と鍵。無音の解析またはモデルによる探索で見つけ、呼をまたいで保持する
-                    Readout { label: "SECRET"; width: 214; height: 52
+                    // 秘話: 系列とコード。ソルバー誘導AIで判定し、呼ごとに確認する
+                    Readout { label: "SECRET"; width: 250; height: 52
                               value: !page.sel.secret ? (page.sel.key > 0 ? "clear  (last K " + page.sel.key + ")" : "clear")
-                                     : (page.sel.key > 0 ? "KEY " + page.sel.key + (page.sel.secretStatus === "searching" ? "  ..." : "")
-                                        : page.sel.secretStatus.toUpperCase())
+                                     : (page.sel.key > 0 ? "S" + page.sel.series + " / K " + page.sel.key + (page.sel.secretStatus === "searching" ? "  ..." : "")
+                                        : page.sel.confirmed ? "CLEAR (S0 / K0)" : page.sel.secretStatus.toUpperCase())
                               valueSize: page.sel.secret ? Theme.fsLarge : Theme.fsBase
-                              valueColor: !page.sel.secret ? Theme.textDim : (page.sel.key > 0 ? Theme.green : (page.sel.secretStatus === "miss" ? Theme.red : Theme.amber)) }
+                              valueColor: !page.sel.secret ? Theme.textDim : (page.sel.confirmed ? Theme.green : (page.sel.secretStatus === "miss" ? Theme.red : Theme.amber)) }
                     Readout { label: "LAST FRAME"; width: 500; height: 52
                               value: page.sel.lastFrame.type !== undefined
                                      ? (page.sel.lastFrame.type + "  RICH M=" + page.sel.lastFrame.richM

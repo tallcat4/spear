@@ -122,7 +122,7 @@ private:
     mutable std::mutex mu_;
     struct ChanStat {
         double power_db = -999; bool locked = false, active = false; uint64_t frames = 0, sacch_ok = 0, pich_ok = 0, syncs = 0, locks = 0, flywheel = 0, dropped = 0; double best_sse = 1e9, sps = 0; std::string csm; double freq_err_est = 0;
-        bool secret = false; uint16_t key = 0; std_t98::secret::TrackerStatus secret_status = std_t98::secret::TrackerStatus::Idle;   // 秘話: 呼が秘話か / 現在鍵 / 探索状態
+        bool secret = false; uint16_t key = 0; uint8_t series = 0; bool confirmed = false; std_t98::secret::TrackerStatus secret_status = std_t98::secret::TrackerStatus::Idle;   // 秘話: 呼が秘話か / 現在鍵 / 探索状態
         std_t98::secret::ResultSource last_source = std_t98::secret::ResultSource::None; double last_search_s = 0; uint64_t searches = 0;
     };
     std::vector<ChanStat> stats_;
@@ -147,12 +147,12 @@ private:
     void traffic_frame(const std_t98::Frame& f);   // TCH: 秘話判定 → (音声なら)AMBE → ミキサ、秘話なら窓に積んで要求
     void mix_flush(uint64_t reached_input_index);
     // 秘話(DSP thread 専用)。call_secret は最後に CRC OK だった SACCH の call_stat(CRC 不良のフレームでは前の値を保つ)
-    struct SecretChan { std_t98::secret::Tracker tracker; bool call_secret = false; uint16_t pn_key = 0; std_t98::secret::Pn196 pn{}; };
+    struct SecretChan { std_t98::secret::Tracker tracker{{.streaming = true, .min_window = 1, .max_window = 64, .recheck_interval = 1}}; bool call_secret = false; uint16_t pn_key = 0; uint8_t pn_series = 0; uint64_t last_symbol = 0; std_t98::secret::Pn196 pn{}; };
     std::vector<SecretChan> secret_ch_;
     std::unique_ptr<std_t98::secret::Worker> secret_;
     mutable std::mutex secret_mu_;                                // worker thread → DSP thread(表示の読み出しも)
     std::vector<std_t98::secret::Worker::Result> secret_results_;
-    std::vector<uint16_t> secret_cache_;                          // 表示用(secret_mu_)
+    std::vector<std_t98::secret::SeriesKey> secret_cache_;                          // 表示用(secret_mu_)
     void secret_clear(int ch);
     void secret_drain_results();
     std::unique_ptr<BlockPool> band_pool_, channel_pool_;

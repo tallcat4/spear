@@ -23,7 +23,7 @@ namespace spear::std_t98::secret {
 
 inline constexpr int kBurstsPerBlock = 5;
 
-enum class ResultSource : uint8_t { None = 0, CurrentKey = 1, GlobalCache = 2, FullSearch = 3, AnalyticSilence = 4 };
+enum class ResultSource : uint8_t { None = 0, CurrentKey = 1, GlobalCache = 2, FullSearch = 3, AnalyticSilence = 4, GuidedAI = 5 };
 const char* to_string(ResultSource s);
 
 struct Resolution {

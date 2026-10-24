@@ -1,6 +1,5 @@
-// 鍵探索ワーカー — 専用スレッド 1 本で要求を順に Cracker で解く(DSP thread では走らせない)。
-// tools では別プロセス(std_t98_multi_secret_service.py)+ UDS だったものを、単一プロセス内のキュー + コールバックにした(要件 §2.5)。
-// 要求は同じチャネルの未処理分を置き換える(古い窓を解いても意味がない)。結果コールバックはワーカースレッド上で呼ばれる。
+// ソルバー誘導AIの専用ワーカー。チャネル/PTTごとに証拠と直近3区間を保持。
+// 要求の重複窓はfirst_burstで除外し、欠落時は連続性をリセットする。
 #pragma once
 #include "cracker.hpp"
 #include "tracker.hpp"
@@ -24,6 +23,8 @@ public:
         uint32_t session = 0;
         uint16_t current_key = 0;
         std::vector<Burst> bursts;
+        uint64_t first_burst = 0;
+        std::vector<Valid4> valid;
     };
     struct Result {
         int channel = 0;
@@ -31,14 +32,16 @@ public:
         uint16_t key = 0;
         ResultSource source = ResultSource::None;
         double seconds = 0;              // 探索に要した時間
-        std::vector<uint16_t> cache;     // 全チャネル共通のキャッシュ(新しい順)
+        bool accepted = false;
+        uint8_t series = 0;
+        std::vector<SeriesKey> cache;     // 全チャネル共通のキャッシュ(新しい順)
     };
     struct Status {
         bool ready = false;              // 初期化でき、要求を受け付けられる
         std::string error;               // 初期化失敗の理由(ready = false のとき)
         uint64_t requests = 0, results = 0, queued = 0;
     };
-    // 既定はソルバー単独。AI 有効時のみ埋め込みモデルをロードする。
+    // 埋め込みhybridモデルをワーカースレッド上でロードする。
     explicit Worker(std::function<void(const Result&)> on_result, std::function<void(const std::string&)> on_log = {});
     ~Worker();
     Worker(const Worker&) = delete;

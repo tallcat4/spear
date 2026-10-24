@@ -1,4 +1,5 @@
 #include "std_t98_app.hpp"
+#include <map>
 #include "spear/core/tap.hpp"
 
 #include <QDateTime>
@@ -89,6 +90,8 @@ QVariantList StdT98App::channels() const {
         m["bestSse"] = s.best_sse;
         m["csm"] = QString::fromStdString(s.csm);
         m["secret"] = s.secret;
+        m["series"] = s.series;
+        m["confirmed"] = s.confirmed;
         m["key"] = s.key;
         m["secretStatus"] = QString::fromLatin1(std_t98::secret::to_string(s.secret_status));
         out.push_back(m);
@@ -118,6 +121,8 @@ QVariantMap StdT98App::selected() const {
     m["freqErrEst"] = s.freq_err_est;
     m["lastFrame"] = last_frame_;
     m["secret"] = s.secret;
+    m["series"] = s.series;
+    m["confirmed"] = s.confirmed;
     m["key"] = s.key;
     m["secretStatus"] = QString::fromLatin1(std_t98::secret::to_string(s.secret_status));
     m["secretSource"] = QString::fromLatin1(std_t98::secret::to_string(s.last_source));
@@ -137,7 +142,7 @@ QString StdT98App::secretStatus() const {
 QVariantList StdT98App::secretCache() const {
     QVariantList out;
     std::lock_guard<std::mutex> lk(secret_mu_);
-    for (uint16_t k : secret_cache_) out.push_back(k);
+    for (auto k : secret_cache_) out.push_back(QString("S%1 / K%2").arg(k.series).arg(k.key));
     return out;
 }
 
@@ -217,7 +222,8 @@ void StdT98App::secret_drain_results() {
     { std::lock_guard<std::mutex> lk(secret_mu_); results.swap(secret_results_); }
     for (const auto& r : results) {
         auto& sc = secret_ch_[static_cast<std::size_t>(r.channel)];
-        sc.tracker.on_result(r.session, r.key);
+        if (!sc.tracker.active() || sc.tracker.session() != r.session) continue;
+        sc.tracker.on_guided_result(r.session, r.accepted ? std::optional<secret::SeriesKey>({r.series, r.key}) : std::nullopt);
         std::lock_guard<std::mutex> lk(mu_);
         auto& s = stats_[static_cast<std::size_t>(r.channel)];
         s.last_source = r.source; s.last_search_s = r.seconds; ++s.searches;
@@ -226,15 +232,18 @@ void StdT98App::secret_drain_results() {
 
 void StdT98App::traffic_frame(const Frame& f) {
     auto& sc = secret_ch_[static_cast<std::size_t>(f.channel)];
+    if (sc.last_symbol && f.symbol_index != sc.last_symbol + 192) sc.tracker.on_clear();
+    sc.last_symbol = f.symbol_index;
     // 秘話判定は CRC OK の SACCH だけで更新する(tools は CRC 不良を平文扱いにしてセッションを捨てていたが、SACCH は 2% 程度落ちる)
     if (f.sacch.crc_ok) sc.call_secret = (f.sacch.call_stat == 1);
     if (!sc.call_secret) sc.tracker.on_clear();
     const bool keyed = sc.call_secret && sc.tracker.key() != 0;
-    if (keyed && sc.pn_key != sc.tracker.key()) { sc.pn_key = sc.tracker.key(); sc.pn = secret::pn_sequence(sc.pn_key); }
+    if (keyed && (sc.pn_key != sc.tracker.key() || sc.pn_series != sc.tracker.series())) { sc.pn_key = sc.tracker.key(); sc.pn_series = sc.tracker.series(); sc.pn = secret::pn_sequence(sc.pn_key, sc.pn_series); }
 
     // 音声(全チャネル or 選択チャネル)。秘話で鍵が無い間は tools と同じくスクランブルのまま鳴る(活動が分かる)
     const bool want_audio = audio_ && (all_audio_ || f.channel == selected_);
     secret::Burst raw{};
+    secret::Valid4 valid{};
     bool have_raw = false;
     if (want_audio) {
         auto& dec = decoders_[static_cast<std::size_t>(f.channel)];
@@ -247,6 +256,7 @@ void StdT98App::traffic_frame(const Frame& f) {
             std::array<int16_t, 160> s{};
             const auto d = dec->decode_3600_soft(std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72), s, keyed ? secret::keystream_d(sc.pn, k) : nullptr);
             raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(d.raw2450);
+            valid[static_cast<std::size_t>(k)] = d.valid;
             if (late || future) continue;
             for (int i = 0; i < 160; ++i) {
                 const uint64_t pos = pos0 + static_cast<uint64_t>(k * 160 + i);
@@ -258,9 +268,9 @@ void StdT98App::traffic_frame(const Frame& f) {
     if (!sc.call_secret || !secret_) return;
     // 鍵探索の窓: FEC 後・XOR 前の 49 bit × 4。音声を出していないチャネルでも積む(選択を切り替えた瞬間から復号できるように)
     if (!have_raw)
-        for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(fec_soft_3600_to_2450(std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72)));
+        for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(fec_soft_3600_to_2450(std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72), &valid[static_cast<std::size_t>(k)]));
     secret::Tracker::Request rq;
-    if (sc.tracker.on_secret_burst(raw, &rq)) secret_->submit({f.channel, rq.session, rq.current_key, std::move(rq.bursts)});
+    if (sc.tracker.on_secret_burst(raw, &rq, valid)) secret_->submit({f.channel, rq.session, rq.current_key, std::move(rq.bursts), rq.first_burst, std::move(rq.valid)});
 }
 
 void StdT98App::mix_flush(uint64_t reached_input_index) {
@@ -342,10 +352,16 @@ void StdT98App::on_start(Core& core) {
         EventBus* events = &core.events();
         const std::string id = info().id;
         secret_ = std::make_unique<secret::Worker>(
-            [this, events, id](const secret::Worker::Result& r) {
+            [this, events, id, previous = std::map<int, std::pair<uint32_t, std::optional<secret::SeriesKey>>>{}](const secret::Worker::Result& r) mutable {
                 { std::lock_guard<std::mutex> lk(secret_mu_); secret_results_.push_back(r); secret_cache_ = r.cache; }
-                events->emit(r.key ? EventKind::Info : EventKind::Warning, id,
-                             "secret ch" + std::to_string(r.channel + 1) + " key " + std::to_string(r.key) + " (" + secret::to_string(r.source) + ", " + std::to_string(r.seconds).substr(0, 4) + " s)",
+                const auto answer = r.accepted ? std::optional<secret::SeriesKey>({r.series, r.key}) : std::nullopt;
+                const auto state = std::make_pair(r.session, answer);
+                auto& last = previous[r.channel];
+                const bool changed = last != state && (answer || last.second);
+                last = state;
+                if (!changed) return;
+                events->emit(r.accepted ? EventKind::Info : EventKind::Warning, id,
+                             "secret ch" + std::to_string(r.channel + 1) + " series " + std::to_string(r.series) + " key " + std::to_string(r.key) + " (" + secret::to_string(r.source) + ", " + std::to_string(r.seconds).substr(0, 4) + " s)",
                              {}, r.key);
             },
             [events, id](const std::string& msg) { events->emit(msg.rfind("secret disabled", 0) == 0 ? EventKind::Warning : EventKind::Info, id, msg); });
@@ -420,7 +436,7 @@ void StdT98App::run() {
                 s.syncs = m.sync_detections; s.best_sse = m.best_sse; s.sps = m.sps; s.csm = m.csm;
                 auto& sc = secret_ch_[static_cast<std::size_t>(c)];
                 if (!m.locked && sc.tracker.active()) { sc.call_secret = false; sc.tracker.on_clear(); }   // 同期喪失 = 呼の終わり
-                s.secret = sc.call_secret; s.key = sc.tracker.key(); s.secret_status = sc.tracker.status();
+                s.secret = sc.call_secret; s.key = sc.tracker.key(); s.series = sc.tracker.series(); s.confirmed = sc.tracker.confirmed(); s.secret_status = sc.tracker.status();
             }
         }
         // DSP 負荷: 処理時間 / ブロックの実時間(IIR)

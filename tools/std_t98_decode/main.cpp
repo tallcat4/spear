@@ -2,12 +2,13 @@
 //   spear-std-t98-decode <base> [--sync-ratio 0.2] [--sync-locked-ratio 0.6] [--sync-max-misses 3] [--freq-err 0] [--dump-ch N out.f32] [--pfb 64] [--wav base] [--hard] [--llr base] [--no-secret]
 //   --freq-err: 入力を回して帯域中心を DC へ戻す量。App の録音(LO = 帯域中心 − 250 kHz)なら 250000(+ そのファイル固有の残留誤差)
 // 出力: チャネルごとの電力/同期/フレーム統計、フレーム内容、推定周波数誤差。
-// 秘話呼(SACCH call=1)は GUI と同じポリシー(5 バーストで最初の探索、5 バーストごとに再確認)で鍵を同期的に探索し、以後のフレームを
-//   復号する(既定はソルバーのみ)。--no-secret で探索を止める。
+// 秘話呼(SACCH call=1)は GUI と同じソルバー誘導AI(最短10バースト、以後も逐次確認)で鍵を同期的に探索し、以後のフレームを
+//   復号する(通常秘話・強化秘話のソルバー誘導AI)。--no-secret で探索を止める。
 //   AMBE の FEC は軟判定(App と同じ)。--hard で 9 byte の硬判定に戻す(比較用)。--llr base でチャネルごとの LLR 列(golden 用)を書く。
 #include "ambe.hpp"
 #include "receiver.hpp"
-#include "secret/cracker.hpp"
+#include "secret/guided.hpp"
+#include "secret/hybrid.hpp"
 #include "secret/tracker.hpp"
 #include "spear/core/sigmf.hpp"
 #include "spear/dsp/fir.hpp"
@@ -68,16 +69,23 @@ int main(int argc, char** argv) {
     const double band_center = (meta.captures.empty() ? 0.0 : meta.captures[0].frequency) + cfg.freq_err_hz;
     std::printf("rate=%.0f pfb=%d post1=%.0f center=%.6f MHz freq_err=%+.1f Hz (band center %.6f MHz)\n", rate, cfg.pfb_channels, cfg.pfb_channels * cfg.spacing_hz,
                 meta.captures.empty() ? 0.0 : meta.captures[0].frequency / 1e6, cfg.freq_err_hz, band_center / 1e6);
-    // 秘話の鍵探索(同期、既定はソルバーのみ)。--no-secret なら秘話呼はスクランブルのまま
-    secret::Ffnn ffnn;
+    // GUI と同じソルバー誘導AI。録音では同期的に判定する。
     secret::Hybrid hybrid;
-    std::unique_ptr<secret::Cracker> cracker;
-    if (!flag(argc, argv, "--no-secret")) {
+    const bool secret_enabled = !flag(argc, argv, "--no-secret");
+    if (secret_enabled) {
         std::string e;
-        if (secret::Cracker::Config().ai_fallback && (!ffnn.load_embedded(&e) || !hybrid.load_embedded(&e))) { std::fprintf(stderr, "secret: %s\n", e.c_str()); return 1; }
-        cracker = std::make_unique<secret::Cracker>(ffnn, hybrid);
+        if (!hybrid.load_embedded(&e)) { std::fprintf(stderr, "secret: %s\n", e.c_str()); return 1; }
     }
-    struct SecretCh { secret::Tracker tracker; bool call_secret = false; uint16_t pn_key = 0; secret::Pn196 pn{}; };
+    struct SecretCh {
+        secret::Tracker tracker{{.streaming = true, .min_window = 1, .max_window = 1, .recheck_interval = 1}};
+        std::unique_ptr<secret::GuidedSession> solver;
+        uint32_t session = 0;
+        bool call_secret = false;
+        uint16_t pn_key = 0;
+        uint8_t pn_series = 0;
+        uint64_t last_symbol = 0;
+        secret::Pn196 pn{};
+    };
     std::vector<SecretCh> sec(static_cast<std::size_t>(cfg.num_channels));
     Receiver rx(cfg);
 
@@ -107,13 +115,16 @@ int main(int argc, char** argv) {
             // 秘話判定(GUI と同じ: CRC OK の SACCH だけで更新、不良フレームは前の値を保つ)
             if (f.sacch.crc_ok) sc.call_secret = (f.sacch.call_stat == 1);
             if (!sc.call_secret) sc.tracker.on_clear();
+            if (sc.last_symbol && f.symbol_index != sc.last_symbol + 192) sc.tracker.on_clear();
+            sc.last_symbol = f.symbol_index;
             const bool keyed = sc.call_secret && sc.tracker.key() != 0;
-            if (keyed && sc.pn_key != sc.tracker.key()) { sc.pn_key = sc.tracker.key(); sc.pn = secret::pn_sequence(sc.pn_key); }
+            if (keyed && (sc.pn_key != sc.tracker.key() || sc.pn_series != sc.tracker.series())) { sc.pn_key = sc.tracker.key(); sc.pn_series = sc.tracker.series(); sc.pn = secret::pn_sequence(sc.pn_key, sc.pn_series); }
             secret::Burst raw{};
+            secret::Valid4 valid{};
             // AMBE の FEC は軟判定(App と同じ)。--hard なら 9 byte の硬判定で(比較用)
             auto block = [&](int k) { return std::span<const uint8_t, 9>(f.tch_payload.data() + k * 9, 9); };
             auto llr = [&](int k) { return std::span<const int8_t, 72>(f.tch_llr.data() + k * 72, 72); };
-            for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(hard ? fec_demod_3600_to_2450(block(k)) : fec_soft_3600_to_2450(llr(k)));
+            for (int k = 0; k < 4; ++k) raw[static_cast<std::size_t>(k)] = secret::unpack_frame49(hard ? fec_demod_3600_to_2450(block(k), nullptr, &valid[static_cast<std::size_t>(k)]) : fec_soft_3600_to_2450(llr(k), &valid[static_cast<std::size_t>(k)]));
             raw2450 << f.channel << ' ' << f.symbol_index;
             for (const auto& frame : raw) {
                 const auto packed = secret::pack_frame49(frame);
@@ -134,14 +145,19 @@ int main(int argc, char** argv) {
                     v.pcm.insert(v.pcm.end(), pcm.begin(), pcm.end());
                 }
             }
-            if (sc.call_secret && cracker) {
+            if (sc.call_secret && secret_enabled) {
                 secret::Tracker::Request rq;
-                if (sc.tracker.on_secret_burst(raw, &rq)) {
+                if (sc.tracker.on_secret_burst(raw, &rq, valid)) {
                     const auto t0 = std::chrono::steady_clock::now();
-                    const auto r = cracker->resolve(rq.current_key, rq.bursts);
+                    if (!sc.solver || sc.session != rq.session) {
+                        sc.solver = std::make_unique<secret::GuidedSession>(secret::hybrid_scorer(hybrid));
+                        sc.session = rq.session;
+                    }
+                    sc.solver->add(raw, valid);
+                    const auto r = sc.solver->assess();
                     const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-                    sc.tracker.on_result(rq.session, r.key);
-                    secret_note = "  SECRET key=" + std::to_string(r.key) + " (" + secret::to_string(r.source) + ", " + std::to_string(dt).substr(0, 4) + " s)";
+                    sc.tracker.on_guided_result(rq.session, r.accepted);
+                    secret_note = r.accepted ? "  SECRET series=" + std::to_string(r.accepted->series) + " key=" + std::to_string(r.accepted->key) + " (solver-guided AI, " + std::to_string(dt).substr(0, 4) + " s)" : "  SECRET pending";
                 }
             }
         }

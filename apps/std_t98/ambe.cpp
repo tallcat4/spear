@@ -10,16 +10,18 @@ namespace {
 int fec(std::span<const uint8_t, 9> block, ambe::Bits49& d) { return blip25_fec_3600(block.data(), d.data(), nullptr); }
 }
 
-std::array<uint8_t, 7> fec_demod_3600_to_2450(std::span<const uint8_t, 9> block, int* total_errors) {
+std::array<uint8_t, 7> fec_demod_3600_to_2450(std::span<const uint8_t, 9> block, int* total_errors, bool* valid) {
     ambe::Bits49 d{};
     const int e = fec(block, d);
     if (total_errors) *total_errors = e < 0 ? 4 : e;
+    if (valid) *valid = e >= 0;
     return ambe::pack_thumbdv(d);
 }
 
-std::array<uint8_t, 7> fec_soft_3600_to_2450(std::span<const int8_t, 72> llr) {
+std::array<uint8_t, 7> fec_soft_3600_to_2450(std::span<const int8_t, 72> llr, bool* valid) {
     ambe::Bits49 d{};
-    blip25_fec_3600_soft(llr.data(), d.data(), nullptr);
+    const int errors = blip25_fec_3600_soft(llr.data(), d.data(), nullptr);
+    if (valid) *valid = errors >= 0;
     return ambe::pack_thumbdv(d);
 }
 
@@ -35,7 +37,7 @@ void AmbeDecoder::decode_2450(std::span<const uint8_t, 7> payload, std::span<int
 AmbeDecoder::Decoded3600 AmbeDecoder::decode_3600(std::span<const uint8_t, 9> block, std::span<int16_t, 160> pcm, const uint8_t* keystream) {
     ambe::Bits49 d{};
     const int e = fec(block, d);
-    Decoded3600 out{ambe::pack_thumbdv(d), e < 0 ? 4 : e};
+    Decoded3600 out{ambe::pack_thumbdv(d), e < 0 ? 4 : e, e >= 0};
     if (keystream) for (std::size_t i = 0; i < d.size(); ++i) d[i] = static_cast<uint8_t>(d[i] ^ keystream[i]);   // 秘話: FEC 後・音声復号前に XOR(secret_voice.py と同じ位置)
     // 誤りの程度 = 訂正数(blip25_decode_3600 と同じ)。C0 が訂正不能なフレームは消失として前フレームの繰り返し / フェードにする
     blip25_decode_bits(&impl_->dec, d.data(), e < 0 ? BLIP25_LOST : e, pcm.data());
@@ -45,7 +47,7 @@ AmbeDecoder::Decoded3600 AmbeDecoder::decode_3600(std::span<const uint8_t, 9> bl
 AmbeDecoder::Decoded3600 AmbeDecoder::decode_3600_soft(std::span<const int8_t, 72> llr, std::span<int16_t, 160> pcm, const uint8_t* keystream) {
     ambe::Bits49 d{};
     const int e = blip25_fec_3600_soft(llr.data(), d.data(), nullptr);
-    Decoded3600 out{ambe::pack_thumbdv(d), e < 0 ? 4 : e};
+    Decoded3600 out{ambe::pack_thumbdv(d), e < 0 ? 4 : e, e >= 0};
     if (keystream) for (std::size_t i = 0; i < d.size(); ++i) d[i] = static_cast<uint8_t>(d[i] ^ keystream[i]);
     blip25_decode_bits(&impl_->dec, d.data(), e < 0 ? BLIP25_LOST : 0, pcm.data());   // blip25_decode_3600_soft は常に 0(誤りなし)
     return out;
