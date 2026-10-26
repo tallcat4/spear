@@ -14,7 +14,7 @@ App の名前から、それぞれの説明書を開けます。メニューや�
 - **[SPECTRUM](docs/manual/spectrum.md)** — スペクトラムとウォーターフォール。周波数はテンキーで入力。
 - **[IQ RECORDER](docs/manual/recorder.md)** — IQ データを SigMF 形式で欠落なく録音。録音は後から再生・解析できます。
 - **[FM / AM RX](docs/manual/demod.md)** — NFM / WFM / AM の復調と音声再生。
-- **[STD-T98 MONITOR](docs/manual/std_t98.md)** — デジタル簡易無線 30 チャネルを同時に受信・復号・音声再生。秘話の解除にも対応。
+- **[STD-T98 MONITOR](docs/manual/std_t98.md)** — 351 MHz 帯デジタル簡易無線の登録局 97 チャネル(地上 82＋上空 15)を同時に受信・復号・音声再生。通常秘話・強化秘話にも対応。
 - **[ADS-B](docs/manual/adsb.md)** — 1090 MHz で航空機の位置を受信し、一覧と地図で表示。地図は内蔵でオフライン動作。
 - **[SLPR 20CH RX](docs/manual/slpr.md)** — 特定小電力トランシーバー(422 MHz 帯、単信 20 チャネル)を同時に受信して音声再生。
 - **[JR TRAIN RADIO](docs/manual/jr_train.md)** — JR 在来線デジタル列車無線(352.6 MHz 帯)の全チャネルを同時に受信・復号。音声の再生(通話の自動選択)、データ電文と運行把握の表示、復号結果と IQ の保存。**開発中: 実機(B210)での動作確認はこれから**([`docs/apps/jr_train.md`](docs/apps/jr_train.md))。
@@ -32,6 +32,17 @@ App の名前から、それぞれの説明書を開けます。メニューや�
 <td><img src="docs/gui/menu.png" alt="メニュー"></td>
 <td><img src="docs/gui/diagnostics.png" alt="診断画面"></td>
 </tr></table>
+
+## STD-T98 MONITOR の対応範囲
+
+ARIB STD-T98 v2.0 の351 MHz帯登録局に対応しています。地上は `CH 1–82`、上空は `S1–S15` と表示します。150 / 460 MHz帯の免許局は対象外です。
+
+- 97チャネルを同時に処理し、800 kHz幅の帯域スペクトラムで俯瞰できます。
+- チャネル一覧はフィルタと `PREV` / `NEXT`・ページ選択で操作します。`ACTIVE` は活動中のチャネルを自動更新し、`SELECTED` は選択中のチャネルのページを開きます。
+- 右下にCSM、その直下に先頭大文字のペットネーム、UC、メーカーコード、受信状態、秘話コードを表示します。詳しい受信統計は `DETAILS` で開きます。
+- 確定した秘話コードはSPEARのリポジトリ直下の `secret-cache.json` に保存し、次回も受信データで検証して再利用します。`std-t98-receiver-sharp` と互換の形式です。このファイルはGit管理対象外です。
+
+周波数表と操作手順は [STD-T98 MONITOR 説明書](docs/manual/std_t98.md) を参照してください。上の画面写真には旧版のものが含まれます。
 
 ## 必要な機材
 

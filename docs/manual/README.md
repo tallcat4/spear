@@ -12,7 +12,7 @@ S.P.E.A.R. は、タブレット PC(Panasonic FZ-G2)と USRP B210 を、持ち�
 | SPECTRUM | スペクトラムとウォーターフォールで電波を見る | [spectrum.md](spectrum.md) |
 | IQ RECORDER | 受信した信号を欠落なく録音する | [recorder.md](recorder.md) |
 | FM / AM RX | FM / AM の放送や無線を聞く | [demod.md](demod.md) |
-| STD-T98 MONITOR | デジタル簡易無線 30 チャネルを同時に受信して聞く | [std_t98.md](std_t98.md) |
+| STD-T98 MONITOR | 351 MHz帯登録局97チャネル(地上82＋上空15)を同時に受信して聞く | [std_t98.md](std_t98.md) |
 | ADS-B | 航空機の位置を受信して一覧と地図に出す | [adsb.md](adsb.md) |
 | SLPR 20CH RX | 特定小電力トランシーバー 20 チャネルを同時に受信して聞く | [slpr.md](slpr.md) |
 | JR TRAIN RADIO | JR 在来線デジタル列車無線を全チャネル同時に受信して、音声とデータを見る(開発中) | [jr_train.md](jr_train.md) |
@@ -179,6 +179,7 @@ App の設定(利得、AGC、受信端子、各 App のモードや表示範囲�
 | `~/spear/site.conf` | B210 の個体差などの、手で書く設定(`key=value` の行)。`state.conf` より優先されます |
 | `~/spear/recordings/` | 録音したファイル |
 | `~/spear/logs/` | 起動ごとのログとイベントの履歴 |
+| `<SPEARリポジトリ>/secret-cache.json` | STD-T98の確定した秘話コード。起動後の受信データで再検証して使用 |
 
 B210 には個体ごとに少し周波数のずれがあります。デジタル無線の App で受信がずれるときは、`site.conf` に `radio.freq_err_ppm=<ずれ ppm>` を書いて補正します。
 

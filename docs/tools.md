@@ -41,12 +41,12 @@ site.conf の値が state.conf より優先される。運転状態を初期化�
 ## STD-T98 録音の解析
 
 ```
-./build/tools/spear-std-t98-decode ~/spear/recordings/<base> --freq-err <帯域中心 − 録音中心 (App の録音なら 250000) + 残留誤差 Hz> --wav ~/spear/audio/<base>
+./build/tools/spear-std-t98-decode ~/spear/recordings/<base> --freq-err <帯域中心 − 録音中心 (350.79375 MHz中心の録音なら 500000) + 残留誤差 Hz> --wav ~/spear/audio/<base>
 ```
 
-- 30 チャネルのフレーム表(SACCH/PICH CRC、CSM、推定周波数誤差)と、チャネルごとの AMBE 音声 WAV を出力する。
-- `--freq-err` はその録音に残っている周波数誤差。`radio.freq_err_ppm` を設定した後の録音なら 0、それより前の録音は個体の誤差(Hz)を指定する。
-- 秘話呼(SACCH call=1)は GUI と同じ方法で鍵を探索し(1 ブロック約 0.6 s)、以降のフレームを復号して WAV に出す。
+- このCLIの対象は従来のCH1〜30(GUIは97チャネル対応)。30チャネルのフレーム表(SACCH/PICH CRC、CSM、推定周波数誤差)と、チャネルごとの AMBE 音声 WAV を出力する。
+- `--freq-err` は帯域基準351.29375 MHzと録音中心の差に残留周波数誤差を加えた値。中心が351.29375 MHzで周波数誤差も補正済みなら0、中心が350.79375 MHzで補正済みなら500000。
+- 秘話呼(SACCH call=1)は GUI と同じ方法で鍵を探索し(最短10バースト、音声0.8秒分)、以降のフレームを復号して WAV に出す。
   フレーム行の末尾に `SECRET key=<鍵> (<経路>, <秒>)`、以降の行に `[secret K <鍵>]` が付く。`--no-secret` で探索しない(スクランブルのまま出す)。
 
 ## ADS-B 録音の解析
