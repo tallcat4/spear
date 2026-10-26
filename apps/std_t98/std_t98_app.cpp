@@ -14,8 +14,8 @@ using namespace std::chrono_literals;
 using namespace spear::std_t98;
 
 namespace {
-constexpr double kRfRate = 4e6;        // 4 Msps → resamp1 ÷10 → 400 kHz = 64 × 6.25 kHz(実機録音で検証済みの構成)
-constexpr int kPfb = 64;
+constexpr double kRfRate = 4e6;        // 4 Msps → resamp1 ÷5 → 800 kHz = 128 × 6.25 kHz(v2.0 登録局の全97ch)
+constexpr int kPfb = 128;
 constexpr unsigned kAudioRate = 8000;  // AMBE の出力レート。ALSA/PipeWire 側でリサンプルさせる
 constexpr float kAmbeGain = 1.f / 32768.f;   // blip25c の PCM は int16 の全幅(mbelib の float 経路は 1/7 だったので以前は × 7 していた)
 constexpr double kAudioPerInput = kAudioRate / kRfRate;   // radio.rx index → 8 kHz index
@@ -48,6 +48,11 @@ RfConfig StdT98App::declare_rf_config() const {
     return c;
 }
 
+QString StdT98App::channelLabel(int ch) const {
+    const auto& entry = kRegisteredPlan.at(ch);
+    return (entry.aerial ? QString("S") : QString()) + QString::number(entry.number);
+}
+
 double StdT98App::channelFreqHz(int ch) const { return band_center_hz_ + channelOffsetHz(ch); }
 
 void StdT98App::retune() {
@@ -58,7 +63,7 @@ void StdT98App::retune() {
 }
 void StdT98App::setBandCenterHz(double hz) { band_center_hz_ = hz; retune(); }
 void StdT98App::setLoOffsetHz(double hz) {
-    lo_offset_hz_ = std::clamp(hz, -(kRfRate / 2 - 300e3), kRfRate / 2 - 300e3);
+    lo_offset_hz_ = std::clamp(hz, -(kRfRate / 2 - 400e3), kRfRate / 2 - 400e3);
     retune();
 }
 
@@ -78,7 +83,8 @@ QVariantList StdT98App::channels() const {
     for (int i = 0; i < cfg_.num_channels; ++i) {
         const auto& s = stats_[static_cast<std::size_t>(i)];
         QVariantMap m;
-        m["ch"] = i + 1;
+        m["ch"] = channelLabel(i);
+        m["index"] = i;
         m["freq"] = channelFreqHz(i);
         m["power"] = s.power_db;
         m["locked"] = s.locked;
@@ -103,7 +109,7 @@ QVariantMap StdT98App::selected() const {
     std::lock_guard<std::mutex> lk(mu_);
     const auto& s = stats_[static_cast<std::size_t>(selected_.load())];
     QVariantMap m;
-    m["ch"] = selected_.load() + 1;
+    m["ch"] = channelLabel(selected_);
     m["freq"] = channelFreqHz(selected_);
     m["power"] = s.power_db;
     m["locked"] = s.locked;
@@ -178,12 +184,12 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
     o.frame = [this, &core](const Frame& f) {
         ++total_frames_;
         QVariantMap m;
-        m["ch"] = f.channel + 1;
+        m["ch"] = channelLabel(f.channel);
         m["symbolIndex"] = static_cast<double>(f.symbol_index);
         m["inputIndex"] = static_cast<double>(f.input_sample_index);
         m["sse"] = f.sync_sse;
         m["richF"] = f.rich.f; m["richM"] = f.rich.m; m["richOk"] = f.rich.parity_ok;
-        QString line = QString("ch%1 sym %2 sse %3 RICH F=%4 M=%5 %6").arg(f.channel + 1, 2, 10, QChar('0')).arg(f.symbol_index).arg(f.sync_sse, 0, 'f', 2).arg(f.rich.f).arg(f.rich.m).arg(f.rich.parity_ok ? "ok" : "BAD");
+        QString line = QString("ch%1 sym %2 sse %3 RICH F=%4 M=%5 %6").arg(channelLabel(f.channel)).arg(f.symbol_index).arg(f.sync_sse, 0, 'f', 2).arg(f.rich.f).arg(f.rich.m).arg(f.rich.parity_ok ? "ok" : "BAD");
         if (f.rich.f == 0) {
             m["type"] = "PICH"; m["csm"] = QString::fromStdString(f.pich.csm); m["crcOk"] = f.pich.crc_ok; m["bitErrors"] = f.pich.bit_errors;
             line += QString("  PICH csm=%1 crc=%2 err=%3").arg(QString::fromStdString(f.pich.csm)).arg(f.pich.crc_ok ? "ok" : "BAD").arg(f.pich.bit_errors);
@@ -361,7 +367,7 @@ void StdT98App::on_start(Core& core) {
                 last = state;
                 if (!changed) return;
                 events->emit(r.accepted ? EventKind::Info : EventKind::Warning, id,
-                             "secret ch" + std::to_string(r.channel + 1) + " series " + std::to_string(r.series) + " key " + std::to_string(r.key) + " (" + secret::to_string(r.source) + ", " + std::to_string(r.seconds).substr(0, 4) + " s)",
+                             "secret ch" + channelLabel(r.channel).toStdString() + " series " + std::to_string(r.series) + " key " + std::to_string(r.key) + " (" + secret::to_string(r.source) + ", " + std::to_string(r.seconds).substr(0, 4) + " s)",
                              {}, r.key);
             },
             [events, id](const std::string& msg) { events->emit(msg.rfind("secret disabled", 0) == 0 ? EventKind::Warning : EventKind::Info, id, msg); });

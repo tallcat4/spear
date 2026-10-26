@@ -408,12 +408,12 @@ TEST(StdT98Secret, WorkerReturnsGuidedResultWithoutExternalGolden) {
     w.wait_ready();
     ASSERT_TRUE(w.status().ready) << w.status().error;
     Worker::Request rq;
-    rq.channel = 2; rq.session = 7;
+    rq.channel = 96; rq.session = 7; // S15: last channel of the expanded plan
     rq.bursts.assign(10, scramble(measured_silence_burst(), 31337));
     w.submit(rq);
     std::unique_lock<std::mutex> lk(mu);
     ASSERT_TRUE(cv.wait_for(lk, std::chrono::seconds(10), [&] { return !results.empty(); }));
-    EXPECT_EQ(results[0].channel, 2);
+    EXPECT_EQ(results[0].channel, 96);
     EXPECT_EQ(results[0].session, 7u);
     EXPECT_EQ(results[0].key, 31337);
     EXPECT_EQ(results[0].source, ResultSource::GuidedAI);

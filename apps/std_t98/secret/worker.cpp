@@ -1,3 +1,4 @@
+#include "../channel_plan.hpp"
 #include "worker.hpp"
 
 #include <sys/resource.h>
@@ -82,7 +83,7 @@ void Worker::run() {
         out.channel = r.channel;
         out.session = r.session;
         try {
-            if (r.channel < 0 || r.channel >= 30 || (!r.valid.empty() && r.valid.size() != r.bursts.size()))
+            if (r.channel < 0 || r.channel >= kRegisteredChannels || (!r.valid.empty() && r.valid.size() != r.bursts.size()))
                 throw std::runtime_error("invalid secret request");
             auto& ch = channels[r.channel];
             // An overwritten/overrun window must never invent adjacent frames.

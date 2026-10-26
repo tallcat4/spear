@@ -1,6 +1,6 @@
 // App: STD-T98 MONITOR (§12 M3) — docs/apps/std_t98.md
 //
-// 純 C++ の Receiver(30ch)を GUI に載せる。検証対象:
+// 純 C++ の Receiver(97ch)を GUI に載せる。検証対象:
 //   * §1.1 観測点: Receiver の中間 stream(帯域 IQ、選択 ch の IQ / アイパターン)を DSP に触れず GUI に出す
 //   * §3.6 provenance: フレーム event の sample 範囲を radio.rx index で
 //   * 個体設定(band_center_hz)を --set / site.conf で渡す経路(LO 誤差は Core が radio.freq_err_ppm で打ち消す)
@@ -10,7 +10,7 @@
 #pragma once
 
 #include "ambe.hpp"
-#include "receiver.hpp"
+#include "channel_plan.hpp"
 #include "secret/tracker.hpp"
 #include "secret/worker.hpp"
 #include "spear/appfw/app.hpp"
@@ -35,13 +35,13 @@ class StdT98App final : public appfw::GuiApp {
     // 帯域中心 / LO オフセット / 個体誤差は規格・App・site.conf が決める(UI からは操作しない: 誤設定で受信不能になる)
     Q_PROPERTY(double bandCenterHz READ bandCenterHz NOTIFY configChanged)   // ch16 の周波数(規格: 351.29375 MHz)
     Q_PROPERTY(double loOffsetHz READ loOffsetHz NOTIFY configChanged)
-    Q_PROPERTY(int selectedChannel READ selectedChannel WRITE setSelectedChannel NOTIFY configChanged)   // 0..29
+    Q_PROPERTY(int selectedChannel READ selectedChannel WRITE setSelectedChannel NOTIFY configChanged)   // 0..96
     Q_PROPERTY(bool mute READ mute WRITE setMute NOTIFY configChanged)
-    Q_PROPERTY(bool allChannelAudio READ allChannelAudio WRITE setAllChannelAudio NOTIFY configChanged)   // 全 30ch を同時再生(ミックス)
+    Q_PROPERTY(bool allChannelAudio READ allChannelAudio WRITE setAllChannelAudio NOTIFY configChanged)   // 全 97ch を同時再生(ミックス)
     Q_PROPERTY(int numChannels READ numChannels CONSTANT)
     Q_PROPERTY(double channelSpacingHz READ channelSpacingHz CONSTANT)
     // ---- 観測値(DSP thread が更新、timer で通知)----
-    Q_PROPERTY(QVariantList channels READ channels NOTIFY metersChanged)   // 30 × {power, open, frames, sacchOk, pichOk, csm, syncs, bestSse}
+    Q_PROPERTY(QVariantList channels READ channels NOTIFY metersChanged)   // 97 × {power, open, frames, sacchOk, pichOk, csm, syncs, bestSse}
     Q_PROPERTY(QVariantMap selected READ selected NOTIFY metersChanged)    // 選択 ch の詳細
     Q_PROPERTY(double totalFrames READ totalFrames NOTIFY metersChanged)
     Q_PROPERTY(double losslessDrops READ losslessDrops NOTIFY metersChanged)
@@ -53,7 +53,7 @@ class StdT98App final : public appfw::GuiApp {
     Q_PROPERTY(QVariantList secretCache READ secretCache NOTIFY metersChanged)      // 全チャネル共通の鍵キャッシュ(新しい順)
     // ---- 観測点 ----
     Q_PROPERTY(spear::appfw::ViewSource* view READ view CONSTANT)          // radio.rx
-    Q_PROPERTY(spear::appfw::ViewSource* bandView READ bandView CONSTANT)  // std_t98.band(400 kHz、30ch 俯瞰)
+    Q_PROPERTY(spear::appfw::ViewSource* bandView READ bandView CONSTANT)  // std_t98.band(800 kHz、97ch 俯瞰)
     Q_PROPERTY(spear::appfw::ViewSource* channelView READ channelView CONSTANT)   // std_t98.channel(選択 ch 62.5 kHz)
     Q_PROPERTY(spear::appfw::TraceSource* eye READ eye CONSTANT)           // 選択 ch のアイパターン
 public:
@@ -74,8 +74,9 @@ public:
     void setAllChannelAudio(bool on) { all_audio_ = on; Q_EMIT configChanged(); }
     int numChannels() const { return cfg_.num_channels; }
     double channelSpacingHz() const { return cfg_.spacing_hz; }
+    Q_INVOKABLE QString channelLabel(int ch) const;
     Q_INVOKABLE double channelFreqHz(int ch) const;   // 規格上の周波数(帯域中心 + オフセット)
-    Q_INVOKABLE double channelOffsetHz(int ch) const { return (ch - cfg_.num_channels / 2) * cfg_.spacing_hz; }
+    Q_INVOKABLE double channelOffsetHz(int ch) const { return cfg_.channel_bins.at(ch) * cfg_.spacing_hz; }
 
     QVariantList channels() const;
     QVariantMap selected() const;
@@ -107,9 +108,9 @@ private:
     std::unique_ptr<std_t98::Receiver> build_receiver(Core& core);
     void publish(Stream<cf32>& s, BlockPool& pool, std::span<const cf32> x, uint64_t& seq, uint64_t& index, const BlockHeader& src);
 
-    std_t98::ReceiverConfig cfg_;
+    std_t98::ReceiverConfig cfg_ = std_t98::registered_receiver_config();
     double band_center_hz_ = 351.29375e6;   // ARIB STD-T98: ch1 = 351.20000 MHz、6.25 kHz 間隔、ch16 が帯域中心
-    double lo_offset_hz_ = 250e3;
+    double lo_offset_hz_ = 500e3;
     std::atomic<int> selected_{0};
     bool mute_ = false;
     std::atomic<bool> all_audio_{true};

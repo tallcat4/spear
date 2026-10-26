@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "receiver.hpp"
 
 #include <algorithm>
@@ -37,11 +38,18 @@ Receiver::Receiver(ReceiverConfig cfg) : cfg_(cfg) {
     const double bin = cfg_.spacing_hz;
     pfb_ = std::make_unique<dsp::PfbChannelizer>(static_cast<std::size_t>(cfg_.pfb_channels), post1,
         dsp::design_lowpass(post1, bin / 2.0, static_cast<std::size_t>(cfg_.pfb_channels) * 8 - 1));
-    // channel map(std-t98 build_channel_map): 下側 15 ch は上位 bin、中心 = bin 0、上側は bin 1..14
-    const int neg = cfg_.num_channels / 2, pos = cfg_.num_channels - neg - 1;
-    for (int i = 0; i < neg; ++i) channel_map_.push_back(cfg_.pfb_channels - neg + i);
-    channel_map_.push_back(0);
-    for (int i = 1; i <= pos; ++i) channel_map_.push_back(i);
+    if (cfg_.num_channels <= 0 || cfg_.num_channels > cfg_.pfb_channels ||
+        (!cfg_.channel_bins.empty() && cfg_.channel_bins.size() != static_cast<std::size_t>(cfg_.num_channels)))
+        throw std::invalid_argument("invalid STD-T98 channel map size");
+    for (int ch = 0; ch < cfg_.num_channels; ++ch) {
+        const int b = cfg_.channel_bins.empty() ? ch - cfg_.num_channels / 2 : cfg_.channel_bins[ch];
+        if (b <= -cfg_.pfb_channels / 2 || b >= cfg_.pfb_channels / 2)
+            throw std::invalid_argument("STD-T98 channel outside PFB passband");
+        const int bin_index = (b + cfg_.pfb_channels) % cfg_.pfb_channels;
+        if (std::find(channel_map_.begin(), channel_map_.end(), bin_index) != channel_map_.end())
+            throw std::invalid_argument("duplicate STD-T98 channel bin");
+        channel_map_.push_back(bin_index);
+    }
 
     const double demod_rate = bin * cfg_.resamp2;     // 62500
     const double sps = demod_rate / cfg_.baud;        // 26.04
@@ -142,7 +150,7 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
                 const double start = ch.eye_pending.front() - 0.5 * sps;
                 if (start + 2.0 * sps + 1.0 >= avail) break;
                 ch.eye_pending.pop_front();
-                if (start < static_cast<double>(ch.eye_base)) continue;
+                if (start < static_cast<double>(ch.eye_base) || !m.active) continue;
                 for (int k = 0; k < cfg_.eye_points; ++k) {
                     const double t = start - static_cast<double>(ch.eye_base) + 2.0 * sps * k / (cfg_.eye_points - 1);
                     const auto i0 = static_cast<std::size_t>(t);

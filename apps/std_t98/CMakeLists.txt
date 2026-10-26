@@ -1,7 +1,7 @@
 # App: STD-T98 モニタ (§12 M3)。
 #   protocol/  純 C++ プロトコルデコーダ
 #   dsp/       App 内 DSP(RRC 設計、Gardner symbol sync、同期語検出)
-#   receiver   純 C++ 受信機(30ch)。Qt/UHD 非依存 → headless / テスト可能 (§10.4)
+#   receiver   純 C++ 受信機(97ch)。Qt/UHD 非依存 → headless / テスト可能 (§10.4)
 #   blip25c/   AMBE+2 3600x2450 の FEC と音声合成(blip25-vocoder の C 移植、MIT。手を加えない。blip25c/README.md)
 #   ambe/      49 bit の並び(ambe_d ⇔ ThumbDV)。ambe.cpp が blip25c を包む
 #   secret/    秘話: PN、鍵探索(ffnn = C++ 再実装 / hybrid = ONNX Runtime、要件 §2.5 道 1・2)、要求ポリシー、ワーカースレッド
@@ -57,7 +57,7 @@ if(COMMAND spear_add_app)
   spear_add_app(
     ID std_t98
     NAME "STD-T98 MONITOR"
-    DESCRIPTION "ARIB STD-T98 30ch monitor: band spectrum, eye pattern, frames, AMBE audio"
+    DESCRIPTION "ARIB STD-T98 97ch monitor: band spectrum, eye pattern, frames, AMBE audio"
     DIRECTION RX
     CLASS spear::apps::StdT98App
     HEADER std_t98_app.hpp

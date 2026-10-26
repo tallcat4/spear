@@ -416,3 +416,58 @@ TEST(StdT98Golden, RealRecordingCh3PichAndSacch) {
     EXPECT_LT(rx.metrics(g.channel).best_sse, 1.0);
     for (int c = 0; c < cfg.num_channels; ++c) if (c != g.channel) EXPECT_EQ(rx.metrics(c).frames, 0u);
 }
+
+// v2.0 Table 3-5: channel numbering is deliberately not frequency order.
+#include "channel_plan.hpp"
+#include <set>
+TEST(StdT98Plan, RegisteredFrequencyBoundariesAndUniqueBins) {
+    const auto cfg = registered_receiver_config();
+    Receiver rx(cfg);
+    EXPECT_EQ(cfg.num_channels, 97);
+    EXPECT_EQ(rx.band_rate(), 800000);
+    const std::vector<std::pair<int, int>> boundaries = {
+        {0,351200000}, {29,351381250}, {30,351387500}, {69,351631250},
+        {70,351031250}, {81,351100000}, {82,351168750}, {86,351193750},
+        {87,351106250}, {96,351162500}};
+    for (auto [index, hz] : boundaries)
+        EXPECT_EQ(kBandReferenceHz + rx.channel_offset_hz(index), hz) << index;
+    std::set<int> bins;
+    for (int i = 0; i < cfg.num_channels; ++i) {
+        EXPECT_TRUE(bins.insert(rx.channel_to_bin(i)).second);
+        EXPECT_EQ(kRegisteredPlan[i].number, i < 82 ? i + 1 : i - 81);
+        EXPECT_EQ(kRegisteredPlan[i].aerial, i >= 82);
+    }
+}
+
+TEST(StdT98Plan, ExpandedBandRoutesCarriersToLogicalChannels) {
+    // Exercise the actual decimator/PFB on both band edges and numbering wraps.
+    for (int target : {0, 29, 30, 69, 70, 81, 82, 86, 87, 96}) {
+        auto cfg = registered_receiver_config();
+        cfg.freq_err_hz = 500000; // production LO offset
+        Receiver rx(cfg);
+        std::vector<cf32> samples(16000);
+        const double freq = rx.channel_offset_hz(target) + cfg.freq_err_hz;
+        for (int block = 0; block < 12; ++block) {
+            const auto first = static_cast<uint64_t>(block) * samples.size();
+            for (std::size_t i = 0; i < samples.size(); ++i) {
+                const double phase = 2 * M_PI * freq * static_cast<double>(first + i) / cfg.in_rate;
+                samples[i] = cf32(static_cast<float>(std::cos(phase)), static_cast<float>(std::sin(phase)));
+            }
+            rx.process(samples, first);
+        }
+        for (int ch = 0; ch < cfg.num_channels; ++ch)
+            if (ch != target) { EXPECT_GT(rx.metrics(target).power_db, rx.metrics(ch).power_db + 15) << target << " vs " << ch; }
+    }
+}
+
+TEST(StdT98Plan, RejectsInvalidExplicitMaps) {
+    auto cfg = registered_receiver_config();
+    cfg.channel_bins.pop_back();
+    EXPECT_THROW(Receiver{cfg}, std::invalid_argument);
+    cfg = registered_receiver_config();
+    cfg.channel_bins[0] = cfg.channel_bins[1];
+    EXPECT_THROW(Receiver{cfg}, std::invalid_argument);
+    cfg = registered_receiver_config();
+    cfg.channel_bins[0] = 64;
+    EXPECT_THROW(Receiver{cfg}, std::invalid_argument);
+}
