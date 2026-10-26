@@ -42,7 +42,7 @@ public:
         uint64_t requests = 0, results = 0, queued = 0;
     };
     // 埋め込みhybridモデルをワーカースレッド上でロードする。
-    explicit Worker(std::function<void(const Result&)> on_result, std::function<void(const std::string&)> on_log = {});
+    explicit Worker(std::function<void(const Result&)> on_result, std::function<void(const std::string&)> on_log = {}, std::vector<SeriesKey> initial_cache = {});
     ~Worker();
     Worker(const Worker&) = delete;
     Worker& operator=(const Worker&) = delete;
@@ -61,6 +61,7 @@ private:
     Status st_;
     bool loaded_ = false, stop_ = false;
     std::atomic<bool> cancel_{false};
+    std::vector<SeriesKey> initial_cache_;
     std::thread th_;
 };
 

@@ -11,8 +11,8 @@
 
 namespace spear::std_t98::secret {
 
-Worker::Worker(std::function<void(const Result&)> on_result, std::function<void(const std::string&)> on_log)
-    : on_result_(std::move(on_result)), on_log_(std::move(on_log)) {
+Worker::Worker(std::function<void(const Result&)> on_result, std::function<void(const std::string&)> on_log, std::vector<SeriesKey> initial_cache)
+    : on_result_(std::move(on_result)), on_log_(std::move(on_log)), initial_cache_(std::move(initial_cache)) {
     th_ = std::thread([this] { run(); });
 }
 
@@ -52,10 +52,11 @@ void Worker::run() {
     struct Channel {
         uint32_t session = 0;
         uint64_t next = 0;
+        bool cache_pending = true;
         std::unique_ptr<GuidedSession> solver;
     };
     std::map<int, Channel> channels;
-    std::vector<SeriesKey> cache;
+    auto cache = std::move(initial_cache_);
     {
         std::lock_guard<std::mutex> lk(mu_);
         st_.ready = ok;
@@ -91,6 +92,7 @@ void Worker::run() {
                 ch.solver = std::make_unique<GuidedSession>(hybrid_scorer(hybrid));
                 ch.session = r.session;
                 ch.next = r.first_burst;
+                ch.cache_pending = !cache.empty();
             }
             for (std::size_t i = 0; i < r.bursts.size(); ++i) {
                 if (cancel_) return;
@@ -99,15 +101,25 @@ void Worker::run() {
                 ch.solver->add(r.bursts[i], r.valid.empty() ? kAllValid : r.valid[i]);
                 ch.next = index + 1;
             }
-            const auto res = ch.solver->assess();
+            GuidedSession::Result res;
+            bool cache_hit = false;
+            if (ch.cache_pending && ch.solver->ready()) {
+                auto candidates = cache;
+                candidates.push_back({0, 0}); // Plaintext must compete with cached keys.
+                res = ch.solver->verify_cached(candidates);
+                cache_hit = res.accepted.has_value();
+                ch.cache_pending = false;
+            }
+            if (!res.accepted) res = ch.solver->assess();
             if (res.accepted) {
                 out.accepted = true;
                 out.key = res.accepted->key;
                 out.series = res.accepted->series;
-                out.source = ResultSource::GuidedAI;
-                std::erase(cache, *res.accepted);
-                cache.insert(cache.begin(), *res.accepted);
-                if (cache.size() > 16) cache.resize(16);
+                out.source = cache_hit ? ResultSource::GlobalCache : ResultSource::GuidedAI;
+                if (res.accepted->key) {
+                    std::erase(cache, *res.accepted);
+                    cache.insert(cache.begin(), *res.accepted);
+                }
             }
         } catch (const std::exception& e) {
             channels.erase(r.channel);

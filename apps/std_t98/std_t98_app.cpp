@@ -1,4 +1,6 @@
 #include "std_t98_app.hpp"
+#include "petname.hpp"
+#include "secret_cache.hpp"
 #include <map>
 #include "spear/core/tap.hpp"
 
@@ -125,7 +127,10 @@ QVariantMap StdT98App::selected() const {
     m["sps"] = s.sps;
     m["csm"] = QString::fromStdString(s.csm);
     m["freqErrEst"] = s.freq_err_est;
-    m["lastFrame"] = last_frame_;
+    m["lastFrame"] = s.last_frame;
+    m["petname"] = QString::fromStdString(csm_petname(s.csm));
+    m["userCode"] = s.user_code;
+    m["makerCode"] = s.maker_code;
     m["secret"] = s.secret;
     m["series"] = s.series;
     m["confirmed"] = s.confirmed;
@@ -135,6 +140,11 @@ QVariantMap StdT98App::selected() const {
     m["secretSeconds"] = s.last_search_s;
     m["secretSearches"] = static_cast<double>(s.searches);
     return m;
+}
+
+QString StdT98App::cacheWarning() const {
+    std::lock_guard<std::mutex> lk(secret_mu_);
+    return cache_warning_;
 }
 
 QString StdT98App::secretStatus() const {
@@ -202,7 +212,14 @@ std::unique_ptr<Receiver> StdT98App::build_receiver(Core& core) {
         }
         {
             std::lock_guard<std::mutex> lk(mu_);
-            if (f.channel == selected_) last_frame_ = m;
+            auto& stat = stats_[static_cast<std::size_t>(f.channel)];
+            stat.last_frame = m;
+            if (f.rich.f == 0 && f.pich.crc_ok && f.pich.csm != stat.csm)
+                stat.user_code = stat.maker_code = -1;
+            if (f.rich.f == 1 && f.sacch.crc_ok) {
+                stat.user_code = f.sacch.user_code;
+                stat.maker_code = f.sacch.maker_code;
+            }
         }
         // フレーム event(provenance: radio.rx の index、192 シンボル = 192 × in_rate / baud サンプル)。1 行の記録は DIAGNOSTICS のイベントログで読む
         const uint64_t span = static_cast<uint64_t>(192.0 * cfg_.in_rate / cfg_.baud);
@@ -343,7 +360,6 @@ void StdT98App::on_start(Core& core) {
     {
         std::lock_guard<std::mutex> lk(mu_);
         for (auto& s : stats_) s = ChanStat{};
-        last_frame_.clear();
     }
     total_frames_ = 0;
     audio_late_ = 0;
@@ -355,11 +371,14 @@ void StdT98App::on_start(Core& core) {
     secret_ch_.assign(static_cast<std::size_t>(cfg_.num_channels), SecretChan{});
     { std::lock_guard<std::mutex> lk(secret_mu_); secret_results_.clear(); secret_cache_.clear(); }
     if (secret_enabled_) {
+        auto cache = std::make_shared<SecretCacheFile>(QStringLiteral(SPEAR_SECRET_CACHE_PATH));
+        { std::lock_guard<std::mutex> lk(secret_mu_); secret_cache_ = cache->codes(); cache_warning_ = cache->warning(); }
         EventBus* events = &core.events();
         const std::string id = info().id;
         secret_ = std::make_unique<secret::Worker>(
-            [this, events, id, previous = std::map<int, std::pair<uint32_t, std::optional<secret::SeriesKey>>>{}](const secret::Worker::Result& r) mutable {
-                { std::lock_guard<std::mutex> lk(secret_mu_); secret_results_.push_back(r); secret_cache_ = r.cache; }
+            [this, events, id, cache, previous = std::map<int, std::pair<uint32_t, std::optional<secret::SeriesKey>>>{}](const secret::Worker::Result& r) mutable {
+                if (r.accepted) cache->remember({r.series, r.key});
+                { std::lock_guard<std::mutex> lk(secret_mu_); secret_results_.push_back(r); secret_cache_ = cache->codes(); cache_warning_ = cache->warning(); }
                 const auto answer = r.accepted ? std::optional<secret::SeriesKey>({r.series, r.key}) : std::nullopt;
                 const auto state = std::make_pair(r.session, answer);
                 auto& last = previous[r.channel];
@@ -370,7 +389,7 @@ void StdT98App::on_start(Core& core) {
                              "secret ch" + channelLabel(r.channel).toStdString() + " series " + std::to_string(r.series) + " key " + std::to_string(r.key) + " (" + secret::to_string(r.source) + ", " + std::to_string(r.seconds).substr(0, 4) + " s)",
                              {}, r.key);
             },
-            [events, id](const std::string& msg) { events->emit(msg.rfind("secret disabled", 0) == 0 ? EventKind::Warning : EventKind::Info, id, msg); });
+            [events, id](const std::string& msg) { events->emit(msg.rfind("secret disabled", 0) == 0 ? EventKind::Warning : EventKind::Info, id, msg); }, cache->codes());
     }
     sub_ = rx.subscribe(info().id, DeliveryPolicy::Lossless, 64);
     rebuild_ = true;

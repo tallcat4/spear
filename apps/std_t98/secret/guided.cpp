@@ -42,6 +42,17 @@ void SeriesSession::add(const Burst& burst, const Valid4& valid) {
         else previous_.reset();
     }
 }
+double SeriesSession::candidate_evidence(SeriesKey id) const {
+    if (!pairs_) return 0;
+    const auto pn = pn_sequence(id.key, id.series);
+    double score = 0;
+    for (std::size_t phase = 0; phase < 4; ++phase)
+        for (std::size_t bit = 0; bit < 49; ++bit) {
+            const auto mapped = static_cast<std::size_t>(ambe::kThumbDv[bit]);
+            score += sums_[phase*49+bit] * (pn[phase*49+mapped] == pn[((phase+3)%4)*49+mapped] ? 1 : -1);
+        }
+    return evidence(score, static_cast<double>(pairs_)*49);
+}
 std::vector<LinearCandidate> SeriesSession::candidates() const {
     if (!pairs_) return {};
     // Maintain only the global top five; the transform scratch buffer is shared
@@ -100,27 +111,41 @@ GuidedSession::Result GuidedSession::assess() {
     return verify(linear_.candidates());
 }
 GuidedSession::Result GuidedSession::verify(std::span<const LinearCandidate> candidates) {
-    Result result;
-    if (blocks_.size() < 2) return result;
     std::vector<SeriesKey> selected;
     for (std::size_t i = 0; i < std::min<std::size_t>(5, candidates.size()); ++i)
         if (candidates[i].score >= threshold_) selected.push_back(candidates[i].id);
-    if (selected.empty()) return result;
+    return verify_ids(selected);
+}
+GuidedSession::Result GuidedSession::verify_cached(std::span<const SeriesKey> candidates) {
+    auto result = verify_ids(candidates);
+    // Classification alone can mistake a wrong key for speech, especially on
+    // repeated silence. Validate only the winning known key's PN consistency;
+    // this does not run the full-series transform or propose any new keys.
+    if (result.accepted && linear_.candidate_evidence(*result.accepted) < threshold_) result.accepted.reset();
+    return result;
+}
+GuidedSession::Result GuidedSession::verify_ids(std::span<const SeriesKey> selected) {
+    Result result;
+    if (blocks_.size() < 2 || selected.empty()) return result;
     for (auto& block : blocks_) {
-        // Bound the cache to the current shortlist (at most 15 scores total).
+        // Retain only the keys in this pass (cache or solver shortlist).
         std::erase_if(block.scores, [&](const auto& entry) {
             return std::find(selected.begin(), selected.end(), entry.first) == selected.end();
         });
         std::vector<SeriesKey> missing;
         for (auto id : selected) if (!block.scores.contains(id)) missing.push_back(id);
         if (missing.empty()) continue;
-        const auto scores = scorer_(block.data, missing);
-        if (scores.size() != missing.size()) throw std::runtime_error("hybrid: wrong score count");
-        for (std::size_t i = 0; i < scores.size(); ++i) {
-            if (!std::isfinite(scores[i])) throw std::runtime_error("hybrid: non-finite logits");
-            block.scores[missing[i]] = scores[i];
+        // Bound temporary model buffers even with many remembered codes.
+        for (std::size_t start = 0; start < missing.size(); start += 32) {
+            auto batch = std::span<const SeriesKey>(missing).subspan(start, std::min<std::size_t>(32, missing.size()-start));
+            const auto scores = scorer_(block.data, batch);
+            if (scores.size() != batch.size()) throw std::runtime_error("hybrid: wrong score count");
+            for (std::size_t i = 0; i < scores.size(); ++i) {
+                if (!std::isfinite(scores[i])) throw std::runtime_error("hybrid: non-finite logits");
+                block.scores[batch[i]] = scores[i];
+            }
+            evaluations_ += scores.size();
         }
-        evaluations_ += scores.size();
     }
     struct Ranked { SeriesKey id; double mean; unsigned positive; };
     std::vector<Ranked> ranking;

@@ -2,3 +2,10 @@ add_executable(spear_std_t98_tests test_protocol.cpp test_receiver.cpp test_ambe
 target_link_libraries(spear_std_t98_tests PRIVATE spear_std_t98_rx GTest::gtest GTest::gtest_main)
 target_include_directories(spear_std_t98_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/..)
 add_test(NAME spear_std_t98_tests COMMAND spear_std_t98_tests)
+
+if(TARGET Qt6::Core)
+  add_executable(spear_std_t98_ui_data_tests test_ui_data.cpp)
+  target_link_libraries(spear_std_t98_ui_data_tests PRIVATE Qt6::Core GTest::gtest_main)
+  target_include_directories(spear_std_t98_ui_data_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+  add_test(NAME spear_std_t98_ui_data_tests COMMAND spear_std_t98_ui_data_tests)
+endif()

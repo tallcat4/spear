@@ -25,6 +25,7 @@ class SeriesSession {
 public:
     void add(const Burst& burst, const Valid4& valid = kAllValid);
     std::vector<LinearCandidate> candidates() const;
+    double candidate_evidence(SeriesKey id) const;
     uint64_t pairs() const { return pairs_; }
 private:
     std::array<double, 196> sums_{};
@@ -46,9 +47,13 @@ public:
     Result assess();
     // Exposed to validate selection independently from the statistical solver.
     Result verify(std::span<const LinearCandidate> candidates);
+    // Direct Hybrid validation of remembered keys; no linear solver ranking.
+    Result verify_cached(std::span<const SeriesKey> candidates);
+    bool ready() const { return blocks_.size() >= 2; }
     uint64_t evaluations() const { return evaluations_; }
     std::vector<uint64_t> block_starts() const;
 private:
+    Result verify_ids(std::span<const SeriesKey> selected);
     struct Segment {
         uint64_t start;
         Block data;

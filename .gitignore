@@ -16,3 +16,6 @@ soak_*.log
 CLAUDE.md
 .claude/
 apps/adsb/map/cache/
+
+/secret-cache.json
+/secret-cache.json.*

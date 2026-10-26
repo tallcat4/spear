@@ -46,11 +46,12 @@ class StdT98App final : public appfw::GuiApp {
     Q_PROPERTY(double totalFrames READ totalFrames NOTIFY metersChanged)
     Q_PROPERTY(double losslessDrops READ losslessDrops NOTIFY metersChanged)
     Q_PROPERTY(double dspLoad READ dspLoad NOTIFY metersChanged)           // DSP thread の実時間比
+    Q_PROPERTY(QString cacheWarning READ cacheWarning NOTIFY metersChanged)
     Q_PROPERTY(QString audioError READ audioError NOTIFY metersChanged)
     Q_PROPERTY(double audioUnderruns READ audioUnderruns NOTIFY metersChanged)
     Q_PROPERTY(double audioLateFrames READ audioLateFrames NOTIFY metersChanged)   // ミキサに遅れて届いたフレーム数
     Q_PROPERTY(QString secretStatus READ secretStatus NOTIFY metersChanged)         // 鍵探索器の状態(要求数 / 完了数)
-    Q_PROPERTY(QVariantList secretCache READ secretCache NOTIFY metersChanged)      // 全チャネル共通の鍵キャッシュ(新しい順)
+    Q_PROPERTY(QVariantList secretCache READ secretCache NOTIFY metersChanged)      // 全チャネル共通の永続鍵キャッシュ
     // ---- 観測点 ----
     Q_PROPERTY(spear::appfw::ViewSource* view READ view CONSTANT)          // radio.rx
     Q_PROPERTY(spear::appfw::ViewSource* bandView READ bandView CONSTANT)  // std_t98.band(800 kHz、97ch 俯瞰)
@@ -87,6 +88,7 @@ public:
     double audioUnderruns() const { return audio_ ? static_cast<double>(audio_->stats().underruns) : 0; }
     double audioLateFrames() const { return static_cast<double>(audio_late_.load()); }
     QString secretStatus() const;
+    QString cacheWarning() const;
     QVariantList secretCache() const;
     appfw::ViewSource* view() { return &view_; }
     appfw::ViewSource* bandView() { return &band_view_; }
@@ -122,12 +124,13 @@ private:
     // 観測値(DSP thread → GUI)
     mutable std::mutex mu_;
     struct ChanStat {
+        int user_code = -1, maker_code = -1;
+        QVariantMap last_frame;
         double power_db = -999; bool locked = false, active = false; uint64_t frames = 0, sacch_ok = 0, pich_ok = 0, syncs = 0, locks = 0, flywheel = 0, dropped = 0; double best_sse = 1e9, sps = 0; std::string csm; double freq_err_est = 0;
         bool secret = false; uint16_t key = 0; uint8_t series = 0; bool confirmed = false; std_t98::secret::TrackerStatus secret_status = std_t98::secret::TrackerStatus::Idle;   // 秘話: 呼が秘話か / 現在鍵 / 探索状態
         std_t98::secret::ResultSource last_source = std_t98::secret::ResultSource::None; double last_search_s = 0; uint64_t searches = 0;
     };
     std::vector<ChanStat> stats_;
-    QVariantMap last_frame_;
     std::atomic<uint64_t> total_frames_{0};
     std::atomic<double> dsp_load_{0};
 
@@ -153,6 +156,7 @@ private:
     std::unique_ptr<std_t98::secret::Worker> secret_;
     mutable std::mutex secret_mu_;                                // worker thread → DSP thread(表示の読み出しも)
     std::vector<std_t98::secret::Worker::Result> secret_results_;
+    QString cache_warning_;
     std::vector<std_t98::secret::SeriesKey> secret_cache_;                          // 表示用(secret_mu_)
     void secret_clear(int ch);
     void secret_drain_results();

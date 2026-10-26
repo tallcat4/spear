@@ -3,6 +3,32 @@
 `../std-t98-tools`(Python/GNU Radio, 30ch デジタル簡易無線受信)の S.P.E.A.R. 移植。
 M3(§12)では、既存の DSP を変えずに任意の中間 stream に観測点(Scope/Waterfall/Constellation)を追加できることも確認する。
 
+## Channel navigation
+
+The channel grid uses fixed slots with PREV/NEXT buttons and a direct page selector.
+Meter updates refresh tile values without replacing the tile delegates or moving the viewport.
+SELECTED opens the page containing the selected channel. Filters reset to page 1.
+ACTIVE updates automatically as channels become active or idle. The page is clamped when
+the number of active channels shrinks. All receivers continue running.
+The grid uses three rows on large displays and two on shorter displays. Channel scrolling is disabled;
+scrolling remains available for detailed statistics when they exceed the panel height.
+
+## 識別表示と秘話キャッシュ (2026-10-26)
+
+右下はCSM、その直下のペットネーム、UC・メーカーコード、受信状態・秘話の順に表示する。
+UCとメーカーコードはCRC正常のSACCHからチャネル別に保持し、IDLE時は最終受信値として表示。
+メーカー名の対応表は参照実装にもないため、数値コードを表示する。詳細統計は「受信詳細」で開く。
+
+`petname.hpp` は `~/Downloads/petname-sample.c` の辞書順序とmix32を維持し、辞書の全単語を先頭大文字にしたもの。
+CSMの9桁を16進整数として読み、`low32 XOR mix32(high32)`をサンプルのpetnameへ渡す。
+32ビット以内は元サンプルと大文字化以外同じ結果。名前は125,000通りなので一意な識別子にはならない。
+
+ビルド元のSPEARルートに `secret-cache.json` を保存する（Git管理対象外）。
+`std-t98-receiver-sharp` と同じ `{"Version":1,"Codes":["12345","10-12345"]}` 形式で、系列0は5桁、系列1〜15は2桁＋ハイフン＋5桁。
+確定した非ゼロ鍵を重複除去して原子的に保存し、次回起動時に読み込む。両アプリを停止してファイルをコピーすれば交換できる。
+破損・未知バージョンのファイルは上書きせず、読込・保存エラーを画面に表示する。
+既知鍵の検証も参照リポジトリのguided実装に合わせ、平文候補との比較とPN整合性を通過した場合だけ採用する。
+
 ## v2.0 登録局の増波対応 (2026-10-26)
 参照: `~/Downloads/5-STD-T98v2_0-E5.pdf`、第1編 §3.6.3 表3-5 (1-25〜1-27)、§3.6.4。
 351 MHz 登録局を地上82 + 上空15 = 97チャネル同時受信する。免許局の150/460 MHz帯は対象外。

@@ -128,3 +128,21 @@ TEST(StdT98Guided, TrackerResetsPttIgnoresStaleResultsAndCanWithdraw) {
     EXPECT_EQ(r.bursts.size(), 3u);
     EXPECT_FALSE(r.valid[0][1]);
 }
+
+TEST(StdT98Guided, CachedKeyRequiresPnEvidenceEvenWithConfidentClassifier) {
+    GuidedSession session([](const GuidedSession::Block&, std::span<const SeriesKey> ids) {
+        std::vector<float> scores;
+        for (auto id : ids) scores.push_back(id == SeriesKey{10, 12345} ? 20.f : -20.f);
+        return scores;
+    });
+    const std::array<SeriesKey, 2> remembered{{{10, 12345}, {0, 0}}};
+    for (auto b : plain()) session.add(b);
+    EXPECT_FALSE(session.verify_cached(remembered).accepted);
+    GuidedSession correct([](const GuidedSession::Block&, std::span<const SeriesKey> ids) {
+        std::vector<float> scores;
+        for (auto id : ids) scores.push_back(id == SeriesKey{10, 12345} ? 20.f : -20.f);
+        return scores;
+    });
+    for (auto b : encrypt(10, 12345)) correct.add(b);
+    EXPECT_EQ(correct.verify_cached(remembered).accepted, (SeriesKey{10, 12345}));
+}

@@ -65,4 +65,5 @@ if(COMMAND spear_add_app)
     SOURCES std_t98_app.cpp
     LIBS spear_std_t98_rx
   )
+  target_compile_definitions(spear_app_std_t98 PRIVATE SPEAR_SECRET_CACHE_PATH="${PROJECT_SOURCE_DIR}/secret-cache.json")
 endif()
