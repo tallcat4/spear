@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=S.P.E.A.R.
+Comment=S.P.E.A.R. kiosk session (cage + spear-gui; exits back to Plasma)
+Exec=/usr/local/bin/spear-session
+DesktopNames=SPEAR

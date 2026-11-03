@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=S.P.E.A.R.
+Comment=Switch to the S.P.E.A.R. kiosk session (EXIT returns to Plasma)
+Exec=sudo -n /usr/local/bin/spear-session-select spear --restart
+Icon=spear
+Terminal=false
+Categories=HamRadio;Science;

@@ -2,8 +2,8 @@
 # S.P.E.A.R. を KDE Plasma のスタートメニュー・タスクバー(パネルのタスクマネージャ)・デスクトップに登録する。
 #   scripts/install-desktop.sh            全部(メニュー + タスクバー + デスクトップ)
 #   scripts/install-desktop.sh --remove   登録を外す
-# 非キオスク(通常の Plasma セッション)で ./spear.sh を毎回打たずに済ませるための一時策。キオスク化(専用セッションで自動起動)
-# したらこの登録は要らなくなる。
+# メニューとタスクバーは Plasma の中で起動する(開発用)。デスクトップのアイコンは、キオスクセッション(packaging/kiosk)が
+# 入っていればタップでキオスクに切り替え(EXIT で Plasma に戻る)、無ければ Plasma の中で起動する。
 # 仕組み: spear.desktop.in の @SPEAR_DIR@ をこのリポジトリの絶対パスで埋め、
 #   メニュー   : ~/.local/share/applications/spear.desktop(+ アイコン ~/.local/share/icons/hicolor/scalable/apps/spear.svg)
 #   タスクバー : ~/.config/plasma-org.kde.plasma.desktop-appletsrc の icontasks の launchers= に applications:spear.desktop を足し、plasmashell を再起動
@@ -90,11 +90,16 @@ chmod +x "$APPS/spear.desktop"
 cp "$HERE/spear.svg" "$ICONS/spear.svg"
 command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
 echo "menu: $APPS/spear.desktop -> $HERE/spear.sh"
-# デスクトップ
+# デスクトップ: キオスクセッション(packaging/kiosk)が入っていれば、タップでキオスクへ切り替えるアイコン。無ければ Plasma の中で起動する
 if [ -d "$DESKTOP_DIR" ]; then
-  cp "$APPS/spear.desktop" "$DESKTOP_DIR/spear.desktop"
+  if [ -x /usr/local/bin/spear-session-select ]; then
+    cp "$HERE/packaging/kiosk/spear-kiosk.desktop" "$DESKTOP_DIR/spear.desktop"
+    echo "desktop: $DESKTOP_DIR/spear.desktop (switches to the kiosk session)"
+  else
+    cp "$APPS/spear.desktop" "$DESKTOP_DIR/spear.desktop"
+    echo "desktop: $DESKTOP_DIR/spear.desktop (runs inside Plasma; install packaging/kiosk for the kiosk session)"
+  fi
   chmod +x "$DESKTOP_DIR/spear.desktop"
-  echo "desktop: $DESKTOP_DIR/spear.desktop"
 fi
 # タスクバー
 taskbar_update add

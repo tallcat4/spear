@@ -23,7 +23,7 @@
 - タスクバー(パネルのタスクマネージャの launchers に追加。plasmashell は終了時に設定を書き戻すので、止めてから編集して起動し直す)
 - デスクトップ(`~/Desktop/spear.desktop`。初回クリックで実行の許可を聞かれることがある)
 
-通常の Plasma セッションで使うための一時的な手段で、キオスク化(専用セッションで自動起動)したら不要になる。
+キオスクセッション(`docs/kiosk.md`)を入れていれば、デスクトップのアイコンはタップでキオスクに切り替えるものになる(EXIT で Plasma に戻る)。メニューとタスクバーは Plasma の中で起動する(開発用)。
 
 ### 設定ファイル
 
@@ -72,7 +72,7 @@ site.conf の値が state.conf より優先される。運転状態を初期化�
 ## 耐久試験(`spear-soak`、要件 §12 M-1)
 
 ```
-sudo scripts/tune-power.sh apply          # (a) governor=performance, USB autosuspend off
+sudo scripts/tune-power.sh apply          # (a) governor=performance, USB autosuspend off(M-1 の再現用。普段の調整は docs/kiosk.md)
 ./build/tools/spear-soak --rate 10e6 --minutes 30 --out soak_a.csv --mlock
 sudo scripts/tune-power.sh restore        # (b) デフォルト + バッテリー
 ./build/tools/spear-soak --rate 10e6 --minutes 30 --out soak_b.csv

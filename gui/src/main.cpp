@@ -135,6 +135,8 @@ int main(int argc, char** argv) {
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("sys", &model);
+    // キオスクセッション(packaging/kiosk の spear-session)の中: EXIT はセッションを終えて Plasma に戻る
+    engine.rootContext()->setContextProperty("kioskSession", qgetenv("SPEAR_KIOSK") == "1");
     engine.rootContext()->setContextProperty("shell", &shell);
     engine.rootContext()->setContextProperty("tapSound", &tap_sound);
     engine.rootContext()->setContextProperty("bootSound", &boot_sound);

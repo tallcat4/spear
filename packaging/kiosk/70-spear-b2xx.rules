@@ -1,0 +1,2 @@
+# S.P.E.A.R.: USRP B2xx(Ettus vendor 2500)の USB autosuspend を切る(要件 §11.1 の 2。切断・再接続の原因になる)
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="2500", TEST=="power/control", ATTR{power/control}="on"

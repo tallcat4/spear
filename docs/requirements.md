@@ -464,13 +464,16 @@ GUI が無い状態で RF / DSP Core が完全に動作すること。CI、回�
 
 イメージビルダーは mkosi などを候補とし、M3 完了後に着手する。
 
+段階 2(Kiosk)は 2026-11-03 に前倒しした。バッテリー駆動の取りこぼしの原因が電源管理(HWP が 900 MHz に留まる)だったため、§11.1 の調整と一緒に入れた。
+Plasma は残し、SDDM の自動ログインでキオスクセッション(cage + spear-gui)と Plasma を往復する(`docs/kiosk.md`)。
+
 ## 11.1 Linux の調整方針
 
 パッケージ数の削減は優先しない。実行状態を制御できることを優先する。
 
 40 MB/s は第 10 世代 i5 には軽く、overflow の主因は性能不足より電源管理の介入になる可能性が高い(負荷が軽いほど CPU が深い省電力状態に入り、USB 割り込みの応答が遅れる)。調整の優先順:
 
-1. CPU governor を performance に固定する(効果が最も大きい)
+1. CPU governor を performance に固定する(効果が最も大きい)。実装は App の実行中だけ power-profiles-daemon に performance を hold する形(`docs/kiosk.md`)
 2. USB autosuspend を無効にする(B210 の切断・再接続の原因になる)
 3. RX スレッドを realtime scheduling(SCHED_FIFO)にする(UHD も推奨)
 4. memory locking(mlockall)。8 GB なら swap は起きないはずだが確実にする

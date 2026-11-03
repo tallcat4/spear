@@ -1,0 +1,33 @@
+#!/bin/sh
+# S.P.E.A.R. — 次に自動ログインするセッションを選ぶ(SteamOS の steamos-session-select と同じ役割)。root で動く。
+#   spear-session-select spear|plasma [--restart]
+# /etc/sddm.conf.d/zz-spear-autologin.conf の [Autologin] Session= だけを書く(autologin.conf の User= はそのまま)。
+# --restart: 今のグラフィカルセッションを終えて SDDM を再起動する。SDDM は起動直後の自動ログインで選んだセッションに入る
+#   (設定の読み直しや Relogin に頼らない)。
+#   Plasma 6 は kwin / plasmashell を利用者の systemd のサービスとして動かすので、SDDM の再起動だけでは残る。
+#   残ると次の Plasma が「もう動いている」として kwin を起動せず、画面が暗いままになる(2026-11-03)。
+#   そこで利用者の graphical-session.target を止めてから SDDM を再起動する。呼び出し元(Plasma のアプリやキオスクの
+#   セッション)ごと止まるので、手順は systemd の一時ユニットに渡して切り離す。
+# sudoers で利用者にパスワードなしで許すので、置き場所は root 所有の /usr/local/bin。引数はこの 2 つ以外を受けない。
+set -eu
+CONF=/etc/sddm.conf.d/zz-spear-autologin.conf
+case "${1:-}" in
+  spear)  session=spear.desktop ;;
+  plasma) session=plasma ;;
+  *) echo "usage: spear-session-select spear|plasma [--restart]" >&2; exit 2 ;;
+esac
+case "${2:-}" in
+  ""|--restart) ;;
+  *) echo "usage: spear-session-select spear|plasma [--restart]" >&2; exit 2 ;;
+esac
+tmp="$CONF.tmp"
+printf '# written by spear-session-select (packaging/kiosk)\n[Autologin]\nSession=%s\n' "$session" > "$tmp"
+mv "$tmp" "$CONF"
+if [ "${2:-}" = --restart ]; then
+  user="${SUDO_USER:-}"
+  case "$user" in ""|root|*[!a-z0-9_-]*) user="" ;; esac
+  stop_user=""
+  [ -n "$user" ] && stop_user="systemctl --user -M $user@ stop graphical-session.target || true; "
+  systemd-run --no-block --collect --quiet --unit="spear-session-switch-$$" \
+    /bin/sh -c "${stop_user}systemctl restart sddm.service"
+fi

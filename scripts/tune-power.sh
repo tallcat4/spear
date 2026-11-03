@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # S.P.E.A.R. — Linux 電源管理調整 (要件 §11.1)。root で実行。
+# M-1 の再現用(governor を全体に固定する)。普段の調整は packaging/kiosk(udev / limits)と Core の PerformanceHold(docs/kiosk.md)。
 # overflow の主因は性能不足ではなく電源管理の介入。優先順:
 #   1. CPU governor を performance に固定   2. USB autosuspend 無効化
 #   3. RX thread の SCHED_FIFO (アプリ側: uhd::set_thread_priority_safe → rtprio 権限が要る)

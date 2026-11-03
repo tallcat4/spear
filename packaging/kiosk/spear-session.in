@@ -1,0 +1,18 @@
+#!/bin/sh
+# S.P.E.A.R. キオスクセッション(SDDM の wayland セッション spear.desktop が起動する)。
+# cage(キオスク用コンポジタ)の上で spear-gui だけを全画面・等倍で動かす。spear を終えるとセッションも終わり、Plasma に戻る。
+# 最初に次回の自動ログインを Plasma に戻しておく: spear が起動直後に落ちても、SPEAR セッションに戻り続けない。
+# cage の出力と終了コードは ~/spear/logs/kiosk-session.log に残す(SDDM のセッションログには出ない)。
+LOG="${SPEAR_DATA:-$HOME/spear}/logs/kiosk-session.log"
+mkdir -p "$(dirname "$LOG")"
+{
+  echo "=== $(date -Is) kiosk session start (XDG_SESSION_ID=${XDG_SESSION_ID:-} XDG_VTNR=${XDG_VTNR:-})"
+  ulimit -r 2>/dev/null | sed 's/^/rtprio limit: /'
+} >> "$LOG"
+sudo -n /usr/local/bin/spear-session-select plasma || true
+export SPEAR_KIOSK=1
+# -s: VT の切り替えを許す(キーボードを繋いだときの逃げ道)
+cage -s -- "@SPEAR_DIR@/spear.sh" >> "$LOG" 2>&1
+echo "=== $(date -Is) cage exited with $?" >> "$LOG"
+# spear が終わった(EXIT、または異常終了): グラフィカルセッションを終えて SDDM を再起動し、Plasma に自動ログインする
+exec sudo -n /usr/local/bin/spear-session-select plasma --restart

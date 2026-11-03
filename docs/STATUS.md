@@ -116,4 +116,7 @@ IQ → DSP → 軟判定 FEC → Tracker → ソルバーの回帰試験では�
 - 受信端子と UHD の対応(`rf_port.hpp` が正): TRXA = `A:A` `TX/RX`、RXA = `A:A` `RX2`、RXB = `A:B` `RX2`、TRXB = `A:B` `TX/RX`。
   選んだ端子の LED は App の運転中(rx streamer がある間)だけ点く(ATR が streamer の有無で RX 状態を決めるため)。起動時の warm-up の tune check(open → tune → close)では点かない。B200 系(frontend A のみ)で RXB / TRXB を選ぶと stage 4 で FAULT になる。
 - Qt のログは journald に出る。端末に出すには `QT_FORCE_STDERR_LOGGING=1` を付ける。
+- バッテリー駆動では、EPP が performance 以外だと HWP が spear の受信中の負荷に 900 MHz を選び続け、DSP が追いつかない(ハードウェアの上限ではない。
+  2026-11-03、JR TRAIN 22 波で DSP 55 % → performance で 12 %、電力は 10 W → 20 W)。Core が App の実行中だけ power-profiles-daemon に performance を hold する。
+  キオスクセッション、USB autosuspend、rtprio は `docs/kiosk.md`。
 - 記録・ログ・golden・音声は `~/spear/`(`recordings / logs / golden / audio / site.conf`)に置く。個体固有の値、録音、音声由来の golden(`golden/std_t98/ch3_pich.*`, `ambe_golden.txt`, `ambe_blip25_golden.txt`, `ch3_payloads.txt`, `secret_golden.txt`)はリポジトリに入れない(golden テストは無ければ skip)。

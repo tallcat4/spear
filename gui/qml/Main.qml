@@ -113,9 +113,8 @@ Window {
                 } else {
                     // メニューのソフトキーは EXIT だけ。GAIN は右のゲイン欄のタップ、DIAGNOSTICS は一覧の項目から開ける
                     // (同じ機能のキーを 2 つ置かない)。CENTER / RATE は各 App が決める。
-                    // EXIT(左端): KDE Plasma 等のデスクトップ環境で非キオスクのままフルスクリーン起動している現状では、閉じるのに
-                    // ひと手間かかるための策。将来キオスク化(専用セッション、自動起動)するなら、電源操作や別の導線のほうが
-                    // 適切かもしれず、EXIT という UI が最適とは限らない。そのときはここと ConfirmDialog を見直す。
+                    // EXIT(左端): キオスクセッション(packaging/kiosk)ではセッションを終えて Plasma に戻る(SteamOS のデスクトップ
+                    // モードと同じ往復)。Plasma の中で全画面起動しているときは窓を閉じる。
                     k = [ { label: "EXIT", action: "exit" }, null, null, null, null, null, null ]
                 }
                 k.push((win.appOpen || win.diagOpen) ? { label: "BACK", action: "back" } : null)
@@ -135,7 +134,8 @@ Window {
             id: exitDialog
             anchors.topMargin: Theme.statusBarH
             title: "EXIT"
-            message: "Exit S.P.E.A.R.?  The radio is released and the window closes."
+            message: kioskSession ? "Exit S.P.E.A.R.?  The radio is released and the desktop returns."
+                                  : "Exit S.P.E.A.R.?  The radio is released and the window closes."
             acceptLabel: "EXIT"; cancelLabel: "CANCEL"
             onAccepted: shell.quit()
         }
