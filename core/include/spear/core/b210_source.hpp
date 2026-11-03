@@ -60,6 +60,9 @@ public:
     void stop() override;
     bool running() const override { return running_.load(); }
     Stream<sc16>& output() override { return *stream_; }
+    TxStream& tx_input() override { return *tx_; }
+    // 送信ゲイン: 宣言は即座に更新し、送信 thread が次の block の前に装置へ適用して TxGain event で報告する(最新値が勝ち、失われない)
+    bool set_tx_gain(double db) override;
     uint64_t generation() const override { return generation_.load(); }
     RfConfig config() const override { std::lock_guard lk(cfg_mu_); return cfg_; }
     uint64_t state_version() const override { return state_version_.load() + radio_.state_version(); }
@@ -87,6 +90,12 @@ public:
 
 private:
     void run();
+    void run_rx();
+    // 送信 session(direction == TX)。受信 session と同じく probe → open → tune → 定常 → 障害なら再接続。
+    // 受信は流さない(radio.rx は何も出さない)。全二重は後から別の session として足せる形にしておく
+    void run_tx();
+    bool tx_loop();           // 定常送信。device 消失なら true
+    void tx_async_loop();     // recv_async_msg(underflow / seq_error / time_error / burst_ack)と TX lo_locked の監視
     bool bring_up();          // 手順 1〜5
     void tear_down(bool device_lost);
     void warm_run();
@@ -101,6 +110,12 @@ private:
     BlockPool pool_;
     std::unique_ptr<Stream<sc16>> stream_;
     uhd::rx_streamer::sptr rx_;
+    std::unique_ptr<TxStream> tx_;
+    uhd::tx_streamer::sptr tx_streamer_;
+    std::thread tx_async_th_;
+    std::atomic<bool> tx_async_stop_{false};
+    std::atomic<bool> tx_gain_pending_{false};   // set_tx_gain の要求。送信 thread が取り出して config().tx_gain を適用する
+    std::atomic<uint64_t> tx_index_{0};          // generation 内の送信済み sample 数(event の範囲)
 
     std::thread th_;
     std::thread warm_th_;

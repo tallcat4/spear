@@ -7,6 +7,52 @@
 
 namespace spear {
 
+// ---- SigmfReader -----------------------------------------------------------------
+
+bool SigmfReader::open(const std::string& base_path, std::string* err) {
+    close();
+    base_ = base_path;
+    if (!sigmf::read(base_, meta_, err)) return false;
+    if (meta_.dtype != DataType::ComplexInt16 && meta_.dtype != DataType::ComplexFloat32) {
+        if (err) *err = "unsupported datatype";
+        return false;
+    }
+    if (rewind()) return true;
+    if (err) *err = "cannot open " + sigmf::data_path(base_);
+    return false;
+}
+
+bool SigmfReader::rewind() {
+    data_.close();
+    data_.clear();
+    data_.open(sigmf::data_path(base_), std::ios::binary | std::ios::ate);
+    pos_ = 0;
+    if (!data_) return false;
+    total_ = static_cast<uint64_t>(data_.tellg()) / dtype_size(meta_.dtype);
+    data_.seekg(0);
+    return static_cast<bool>(data_);
+}
+
+std::size_t SigmfReader::read(sc16* out, std::size_t n) {
+    // 末尾の半端な読み出しで eof/fail が立っても、開いてさえいれば読みに行く(0 sample = 末尾)
+    if (!data_.is_open()) return 0;
+    const std::size_t esz = dtype_size(meta_.dtype);
+    tmp_.resize(n * esz);
+    data_.read(reinterpret_cast<char*>(tmp_.data()), static_cast<std::streamsize>(tmp_.size()));
+    const std::size_t got = static_cast<std::size_t>(data_.gcount()) / esz;
+    if (meta_.dtype == DataType::ComplexInt16) {
+        std::memcpy(out, tmp_.data(), got * sizeof(sc16));
+    } else {
+        const auto* src = reinterpret_cast<const cf32*>(tmp_.data());
+        for (std::size_t i = 0; i < got; ++i) {
+            auto q = [](float v) { return static_cast<int16_t>(std::lrint(std::clamp(v, -1.f, 1.f) * 32767.f)); };
+            out[i] = sc16(q(src[i].real()), q(src[i].imag()));
+        }
+    }
+    pos_ += got;
+    return got;
+}
+
 // ---- RecordingSource -----------------------------------------------------------
 
 RecordingSource::RecordingSource(EventBus* events, std::string base_path, bool loop, std::size_t block_samples)
@@ -40,6 +86,8 @@ bool RecordingSource::configure(const RfConfig& cfg, std::string* err) {
         if (events_) events_->emit(EventKind::Warning, name_, msg);
     }
     c.gain = cfg.gain; c.agc = cfg.agc; c.port = cfg.port;   // 無意味だが害もない(表示用)
+    // 送信の宣言はそのまま受ける(送信先は Sink。録音の rate / center は送信の rate / center としても使う)
+    c.direction = cfg.direction; c.tx_gain = cfg.tx_gain; c.tx_port = cfg.tx_port;
     return ThreadedSource::configure(c, err);
 }
 
@@ -51,26 +99,23 @@ bool RecordingSource::retune(double center_freq_hz) {
 }
 
 bool RecordingSource::reopen_data() {
-    data_.close();
-    data_.clear();
-    data_.open(sigmf::data_path(base_), std::ios::binary);
-    file_pos_samples_ = 0;
     capture_idx_ = 0;
-    return static_cast<bool>(data_);
+    if (reader_.is_open()) return reader_.rewind();
+    return reader_.open(base_);
 }
 
 void RecordingSource::on_start() {
     if (!reopen_data() && events_) events_->emit(EventKind::Error, name_, "cannot open " + sigmf::data_path(base_));
 }
 
-void RecordingSource::on_stop() { data_.close(); }
+void RecordingSource::on_stop() { reader_.close(); }
 
 uint32_t RecordingSource::fill(BlockBuilder& b) {
     // 末尾の半端なブロック(録音長がブロック長の倍数でないとき)を読むと eof/fail が立つ。ここで !data_ と判定して止めると
     // ループ再生が 1 周で終わる。開いてさえいれば読みに行き、0 サンプルなら下のループ処理(reopen)に任せる
-    if (!data_.is_open()) return 0;
+    if (!reader_.is_open()) return 0;
     auto out = b.data<sc16>();
-    const std::size_t esz = dtype_size(meta_.dtype);
+    const uint64_t file_pos_samples_ = reader_.position();
     // capture 境界(retune)を block 境界に揃え、Retune flag を立てる
     std::size_t want = out.size();
     if (capture_idx_ + 1 < meta_.captures.size()) {
@@ -81,29 +126,16 @@ uint32_t RecordingSource::fill(BlockBuilder& b) {
         if (capture_idx_ > 0) b.header().flags.set(Flag::Retune);
         ++capture_idx_;
     }
-    tmp_.resize(want * esz);
-    data_.read(reinterpret_cast<char*>(tmp_.data()), static_cast<std::streamsize>(tmp_.size()));
-    std::size_t got = static_cast<std::size_t>(data_.gcount()) / esz;
+    std::size_t got = reader_.read(out.data(), want);
     if (got == 0) {
         if (!loop_) return 0;
         // loop: 時間軸が巻き戻る → generation を進める (§3.5)
         if (!reopen_data()) return 0;
         next_generation();
         b.header().flags.set(Flag::Discontinuity);
-        data_.read(reinterpret_cast<char*>(tmp_.data()), static_cast<std::streamsize>(tmp_.size()));
-        got = static_cast<std::size_t>(data_.gcount()) / esz;
+        got = reader_.read(out.data(), want);
         if (got == 0) return 0;
     }
-    if (meta_.dtype == DataType::ComplexInt16) {
-        std::memcpy(out.data(), tmp_.data(), got * sizeof(sc16));
-    } else {
-        const auto* src = reinterpret_cast<const cf32*>(tmp_.data());
-        for (std::size_t i = 0; i < got; ++i) {
-            auto q = [](float v) { return static_cast<int16_t>(std::lrint(std::clamp(v, -1.f, 1.f) * 32767.f)); };
-            out[i] = sc16(q(src[i].real()), q(src[i].imag()));
-        }
-    }
-    file_pos_samples_ += got;
     return static_cast<uint32_t>(got);
 }
 

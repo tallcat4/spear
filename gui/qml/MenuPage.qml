@@ -9,6 +9,7 @@ Item {
     signal selected(int index)
     signal askGain()
     signal askPort()
+    signal askArm()   // SAFE → ARMED は確認を挟む(Main.qml)。ARMED → SAFE は即時
 
     // ---- 左: App 一覧 ----
     Column {
@@ -56,6 +57,22 @@ Item {
         width: parent.width - x - Theme.pad * 2
         spacing: Theme.pad
         Text { text: "USRP"; color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsBase; bottomPadding: 8 }
+        // ---- TX MASTER(マスターアーム)。所有者は Core。SAFE の間はどの App の送信も Core が拒否する。起動時は必ず SAFE ----
+        Rectangle {
+            id: master
+            width: parent.width; height: 80
+            color: sys.txArmed ? Theme.red : "transparent"
+            border.color: sys.txArmed ? Theme.red : Theme.green; border.width: 2
+            Text { x: Theme.pad; anchors.verticalCenter: parent.verticalCenter; text: "TX MASTER"
+                   color: sys.txArmed ? "#000000" : Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: sys.txArmed }
+            Text { anchors.centerIn: parent; text: sys.txArmed ? "ARMED" : "SAFE"
+                   color: sys.txArmed ? "#000000" : Theme.green; font.family: Theme.mono; font.pixelSize: Theme.fsHuge; font.bold: true }
+            Text { anchors.right: parent.right; anchors.rightMargin: Theme.pad; anchors.verticalCenter: parent.verticalCenter
+                   text: sys.txArmed ? "TAP: SAFE" : "TAP: ARM"; color: sys.txArmed ? "#000000" : Theme.textDim
+                   font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+            MouseArea { anchors.fill: parent
+                        onClicked: { Feedback.tap(); if (sys.txArmed) sys.setTxArmed(false); else page.askArm() } }
+        }
         Rectangle {
             width: parent.width; height: 64
             color: Theme.stateFill(sys.deviceStateCode)

@@ -21,6 +21,9 @@ B210LiveSource::B210LiveSource(EventBus* events, B210SourceOptions opt)
     m.unit = "FS";
     m.direction = Direction::RX;
     stream_ = std::make_unique<Stream<sc16>>(m, events_);
+    StreamMeta tm = m;
+    tm.id = kRadioTxStreamId;
+    tx_ = std::make_unique<TxStream>(tm, events_, tx_arm_);
 }
 
 B210LiveSource::~B210LiveSource() { stop(); }
@@ -28,11 +31,19 @@ B210LiveSource::~B210LiveSource() { stop(); }
 bool B210LiveSource::configure(const RfConfig& cfg, std::string* err) {
     if (running_) { if (err) *err = "cannot configure while running"; return false; }
     if (cfg.sample_rate < 200e3 || cfg.sample_rate > 56e6) { if (err) *err = "sample_rate out of range"; return false; }
+    if (!check_direction(cfg, err)) return false;
     {
         std::lock_guard lk(cfg_mu_);
         cfg_ = cfg;
     }
     state_version_++;
+    {
+        StreamMeta tm = tx_->meta();
+        tm.sample_rate = cfg.sample_rate;
+        tm.center_freq = cfg.center_freq;
+        tm.bandwidth   = cfg.bandwidth > 0 ? cfg.bandwidth : cfg.sample_rate;
+        tx_ = std::make_unique<TxStream>(tm, events_, tx_arm_);   // 前の App が閉じたキューは使い回さない
+    }
     StreamMeta m = stream_->meta();
     m.sample_rate = cfg.sample_rate;
     m.center_freq = cfg.center_freq;
@@ -52,6 +63,7 @@ void B210LiveSource::start() {
 
 void B210LiveSource::stop() {
     stop_req_ = true;
+    tx_->close();   // 送信中の App の write() を解く(Core::stop_app は Source を先に止めてから App を止める)
     warm_cancel_ = true;
     if (warm_th_.joinable()) warm_th_.join();
     if (th_.joinable()) th_.join();
@@ -199,10 +211,35 @@ void B210LiveSource::tear_down(bool device_lost) {
     st_.streaming = false;
 }
 
+bool B210LiveSource::set_tx_gain(double db) {
+    {
+        std::lock_guard lk(cfg_mu_);
+        cfg_.tx_gain = db;   // 宣言は即時。適用は送信 thread が TxGain event で報告
+    }
+    state_version_++;
+    tx_gain_pending_ = true;
+    return true;
+}
+
 void B210LiveSource::run() {
     if (opt_.realtime_priority && !uhd::set_thread_priority_safe(1.0, true) && events_)
         events_->emit(EventKind::Warning, "radio", "set_thread_priority_safe failed (rtprio not permitted?)");
+    if (config().direction == Direction::TX) run_tx();
+    else run_rx();
+    // stop: device は閉じたので、一次ソースで状態を取り直してから EOS
+    radio_.probe();
+    {
+        auto b = pool_.acquire<sc16>(1);
+        b.header().flags.set(Flag::EndOfStream);
+        b.header().generation = generation_.load();
+        b.header().sequence = sequence_++;
+        stream_->publish(b.commit(0));
+        stream_->end();
+    }
+    running_ = false;
+}
 
+void B210LiveSource::run_rx() {
     bool first_up = true;
     radio_.self_check();   // stage 0: image files / rlimit / UHD version(装置に触らない)
     auto sleep_s = [&](double sec) {
@@ -508,17 +545,193 @@ void B210LiveSource::run() {
         if (sensor_th_.joinable()) sensor_th_.join();
         tear_down(device_lost);
     }
-    // stop: device は閉じたので、一次ソースで状態を取り直してから EOS
-    radio_.probe();
-    {
-        auto b = pool_.acquire<sc16>(1);
-        b.header().flags.set(Flag::EndOfStream);
-        b.header().generation = generation_.load();
-        b.header().sequence = sequence_++;
-        stream_->publish(b.commit(0));
-        stream_->end();
+}
+
+// ---- 送信 session -----------------------------------------------------------------
+
+void B210LiveSource::run_tx() {
+    bool first_up = true;
+    radio_.self_check();
+    auto sleep_s = [&](double sec) {
+        for (int i = 0; i < 20 && !stop_req_; ++i)
+            std::this_thread::sleep_for(std::chrono::duration<double>(sec / 20));
+    };
+    while (!stop_req_) {
+        {
+            const auto ps = radio_.probe();
+            if (!ps.attempt_open) {
+                sleep_s(ps.state == DeviceState::Fault ? opt_.fault_retry_s : opt_.probe_period_s);
+                continue;
+            }
+        }
+        std::string err;
+        const RfConfig cfg = config();
+        bool ok = radio_.open(cfg, &err) && radio_.tune_tx(cfg, &err);
+        if (ok) { tx_streamer_ = radio_.make_tx_streamer(&err); ok = static_cast<bool>(tx_streamer_); }
+        if (!ok) {
+            { std::lock_guard lk(mu_); st_.last_error = err; }
+            tx_streamer_.reset();
+            radio_.close();   // 状態は open() / tune_tx() 内で Fault 済み
+            if (!first_up && events_) events_->emit(EventKind::Disconnected, "radio", "tx reconnect failed, retrying");
+            sleep_s(opt_.reconnect_backoff_s);
+            continue;
+        }
+        if (!first_up) {
+            ++generation_;
+            { std::lock_guard lk(mu_); st_.reconnects++; }
+            if (events_) events_->emit(EventKind::Reconnected, "radio", "tx: generation advanced", {}, static_cast<int64_t>(generation_.load()));
+        }
+        first_up = false;
+        tx_index_ = 0;
+        radio_.set_generation(generation_.load());
+        {
+            std::lock_guard lk(mu_);
+            st_.startup_stage = 6;
+            st_.streaming = true;
+        }
+        // 送信の装置側の準備は済んだ。burst は App が始めるまで送らない(何も出さない)
+        if (events_) events_->emit(EventKind::StartupStage, "radio", "stage 6: tx streamer ready (idle until a burst)", {}, 6);
+        radio_.set_state(DeviceState::Streaming, "tx streamer ready; idle until the app starts a burst", 6);
+        state_version_++;
+        tx_async_stop_ = false;
+        tx_async_th_ = std::thread([this] { tx_async_loop(); });
+        const bool device_lost = tx_loop();
+        tx_async_stop_ = true;
+        if (tx_async_th_.joinable()) tx_async_th_.join();
+        // 後始末: 出力を最小にしてから streamer と装置を閉じる(device 消失時は USB に何も送らない)
+        if (!device_lost) radio_.quiesce_tx();
+        try { tx_streamer_.reset(); } catch (const std::exception& ex) {
+            if (events_) events_->emit(EventKind::Warning, "radio", std::string("tx tear_down: streamer reset threw: ") + ex.what());
+        }
+        radio_.close();
+        std::lock_guard lk(mu_);
+        st_.streaming = false;
     }
-    running_ = false;
+}
+
+bool B210LiveSource::tx_loop() {
+    TxStream& q = *tx_;
+    const sc16 dummy{};   // 0 sample の send(EOB だけを送る)にも有効な buffer が要る
+    bool in_burst = false;
+    auto here = [&] { const uint64_t i = tx_index_.load(); return SampleRange{generation_.load(), i, i}; };
+    // n sample を送り切る。send() は timeout で途中までしか送らないことがあるので続きを送る。stop / SAFE なら途中で抜ける
+    // (SAFE のときは次の周回で EOB を送って burst を閉じる)
+    auto send_all = [&](const sc16* p, std::size_t n, bool sob, bool eob) {
+        uhd::tx_metadata_t md;
+        md.start_of_burst = sob;
+        md.end_of_burst = eob;
+        md.has_time_spec = false;
+        std::size_t done = 0;
+        do {
+            const std::size_t k = tx_streamer_->send(n ? p + done : &dummy, n - done, md, 1.0);
+            done += k;
+            md.start_of_burst = false;
+        } while (done < n && !stop_req_ && q.armed());
+        return done;
+    };
+    auto end_burst = [&](const char* why) {
+        q.note_burst(false);
+        in_burst = false;
+        if (events_) events_->emit(EventKind::TxBurst, "radio.tx", why, here(), 0);
+    };
+    while (!stop_req_) {
+        if (tx_gain_pending_.exchange(false)) {
+            const double g = config().tx_gain;
+            std::string err;
+            if (radio_.set_tx_gain(g, &err)) {
+                char d[64];
+                std::snprintf(d, sizeof d, "tx_gain=%.2f dB", radio_.actual_tx_gain());
+                if (events_) events_->emit(EventKind::TxGain, "radio.tx", d, here(), std::llround(radio_.actual_tx_gain()));
+            } else if (events_) events_->emit(EventKind::Error, "radio.tx", "tx gain not applied: " + err, here());
+            state_version_++;
+        }
+        auto ob = q.pop(std::chrono::milliseconds(50));
+        if (in_burst && !q.armed()) {
+            // TX MASTER が SAFE になった: キューは TxStream が捨てた。EOB を送って burst を直ちに閉じる
+            try { send_all(nullptr, 0, false, true); } catch (const std::exception&) {}
+            end_burst("burst end (TX MASTER SAFE)");
+            continue;
+        }
+        if (!ob) continue;
+        const auto& h = ob->header();
+        const std::size_t n = h.sample_count;
+        const bool sob = !in_burst && (h.flags.has(Flag::StartOfBurst) || n > 0);
+        const bool eob = h.flags.has(Flag::EndOfBurst);
+        if (!in_burst && !sob) continue;   // burst の外の EOB は意味が無い
+        if (sob) {
+            in_burst = true;
+            q.note_burst(true);
+            if (events_) events_->emit(EventKind::TxBurst, "radio.tx", "burst start", here(), 1);
+        }
+        std::size_t sent = 0;
+        try {
+            sent = send_all(n ? ob->as<sc16>().data() : nullptr, n, sob, eob);
+        } catch (const uhd::exception& ex) {
+            { std::lock_guard lk(mu_); st_.last_error = ex.what(); }
+            if (events_) events_->emit(EventKind::Disconnected, "radio", std::string("tx send threw: ") + ex.what(), here());
+            radio_.set_state(DeviceState::Lost, std::string("tx send threw: ") + ex.what(), 0);
+            if (in_burst) { q.note_burst(false); in_burst = false; }
+            return true;
+        }
+        if (n) {
+            q.note_sent(*ob);
+            tx_index_ += sent;
+        }
+        if (eob) end_burst("burst end");
+    }
+    // 止める: burst の途中なら EOB を送って閉じる(送らないと装置は underflow を報告し続ける)
+    if (in_burst) {
+        try { send_all(nullptr, 0, false, true); } catch (const std::exception&) {}
+        end_burst("burst end (stopped)");
+    }
+    return false;
+}
+
+void B210LiveSource::tx_async_loop() {
+    TxStream& q = *tx_;
+    using clock = std::chrono::steady_clock;
+    // 装置の報告は 100 ms ごとにまとめて event にする(underflow は続けて来ることがある)。数は TxStream の stats に全部入る
+    uint64_t uf = 0, uf_pkt = 0, seq = 0, terr = 0, acks = 0;
+    auto last_flush = clock::now(), last_lo = clock::now();
+    bool lo_was_locked = true;
+    auto here = [&] { const uint64_t i = tx_index_.load(); return SampleRange{generation_.load(), i, i}; };
+    auto flush = [&] {
+        q.note_underflow(uf, here(), "radio.tx", "EVENT_CODE_UNDERFLOW: host wrote too slowly (device sent zeros)");
+        q.note_underflow(uf_pkt, here(), "radio.tx", "EVENT_CODE_UNDERFLOW_IN_PACKET");
+        q.note_error(EventKind::OutOfSequence, true, seq, here(), "radio.tx", "EVENT_CODE_SEQ_ERROR: tx packet loss (USB?)");
+        q.note_error(EventKind::Error, false, terr, here(), "radio.tx", "EVENT_CODE_TIME_ERROR: late timed packet");
+        if (acks && events_) events_->emit(EventKind::Info, "radio.tx", "burst ack (EOB reached the device)", here(), static_cast<int64_t>(acks));
+        uf = uf_pkt = seq = terr = acks = 0;
+        last_flush = clock::now();
+    };
+    while (!tx_async_stop_) {
+        uhd::async_metadata_t md;
+        bool got = false;
+        try { got = tx_streamer_->recv_async_msg(md, 0.05); } catch (const std::exception&) { break; }
+        if (got) {
+            switch (md.event_code) {
+            case uhd::async_metadata_t::EVENT_CODE_BURST_ACK:           ++acks; break;
+            case uhd::async_metadata_t::EVENT_CODE_UNDERFLOW:           ++uf; break;
+            case uhd::async_metadata_t::EVENT_CODE_UNDERFLOW_IN_PACKET: ++uf_pkt; break;
+            case uhd::async_metadata_t::EVENT_CODE_SEQ_ERROR:
+            case uhd::async_metadata_t::EVENT_CODE_SEQ_ERROR_IN_BURST:  ++seq; break;
+            case uhd::async_metadata_t::EVENT_CODE_TIME_ERROR:          ++terr; break;
+            default: break;
+            }
+        }
+        const auto now = clock::now();
+        if (now - last_flush > std::chrono::milliseconds(100)) flush();
+        if (now - last_lo > std::chrono::duration<double>(opt_.sensor_period_s)) {
+            last_lo = now;
+            bool locked = true;
+            if (radio_.read_tx_lo_locked(&locked) && locked != lo_was_locked) {
+                lo_was_locked = locked;
+                if (events_) events_->emit(EventKind::LoUnlock, "radio.tx", locked ? "tx lo_locked restored" : "TX LO UNLOCKED while transmitting",
+                                           here(), locked ? 1 : 0);
+            }
+        }
+    }
+    flush();
 }
 
 } // namespace spear

@@ -16,17 +16,28 @@ ThreadedSource::ThreadedSource(std::string name, EventBus* events, std::size_t b
     m.unit = "FS";
     m.direction = Direction::RX;
     stream_ = std::make_unique<Stream<sc16>>(m, events_);
+    StreamMeta tm = m;
+    tm.id = kRadioTxStreamId;
+    tx_ = std::make_unique<TxStream>(tm, events_, tx_arm_);
 }
 
 ThreadedSource::~ThreadedSource() { stop(); }
 
 bool ThreadedSource::configure(const RfConfig& cfg, std::string* err) {
     if (running_) { if (err) *err = "cannot configure while running"; return false; }
+    if (!check_direction(cfg, err)) return false;
     {
         std::lock_guard lk(cfg_mu_);
         cfg_ = cfg;
     }
     bump_state();
+    {
+        StreamMeta tm = tx_->meta();
+        tm.sample_rate = cfg.sample_rate;
+        tm.center_freq = cfg.center_freq;
+        tm.bandwidth   = cfg.bandwidth > 0 ? cfg.bandwidth : cfg.sample_rate;
+        tx_ = std::make_unique<TxStream>(tm, events_, tx_arm_);   // 前の App が閉じたキューは使い回さない
+    }
     // stream metadata は生成時に確定 (§3.2)。source の再構成 = stream の作り直し。
     StreamMeta m = stream_->meta();
     m.sample_rate = cfg.sample_rate;
@@ -43,6 +54,7 @@ void ThreadedSource::start() {
     stop_req_ = false;
     sequence_ = 0;
     sample_index_ = 0;
+    if (config().direction == Direction::TX) { th_ = std::thread([this] { run_tx(); }); return; }
     on_start();
     th_ = std::thread([this] { run(); });
 }
@@ -50,8 +62,19 @@ void ThreadedSource::start() {
 void ThreadedSource::stop() {
     // EOS で thread が自然終了した後も join が必要(joinable な thread の破棄は terminate)
     stop_req_ = true;
+    tx_->close();   // 送信中の App の write() を解く(Core::stop_app は Source を先に止めてから App を止める)
     if (th_.joinable()) th_.join();
-    if (running_.exchange(false)) { on_stop(); state_since_ns_ = host_now_ns(); }
+    if (running_.exchange(false)) { if (config().direction != Direction::TX) on_stop(); state_since_ns_ = host_now_ns(); }
+}
+
+bool ThreadedSource::set_tx_gain(double db) {
+    {
+        std::lock_guard lk(cfg_mu_);
+        cfg_.tx_gain = db;
+    }
+    bump_state();
+    if (events_) events_->emit(EventKind::TxGain, name_, "tx gain set (no hardware)", {}, std::llround(db));
+    return true;
 }
 
 bool ThreadedSource::retune(double center_freq_hz) {
@@ -119,6 +142,54 @@ void ThreadedSource::run() {
         }
     }
     running_ = false;
+}
+
+// 送信(装置なし): 装置と同じく sample rate で消費する。burst の途中でキューが空のまま消費の期限を過ぎたら、
+// 装置なら FIFO が空になる状況なので Underflow を報告する(§4.3 の TX 不変条件を装置なしでも同じ経路で確かめる)
+void ThreadedSource::run_tx() {
+    using clock = std::chrono::steady_clock;
+    const double rate = config().sample_rate > 0 ? config().sample_rate : 1e6;
+    const auto slack = std::chrono::milliseconds(5);
+    auto due = clock::now();
+    bool in_burst = false, late = false;
+    uint64_t index = 0;   // burst をまたいだ送信済み sample 数(event の範囲)
+    while (!stop_req_) {
+        auto ob = tx_->pop(std::chrono::milliseconds(10));
+        const auto now = clock::now();
+        if (in_burst && !tx_->armed()) {   // TX MASTER が SAFE になった: burst を直ちに閉じる
+            in_burst = false;
+            tx_->note_burst(false);
+            if (events_) events_->emit(EventKind::TxBurst, name_, "burst end (TX MASTER SAFE)", {generation_.load(), index, index}, 0);
+            continue;
+        }
+        if (!ob) {
+            if (tx_->closed()) break;
+            if (in_burst && realtime_ && !late && now > due + slack) {
+                late = true;
+                tx_->note_underflow(1, {generation_.load(), index, index}, name_, "tx queue empty mid-burst (producer late)");
+            }
+            continue;
+        }
+        const auto& h = ob->header();
+        if (!in_burst && (h.flags.has(Flag::StartOfBurst) || h.sample_count > 0)) {
+            in_burst = true; late = false; due = now;
+            tx_->note_burst(true);
+        }
+        if (h.sample_count > 0) {
+            if (late) { late = false; due = now; }   // 装置は空の間 0 を出していた。時間軸はここから
+            tx_sink_->write(Delivery{*ob, h.flags});
+            tx_->note_sent(*ob);
+            index += h.sample_count;
+            sample_index_pub_.store(index);
+            if (realtime_) {
+                due += std::chrono::nanoseconds(static_cast<int64_t>(1e9 * h.sample_count / rate));
+                std::this_thread::sleep_until(due);
+            }
+        }
+        if (h.flags.has(Flag::EndOfBurst)) { in_burst = false; tx_->note_burst(false); }
+    }
+    if (in_burst) tx_->note_burst(false);
+    tx_sink_->close();
 }
 
 } // namespace spear

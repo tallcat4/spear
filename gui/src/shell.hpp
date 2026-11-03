@@ -66,9 +66,12 @@ public:
 
     Q_INVOKABLE void startApp(int index);   // 非同期。結果は activeChanged
     Q_INVOKABLE void stopApp();
-    // 汎用 App(SPECTRUM / RECORDER)がサンプルレートを変えるとき: rate は運転中に変えられないので App を止めて同じ App を再起動する。
+    // 運転中の App の宣言(declare_rf_config)を Core に適用し直す(Core::reconfigure)。App は止めず、ページもそのまま。
+    // 送信 App の録音・送信端子の選択など。適用中は busy、失敗は lastError(元の構成で動き続ける)
+    Q_INVOKABLE void applyActiveRf();
+    // 汎用 App(SPECTRUM / RECORDER)のサンプルレート変更: 運転中の RF のレートだけ変えて applyActiveRf。
     // 目的が確定した App(STD-T98 等)は rate を自分で宣言するので使わない。
-    Q_INVOKABLE void restartActiveWithRate(double sample_rate);
+    Q_INVOKABLE void setActiveRate(double sample_rate);
     Q_INVOKABLE void showDiagnostics(bool on) { diagnostics_ = on; Q_EMIT activeChanged(); }
     Q_INVOKABLE void skipWarmUp() { core_.source().cancel_warm_up(); }   // スプラッシュの CONTINUE(装置の出現待ちを打ち切る)
     // メニューの EXIT(確認後)。イベントループを抜け、main が App 停止と運転状態の保存をして終わる。
@@ -87,8 +90,6 @@ private:
     RfConfig draft_;
     QVariantList apps_;
     std::vector<std::shared_ptr<appfw::GuiApp>> instances_;
-    int restart_index_ = -1;   // stopApp 完了後に再起動する App
-    double pending_rate_ = 0;
     int active_ = -1;
     bool diagnostics_ = false;
     bool busy_ = false;

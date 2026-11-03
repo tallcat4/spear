@@ -32,6 +32,8 @@ inline constexpr std::array<RfPortInfo, 4> kRfPorts{{
 constexpr const RfPortInfo& rf_port_info(RfPort p) { return kRfPorts[static_cast<unsigned>(p)]; }
 constexpr std::string_view rf_port_name(RfPort p) { return rf_port_info(p).name; }
 constexpr const std::array<RfPortInfo, 4>& all_rf_ports() { return kRfPorts; }
+// 送信できる端子か。B210 の送信 frontend は各 channel の TX/RX(TRXA / TRXB)だけ。RX2(RXA / RXB)は受信専用
+constexpr bool rf_port_can_tx(RfPort p) { return p == RfPort::TrxA || p == RfPort::TrxB; }
 
 // 名前 → ポート。パネル名(TRXA 等)のほか、互換として UHD の antenna 名(RX2 → RXA、TX/RX → TRXA、frontend A)も受ける。
 // 未知の名前は false(黙って既定にしない)。

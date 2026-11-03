@@ -2,6 +2,7 @@
 //
 // RecordingSource: SigMF 録音の再生。B210LiveSource と同一 API。
 // SigmfRecorder:   Sink。IQ Recorder App が用いる。Lossless consumer の出力を SigMF + sidecar へ書く。
+// SigmfReader:     録音の sample を sc16 で順に読む(RecordingSource と送信 App が共有)。
 #pragma once
 
 #include "sigmf.hpp"
@@ -12,6 +13,27 @@
 #include <mutex>
 
 namespace spear {
+
+// 録音の data file を先頭から sc16 で読む。cf32 の録音は full scale = 1.0 として sc16 に量子化する。
+class SigmfReader {
+public:
+    // base_path は拡張子なし。meta(.sigmf-meta + sidecar)と data を開く
+    bool open(const std::string& base_path, std::string* err = nullptr);
+    void close() { data_.close(); }
+    bool is_open() const { return data_.is_open(); }
+    const sigmf::Meta& meta() const { return meta_; }
+    uint64_t total_samples() const { return total_; }   // data file の大きさから
+    uint64_t position() const { return pos_; }          // 次に読む sample(data file 内)
+    // 最大 n sample を読む。末尾なら 0
+    std::size_t read(sc16* out, std::size_t n);
+    bool rewind();
+private:
+    std::string base_;
+    sigmf::Meta meta_;
+    std::ifstream data_;
+    uint64_t total_ = 0, pos_ = 0;
+    std::vector<std::byte> tmp_;
+};
 
 class RecordingSource final : public ThreadedSource {
 public:
@@ -34,10 +56,8 @@ private:
     bool loop_;
     bool opened_ = false;
     sigmf::Meta meta_;
-    std::ifstream data_;
-    uint64_t file_pos_samples_ = 0;
+    SigmfReader reader_;
     std::size_t capture_idx_ = 0;
-    std::vector<std::byte> tmp_;
 };
 
 class SigmfRecorder final : public Sink {

@@ -70,7 +70,6 @@ void Shell::stopApp() {
             draft_ = core_.source().config();
             Q_EMIT draftChanged();
             Q_EMIT activeChanged();
-            if (restart_index_ >= 0) { const int i = restart_index_; restart_index_ = -1; draft_.sample_rate = pending_rate_; startApp(i); }
         }, Qt::QueuedConnection);
     });
 }
@@ -80,11 +79,32 @@ void Shell::quit() {
     QGuiApplication::quit();
 }
 
-void Shell::restartActiveWithRate(double sample_rate) {
+void Shell::applyActiveRf() {
     if (busy_ || active_ < 0) return;
-    restart_index_ = active_;
-    pending_rate_ = sample_rate;
-    stopApp();
+    auto app = instances_[active_];
+    const RfConfig cfg = app->declare_rf_config();
+    busy_ = true;
+    last_error_.clear();
+    Q_EMIT activeChanged();
+    if (worker_.joinable()) worker_.join();
+    // reconfigure は装置の適用を待つので GUI thread では呼ばない(App の on_stop / on_start は基底が GUI thread へ渡す)
+    worker_ = std::thread([this, app, cfg] {
+        std::string err;
+        const bool ok = core_.reconfigure(app, cfg, &err);
+        QMetaObject::invokeMethod(this, [this, ok, err] {
+            busy_ = false;
+            last_error_ = ok ? QString() : "RF change rejected: " + QString::fromStdString(err);
+            Q_EMIT activeChanged();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void Shell::setActiveRate(double sample_rate) {
+    if (busy_ || active_ < 0) return;
+    RfConfig c = core_.source().config();   // 運転中の RF(周波数・ゲイン・端子)のままレートだけ変える
+    c.sample_rate = sample_rate;
+    instances_[active_]->set_rf_config(c);
+    applyActiveRf();
 }
 
 } // namespace spear::gui

@@ -5,6 +5,13 @@
 
 ## 次の作業(2026-11-03 時点)
 
+最初の送信 App IQ REPLAY TX(2026-11-04): 録音した IQ をそのまま送る。Core に送信の fan-in(`TxStream`)、B210 の送信 session、
+TX MASTER(マスターアーム。SAFE なら全 App の送信を Core が拒否、起動時は必ず SAFE)を足した。ヘッドレス(`spear-replay`)で
+STD-T99 CH18 の自分の送信の録音を 30 s 送り、減衰器の先の STD-T99 機で受信できた(underflow 0)。
+あわせて `Core::reconfigure` を足し、運転中の App の RF(送信 App の録音・端子、汎用 App の RATE)を App を止めずに構成し直すようにした
+(それまでは App を再起動していたので一度メニューに戻っていた)。B210 の受信(4 → 2 Msps)と送信 session(burst なし)で確認。
+残り: GUI の App からの実機送信と FILE / TX PORT の変更、burst の外の LO 漏れの測定(`docs/apps/replay.md`)。
+
 STD-T99 DIGICOM(デジタル小電力コミュニティ無線、2026-11-03 追加): std-t99-receiver-sharp を 1 チャネル受信の App として移植した(並列受信は持たない)。
 実機の送信機 1 台で CH18 を受信し、118 s・290 フレームがすべて CRC 正常、発信者名・緊急通信 1・TOKUDER 音声(明瞭)を確認、golden にした。
 発信位置の地図も入れた(ADS-B の地図のデータ・表示範囲・下地の描画を `widgets/map` に抽出し、両 App で共有)。
@@ -73,11 +80,12 @@ IQ → DSP → 軟判定 FEC → Tracker → ソルバーの回帰試験では�
 | `core/` Sources | `B210LiveSource`(再接続・watchdog・generation)、`SyntheticSource`(トーン / FM / AM)、`RecordingSource`(SigMF) | gtest、実機 |
 | `core/` その他 | `EventBus`(履歴、dispatch thread)、`TAP()`、`HealthMonitor`、`EventLogFile`、`AudioSink`(ALSA / PipeWire) | gtest、実機 |
 | `dsp/` 共通 | `design_lowpass`、`FirDecimator` / `FirInterpolator`(ベクトル化カーネル)、`PfbChannelizer`、`SpectrumEstimator`、`stage.hpp`(StageInfo / Provenance)、FFTW プランナの mutex | gtest(参照ベクトル) |
-| `appfw/` App SDK | `GuiApp`(on_start / on_stop は GUI thread で呼ぶ、`configure(QVariantMap)`、`persist({...})`)、`SettingsStore`(運転状態の復元・保存 `~/spear/state.conf`)、ビルド時レジストリ、`ViewProcessor` / `ViewSource`(任意の複素 stream → spectrum / waterfall。nfft より短いブロックは溜めて使う。手動レンジは再起動後も残る)、`TraceSource` + `EyeDiagramItem`、`SpectrumItem` / `WaterfallItem`(自前の QRhiTexture リング) | `apps/tests/test_apps.cpp`(全 App のライフサイクル)、`test_settings.cpp`(保存の往復、全 App の宣言の解決) |
+| `appfw/` App SDK | `GuiApp`(on_start / on_stop は GUI thread で呼ぶ、`Core::reconfigure` のときも App は止めずに on_stop / on_start で経路だけ付け直す、`configure(QVariantMap)`、`persist({...})`)、`SettingsStore`(運転状態の復元・保存 `~/spear/state.conf`)、ビルド時レジストリ、`ViewProcessor` / `ViewSource`(任意の複素 stream → spectrum / waterfall。nfft より短いブロックは溜めて使う。手動レンジは再起動後も残る)、`TraceSource` + `EyeDiagramItem`、`SpectrumItem` / `WaterfallItem`(自前の QRhiTexture リング) | `apps/tests/test_apps.cpp`(全 App のライフサイクル)、`test_settings.cpp`(保存の往復、全 App の宣言の解決) |
 | `widgets/ input/ theme/` | `SpectrumView`(markers / compact)、`EyeDiagram`、`ConstellationView`(JR TRAIN RADIO で追加)、`Readout`、`LevelMeter`、`Spear.Input`(KeyButton / Keypad / StepKeys / ValueField / NumericEntry / ChoiceEntry / Feedback(操作音の入口)。タッチ専用)、`Theme` | スクリーンショットで目視(`docs/gui/*.png`) |
 | `gui/` シェル | スプラッシュ(起動時に自己診断 → 装置待ち → FPGA ロード(進捗表示)→ tune 確認。完了まで App を始めない)、メニュー(装置共通の GAIN と RX PORT(受信端子 TRXA / RXA / RXB / TRXB)。center / rate は App が決める)、ステータスバー(端子も常に表示)、ソフトキー、DIAGNOSTICS、数値入力・選択モーダル、操作音(`TapSound`: タップ音・拒否音)、起動音(`BootSound`。鳴り終わるまでスプラッシュに留まる)、`--set key=value`、`--screenshot` 検証ハーネス | 実機・合成。FPGA 進捗バーは、FPGA 未構成の状態からの起動ではまだ確認していない |
 | `apps/spectrum` | 汎用。FREQ / RATE(再起動)/ REF / AVG / HOLD | 実信号で確認済み |
 | `apps/recorder` | Lossless 録音、sidecar。録音中は FREQ 無効 | gtest(drop 0)、実機 |
+| `apps/replay` | IQ REPLAY TX: 録音を録ったときの center / rate のまま送る。TX MASTER が ARMED のときだけ。`TxStream`(fan-in、捨てない)、B210 送信 session、`spear-replay` | gtest(全 sample 送出、SAFE で拒否、送信中の SAFE で burst 終了、underflow)、ヘッドレスで実機送信 → STD-T99 機で受信(`docs/apps/replay.md`)。GUI からの実機送信は未確認 |
 | `apps/demod` | NFM / WFM / AM。LO を RX から 250 kHz 離す。channel IQ と audio を Stream Bus に publish | 合成 FM トーンの gtest、実信号の FM |
 | `apps/std_t98` | 30ch 受信機(C++ のみ、Qt / UHD 非依存)、プロトコル、同期の状態機械(フライホイール)、AMBE(blip25c)、秘話(PN、ffnn の C++ 推論、hybrid の ONNX Runtime 推論、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照実装との一致(プロトコル・AMBE・秘話)、実機の送信で確認(平文・秘話) |
 | `apps/adsb` | 1090 MHz Mode S / ADS-B 受信機(C++ のみ: 回転 → 低域 FIR → 電力 → プリアンブル / PPM → CRC-24、DF17/18/11 + AP 形式)、航空機表(CPR 偶奇 / 局所)、GUI(表 / ミニマップ(埋め込みのオフライン地図 Natural Earth + OurAirports。全機が入るよう自動で範囲を合わせる)/ 電力窓 / 統計)。radio.rx を 8 Msps のまま Lossless で消費 | 既知ベクトル(The 1090MHz Riddle)、合成 PPM で provenance をサンプル単位で確認、ライフサイクル、実録音 golden(`~/spear/golden/adsb`、羽田近傍 3 s / 136 フレーム)、実機で動作(`docs/apps/adsb.md`) |
@@ -102,6 +110,9 @@ IQ → DSP → 軟判定 FEC → Tracker → ソルバーの回帰試験では�
    - `RecordingSource` は `configure` / `retune` で録音条件を変えない(要求は Warning を出して無視する)。
    - M3 の順序: ADS-B より先に STD-T98 を実装した。
    - §7.1 の宣言項目 `antenna` は `RfConfig::port`(装置パネルの端子名)で表す。UHD の frontend(subdev)と antenna への分解は Radio だけが行う。
+   - §6 の TX Sink: `B210LiveSink` を別の物にせず、`B210LiveSource` の送信 session にした(装置は 1 台で、開くのは Radio だけ)。装置なしの Source では送信先が `Sink`(既定 `NullSink`)。
+     送信の宣言は `RfConfig::direction / tx_gain / tx_port`(受信の gain / port と別)。方向は App の定義(`DIRECTION`)が決める。
+   - TX MASTER(マスターアーム)は要件に無い。Core が所有し、SAFE なら全 App の送信を拒否する(2026-11-04、意図しない送信の防止)。
 
 8. JR TRAIN RADIO(2026-10-15 移植、実機なし): Arch でのビルド・テスト(参照ベクトルは Mac 生成。厳密比較には refgen を Arch で再実行)、実機での同期・音声・電文・負荷・画面の確認、golden の録音(手順は `docs/apps/jr_train.md`「実機テストの手順」)。
 

@@ -19,6 +19,7 @@ void SpectrumItem::setSource(ViewSource* s) {
 
 void SpectrumItem::timerEvent(QTimerEvent*) {
     if (!source_ || !source_->processor()) return;
+    if (source_->generation() != vp_gen_) { vp_gen_ = source_->generation(); seen_ = 0; }   // 新しい processor の frame 番号は 1 から
     if (source_->processor()->latest(frame_, seen_)) {
         seen_ = frame_.seq;
         float lo, hi;

@@ -51,6 +51,7 @@ private:
     ViewSource* source_ = nullptr;
     SpectrumFrame frame_;
     uint64_t seen_ = 0;
+    uint64_t vp_gen_ = 0;   // ViewSource::generation。変わったら seen_ を捨てる
     QColor trace_color_{0x3c, 0xf0, 0x3c};
     QColor max_color_{0x90, 0x70, 0x10};
     bool max_hold_ = true;

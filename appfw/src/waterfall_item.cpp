@@ -68,7 +68,7 @@ WaterfallItem::WaterfallItem(QQuickItem* parent) : QQuickItem(parent) {
 
 void WaterfallItem::timerEvent(QTimerEvent*) {
     if (!source_ || !source_->processor()) return;
-    if (source_->processor()->rows_written() != next_row_) update();
+    if (source_->processor()->rows_written() != next_row_ || source_->generation() != vp_gen_) update();
 }
 
 void WaterfallItem::releaseResources() {
@@ -79,6 +79,9 @@ QSGNode* WaterfallItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData*) {
     auto* node = static_cast<WfNode*>(old);
     ViewProcessor* vp = (source_ ? source_->processor() : nullptr);
     if (!vp || width() < 2 || height() < 2) { delete node; return nullptr; }
+    // processor が替わった(レート変更など): 前の行は別の時間軸・周波数軸なので捨てて新しい ring から取り込み直す
+    if (node && source_->generation() != vp_gen_) { delete node; node = nullptr; }
+    vp_gen_ = source_->generation();
     const int W = static_cast<int>(vp->width());
     const int R = static_cast<int>(vp->rows());
     if (!node) {
@@ -99,7 +102,7 @@ QSGNode* WaterfallItem::updatePaintNode(QSGNode* old, UpdatePaintNodeData*) {
     }
     // 新しい行を取り込む(GUI thread は sync 中でブロックされているので vp の ring は安全に読める)
     const uint64_t written = vp->rows_written();
-    if (written != next_row_) {
+    if (written > next_row_) {
         const uint64_t first = vp->copy_rows(next_row_, tmp_);
         const uint64_t n = (written - first);
         for (uint64_t i = 0; i < n; ++i) node->tex->enqueue_row(first + i, tmp_.data() + i * static_cast<uint64_t>(W));

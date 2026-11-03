@@ -201,6 +201,11 @@ struct RfConfig {
     AgcMode     agc_mode    = AgcMode::Slow;   // AGC の追従(AD9361 の slow / fast attack)。agc のときだけ意味を持つ
     RfPort      port        = RfPort::RxA;   // 装置パネルの端子(§7.1 の antenna)。UHD の frontend/antenna への分解は Radio(rf_port.hpp)
     std::string clock_source = "internal";
+    // ---- 送信(direction == TX のときだけ意味を持つ)----
+    // 受信の gain / port とは別の項目にする。シェルの草案の gain は受信の値(30〜40 dB)で、送信に流用すると
+    // 意図しない出力になる。既定は送信ゲインの最小(0 dB)。center_freq / sample_rate は送信でもそのまま使う
+    double      tx_gain     = 0.0;           // dB(AD9361 の TX 減衰を UHD の gain 尺度で表したもの。0 = 最小出力)
+    RfPort      tx_port     = RfPort::TrxA;  // 送信できるのは TRXA / TRXB だけ(rf_port_can_tx)
 };
 
 } // namespace spear

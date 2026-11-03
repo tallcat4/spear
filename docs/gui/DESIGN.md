@@ -30,7 +30,7 @@
 * `SystemModel`: DeviceState / evidence / センサ / rx 統計 / consumer 統計 / host / event log を 250 ms で QML へ。
 * `Shell`: App 一覧・選択・実行・戻る。`Core::run_app` は装置適用を待つので worker thread で呼ぶ。
   RF の草案は GAIN(AGC 可)と RX PORT(受信端子 TRXA / RXA / RXB / TRXB、`ChoiceEntry` で選ぶ)だけをメニューで編集し、center / rate は各 App が決める(汎用 App は FREQ / RATE キー、
-  rate 変更は `Shell::restartActiveWithRate()` で App を再起動)。App 停止時に草案は Core の実 RF に追従する。
+  rate 変更は `Shell::setActiveRate()` → `Core::reconfigure` で App を止めずに RF だけ構成し直す)。App 停止時に草案は Core の実 RF に追従する。
 * `TraceSource` / `EyeDiagramItem`: App の DSP が切り出した固定長トレース(アイパターン)を任意スレッドから push、
   `DrawLines` で重ね描き(古いトレースは薄く、直近は明るく)。目盛・判定点は `EyeDiagram.qml`。
 * `SpectrumView` の `markers`(多チャネルのマーカー列)と `compact`(読み出し行なし・軸ラベル間引き)。

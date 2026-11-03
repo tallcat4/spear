@@ -3,9 +3,12 @@
 // App から見て入出力先が区別されない。B210LiveSource / RecordingSource / SyntheticSource は
 // 同じ Stream<sc16> "radio.rx" を出力し、同じ App コードへ差し替えて流し込める(§10.3 の土台)。
 // 出力型は B210 native の sc16 に統一する(10 Msps = 40 MB/s, §1.3)。
+// 送信(direction == TX)も同じ Source が受け持つ: B210 は 1 台の装置を RX / TX で共有し、装置を開くのは Radio だけなので、
+// §6 の B210LiveSink を別の物にせず B210LiveSource の送信 session にする。装置なしの Source では送信先が Sink(既定 NullSink)。
 #pragma once
 
 #include "stream.hpp"
+#include "tx_stream.hpp"
 #include "types.hpp"
 
 #include <memory>
@@ -35,6 +38,11 @@ public:
     virtual bool running() const = 0;
 
     virtual Stream<sc16>& output() = 0;
+    // 送信の入口(fan-in, §4.1)。direction == TX の宣言で configure したあと、App が on_start で受け取って write する。
+    // stop() で閉じる(App の待ちが解ける)。次の configure で作り直す
+    virtual TxStream& tx_input() = 0;
+    // 運転中の送信ゲイン変更。宣言(config().tx_gain)は即座に更新し、送信 thread が装置へ適用する(retune と同じ形、要求は失われない)
+    virtual bool set_tx_gain(double db) = 0;
     virtual uint64_t generation() const = 0;
 
     // 現在の宣言(コピー、thread-safe)。retune 要求は即座にここへ反映される。
@@ -59,7 +67,21 @@ public:
     virtual std::vector<std::string> startup_report() const { return {}; }
     // 個体の LO 誤差 [ppm](観測 − 真)。実機は tune 時に LO 側で打ち消す(lo_correction.hpp)。表示・録音の provenance 用
     virtual double lo_correction_ppm() const { return 0; }
+
+    // TX MASTER(Core が所有)。Core::set_source が渡す。Source は作る TxStream にそのまま渡す(null = 常に SAFE)
+    void set_tx_arm(const std::atomic<bool>* arm) { tx_arm_ = arm; }
+protected:
+    const std::atomic<bool>* tx_arm_ = nullptr;
 };
+
+// 宣言の方向まわりの検査(全 Source 共通)。送信は TRX 端子だけ(rf_port_can_tx)。黙って別の端子にしない
+inline bool check_direction(const RfConfig& cfg, std::string* err) {
+    if (cfg.direction == Direction::TX && !rf_port_can_tx(cfg.tx_port)) {
+        if (err) *err = "tx_port " + std::string(rf_port_name(cfg.tx_port)) + " cannot transmit (TRXA / TRXB only)";
+        return false;
+    }
+    return true;
+}
 
 class Sink {
 public:
@@ -93,6 +115,10 @@ public:
     void stop() override;
     bool running() const override { return running_.load(); }
     Stream<sc16>& output() override { return *stream_; }
+    TxStream& tx_input() override { return *tx_; }
+    bool set_tx_gain(double db) override;
+    // 送信先(装置の代わり)。既定は NullSink。テストは中身を確かめる Sink を差す。start 前に呼ぶ
+    void set_tx_sink(std::shared_ptr<Sink> s) { tx_sink_ = s ? std::move(s) : std::make_shared<NullSink>(); }
     uint64_t generation() const override { return generation_.load(); }
     RfConfig config() const override { std::lock_guard lk(cfg_mu_); return cfg_; }
     uint64_t state_version() const override { return state_version_.load(); }
@@ -130,6 +156,8 @@ protected:
     std::size_t block_samples_;
     BlockPool   pool_;
     std::unique_ptr<Stream<sc16>> stream_;
+    std::unique_ptr<TxStream> tx_;
+    std::shared_ptr<Sink> tx_sink_ = std::make_shared<NullSink>();
     std::atomic<bool> running_{false};
     std::atomic<uint64_t> generation_{0};
     std::atomic<uint64_t> state_since_ns_{0};
@@ -137,6 +165,7 @@ protected:
 
 private:
     void run();
+    void run_tx();   // direction == TX: tx_ を実時間で消費して tx_sink_ へ(装置の代わり。producer が遅れたら Underflow)
     std::thread th_;
     std::atomic<bool> stop_req_{false};
     uint64_t sequence_ = 0;

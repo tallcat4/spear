@@ -61,7 +61,9 @@ public:
     // ---- spear::App ----
     std::string name() const override { return info_.name; }
     RfConfig declare_rf_config() const override { return rf_; }
-    void set_rf_config(const RfConfig& c) { rf_ = c; }
+    // 方向の所有者は App のメタデータ(spear_add_app の DIRECTION)。草案は直前に Core が運転していた RF の写しなので
+    // 送信 App の後は TX が入っている。そのまま受信 App が宣言すると送信になるので、ここで App の方向に固定する
+    void set_rf_config(const RfConfig& c) { rf_ = c; rf_.direction = info_.direction; }
 
     // 派生は on_start / on_stop を実装する(running フラグと signal は基底が扱う)。
     // SDK の保証: on_start / on_stop は必ずこの QObject のスレッド(GUI thread)で呼ばれる。
@@ -69,6 +71,10 @@ public:
     // App 作者は QTimer / signal / QML property を普通に使ってよい。
     void start(Core& core) final;
     void stop() final;
+    // Core::reconfigure: App は止まらない(running は true のまま、画面もそのまま)。DSP の経路だけ on_stop / on_start で付け直す。
+    // GUI thread で呼ぶ(start / stop と同じ保証)
+    void rf_will_change() final;
+    void rf_changed(Core& core) final;
 
 Q_SIGNALS:
     void runningChanged();
@@ -89,6 +95,16 @@ private:
 
 inline void GuiApp::start(Core& core) {
     auto body = [this, &core] { core_ = &core; on_start(core); running_ = true; Q_EMIT runningChanged(); };
+    if (QThread::currentThread() == thread()) body();
+    else QMetaObject::invokeMethod(this, body, Qt::BlockingQueuedConnection);
+}
+inline void GuiApp::rf_will_change() {
+    auto body = [this] { on_stop(); };
+    if (QThread::currentThread() == thread()) body();
+    else QMetaObject::invokeMethod(this, body, Qt::BlockingQueuedConnection);
+}
+inline void GuiApp::rf_changed(Core& core) {
+    auto body = [this, &core] { core_ = &core; on_start(core); };
     if (QThread::currentThread() == thread()) body();
     else QMetaObject::invokeMethod(this, body, Qt::BlockingQueuedConnection);
 }

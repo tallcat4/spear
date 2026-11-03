@@ -67,6 +67,7 @@ protected:
 private:
     ViewSource* source_ = nullptr;
     uint64_t next_row_ = 0;      // まだ取り込んでいない最初の行
+    uint64_t vp_gen_ = 0;        // 取り込み中の processor の世代(ViewSource::generation)。変わったら texture から作り直す
     std::vector<uint32_t> tmp_;
     int timer_ = 0;
     double rps_ = 0;

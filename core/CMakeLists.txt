@@ -2,6 +2,7 @@
 add_library(spear_core STATIC
   src/block.cpp
   src/stream.cpp
+  src/tx_stream.cpp
   src/source.cpp
   src/event.cpp
   src/event_log.cpp

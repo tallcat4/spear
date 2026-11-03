@@ -21,3 +21,6 @@ target_link_libraries(spear-std-t99-decode PRIVATE spear_std_t99_rx spear_core s
 
 add_executable(spear-std-t98-secret-bench std_t98_decode/secret_bench.cpp)
 target_link_libraries(spear-std-t98-secret-bench PRIVATE spear_std_t98_rx)
+
+add_executable(spear-replay replay/main.cpp)
+target_link_libraries(spear-replay PRIVATE spear_core)

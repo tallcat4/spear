@@ -6,6 +6,8 @@
 #include "demod_app.hpp"
 #include "jr_train_app.hpp"
 #include "recorder_app.hpp"
+#include "replay_app.hpp"
+#include "spear/core/recording.hpp"
 #include "slpr_app.hpp"
 #include "spectrum_app.hpp"
 #include "std_t98_app.hpp"
@@ -18,6 +20,8 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <mutex>
 #include <thread>
 #include <fftw3.h>
 
@@ -43,7 +47,7 @@ TEST(Apps, RegistryListsAllIntegratedApps) {
     EXPECT_EQ(apps[1].info.id, "recorder");
     EXPECT_NE(apps[0].info.page_url.find("SpectrumPage.qml"), std::string::npos);
     // 統合した試験機能も既存 App と同じ GUI のメニューに 1 回ずつ登録されること。
-    for (const auto* id : {"spectrum", "recorder", "demod", "std_t98", "adsb", "slpr", "jr_train", "std_t99"}) {
+    for (const auto* id : {"spectrum", "recorder", "replay", "demod", "std_t98", "adsb", "slpr", "jr_train", "std_t99"}) {
         EXPECT_EQ(std::count_if(apps.begin(), apps.end(), [id](const auto& e) { return e.info.id == id; }), 1) << id;
     }
 }
@@ -102,6 +106,147 @@ TEST(Apps, RecorderWritesSigmfWithoutDrops) {
     EXPECT_TRUE(std::filesystem::exists(app->path().toStdString() + ".spear.json"));
     rig.core.stop_app();
     EXPECT_EQ(rig.core.rx().consumer_count(), 0u);
+}
+
+// 方向は App の定義が決める。送信 App の後の草案(Core の RF の写し = TX)を渡されても、受信 App は RX を宣言する
+TEST(Apps, DirectionComesFromAppNotDraft) {
+    for (const auto& e : appfw::registered_apps()) {
+        auto app = e.make();
+        RfConfig c; c.direction = e.info.direction == Direction::RX ? Direction::TX : Direction::RX;
+        app->set_rf_config(c);
+        EXPECT_EQ(app->declare_rf_config().direction, e.info.direction) << e.info.id;
+    }
+}
+
+namespace {
+struct CaptureSink final : Sink {
+    std::string name() const override { return "capture"; }
+    void write(const Delivery& d) override {
+        std::lock_guard lk(mu);
+        const auto s = d.block.as<sc16>();
+        samples.insert(samples.end(), s.begin(), s.end());
+    }
+    std::size_t size() { std::lock_guard lk(mu); return samples.size(); }
+    std::mutex mu;
+    std::vector<sc16> samples;
+};
+// 小さな SigMF 録音(ci16、値 = 通し番号)を作る
+std::string write_test_recording(const std::string& dir, uint32_t n, double rate, double freq) {
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const std::string base = dir + "/rec_test";
+    sigmf::Meta m;
+    m.dtype = DataType::ComplexInt16;
+    m.sample_rate = rate;
+    sigmf::Capture c; c.frequency = freq;
+    m.captures.push_back(c);
+    m.total_samples = n;
+    EXPECT_TRUE(sigmf::write(base, m));
+    std::ofstream f(sigmf::data_path(base), std::ios::binary);
+    for (uint32_t i = 0; i < n; ++i) { const sc16 v(static_cast<int16_t>(i & 0x7fff), 0); f.write(reinterpret_cast<const char*>(&v), sizeof v); }
+    return base;
+}
+} // namespace
+
+// IQ REPLAY TX: 録音の center / rate で送信を宣言し、TX MASTER が SAFE なら送らず、ARMED なら録音を欠けなく 1 burst で送る
+TEST(Apps, ReplaySendsRecordingOnlyWhenArmed) {
+    Core core(".");
+    auto src = std::make_unique<SyntheticSource>(&core.events(), SyntheticSignal{});
+    auto sink = std::make_shared<CaptureSink>();
+    src->set_tx_sink(sink);
+    src->set_realtime(false);
+    core.set_source(std::move(src));
+    const auto dir = (std::filesystem::temp_directory_path() / "spear_app_test_replay").string();
+    const uint32_t n = 100000;
+    const std::string base = write_test_recording(dir, n, 1e6, 422.175e6);
+    auto app = std::make_shared<apps::ReplayApp>(appfw::AppInfo{"replay", "IQ REPLAY TX", "", Direction::TX, ""});
+    QVariantMap settings; settings["record_dir"] = QString::fromStdString(dir);
+    app->configure(settings);
+    ASSERT_EQ(app->recordings().size(), 1);
+    app->setFile(QString::fromStdString(base));
+    ASSERT_TRUE(app->fileValid()) << app->fileError().toStdString();
+    RfConfig draft; draft.sample_rate = 2e6; draft.center_freq = 1090e6; draft.gain = 40;   // 受信の草案(送信には使わない)
+    app->set_rf_config(draft);
+    const RfConfig decl = app->declare_rf_config();
+    EXPECT_EQ(decl.direction, Direction::TX);
+    EXPECT_DOUBLE_EQ(decl.center_freq, 422.175e6);
+    EXPECT_DOUBLE_EQ(decl.sample_rate, 1e6);
+    EXPECT_DOUBLE_EQ(decl.tx_gain, 0.0);
+    ASSERT_TRUE(core.run_app(app));
+    EXPECT_TRUE(app->configCurrent());
+    // SAFE: App は送信を始めない(Core も拒否する)
+    app->transmit();
+    EXPECT_FALSE(app->sending());
+    EXPECT_NE(app->lastError().indexOf("SAFE"), -1);
+    // ARMED: 全 sample が順に送られ、burst が閉じる
+    core.set_tx_armed(true);
+    app->transmit();
+    for (int i = 0; i < 400 && (app->sending() || core.tx().stats().in_burst); ++i) std::this_thread::sleep_for(5ms);
+    EXPECT_FALSE(app->sending());
+    EXPECT_FALSE(core.tx().stats().in_burst);
+    EXPECT_EQ(core.tx().stats().bursts, 1u);
+    ASSERT_EQ(sink->size(), n);
+    for (uint32_t i = 0; i < n; ++i) ASSERT_EQ(sink->samples[i].real(), static_cast<int16_t>(i & 0x7fff)) << i;
+    // 録音を変える: App は止めずに Core が構成し直す。適用されるまで TRANSMIT できない
+    const std::string base2 = write_test_recording(dir + "/b", 50000, 2e6, 351.29375e6);
+    app->setFile(QString::fromStdString(base2));
+    EXPECT_FALSE(app->configCurrent());
+    std::string err;
+    ASSERT_TRUE(core.reconfigure(app, app->declare_rf_config(), &err)) << err;
+    EXPECT_TRUE(app->running());
+    EXPECT_TRUE(app->configCurrent());
+    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 351.29375e6);
+    EXPECT_DOUBLE_EQ(core.source().config().sample_rate, 2e6);
+    app->transmit();
+    for (int i = 0; i < 400 && (app->sending() || core.tx().stats().in_burst); ++i) std::this_thread::sleep_for(5ms);
+    EXPECT_EQ(core.tx().stats().sent_samples, 50000u);   // 新しい送信の入口(作り直された TxStream)で送れた
+    core.stop_app();
+    EXPECT_EQ(core.rx().consumer_count(), 0u);
+}
+
+// App を止めずに RF を構成し直す(Core::reconfigure): App は running のまま、観測点は新しいレートの stream に付け直され、consumer は増えない
+TEST(Apps, ReconfigureChangesRateWithoutStoppingApp) {
+    Rig rig;
+    auto app = std::make_shared<apps::SpectrumApp>(appfw::AppInfo{"spectrum", "SPECTRUM", "", Direction::RX, ""});
+    app->set_rf_config(rig.cfg());
+    ASSERT_TRUE(rig.core.run_app(app));
+    std::this_thread::sleep_for(300ms);
+    int running_changes = 0;
+    QObject::connect(app.get(), &appfw::GuiApp::runningChanged, [&] { ++running_changes; });
+    RfConfig c = rig.core.source().config();
+    c.sample_rate = 4e6;
+    app->set_rf_config(c);
+    std::string err;
+    ASSERT_TRUE(rig.core.reconfigure(app, app->declare_rf_config(), &err)) << err;
+    EXPECT_TRUE(app->running());
+    EXPECT_EQ(running_changes, 0);
+    EXPECT_EQ(rig.core.active_app(), app);
+    EXPECT_DOUBLE_EQ(rig.core.source().config().sample_rate, 4e6);
+    EXPECT_DOUBLE_EQ(rig.core.rx().meta().sample_rate, 4e6);   // stream も新しいレートで作り直された
+    EXPECT_EQ(rig.core.rx().consumer_count(), 1u);
+    const auto rows = app->view()->processor()->rows_written();
+    std::this_thread::sleep_for(500ms);
+    EXPECT_GT(app->view()->processor()->rows_written(), rows);   // 新しい stream で表示が動いている
+    rig.core.stop_app();
+    EXPECT_EQ(rig.core.rx().consumer_count(), 0u);
+}
+
+// 適用できない構成(送信できない端子)は拒否され、元の構成で App が動き続ける
+TEST(Apps, ReconfigureRejectedKeepsPreviousConfig) {
+    Rig rig;
+    auto app = std::make_shared<apps::SpectrumApp>(appfw::AppInfo{"spectrum", "SPECTRUM", "", Direction::RX, ""});
+    app->set_rf_config(rig.cfg());
+    ASSERT_TRUE(rig.core.run_app(app));
+    RfConfig bad = rig.core.source().config();
+    bad.direction = Direction::TX; bad.tx_port = RfPort::RxB;
+    std::string err;
+    EXPECT_FALSE(rig.core.reconfigure(app, bad, &err));
+    EXPECT_FALSE(err.empty());
+    EXPECT_TRUE(app->running());
+    EXPECT_EQ(rig.core.source().config().direction, Direction::RX);
+    EXPECT_DOUBLE_EQ(rig.core.source().config().sample_rate, 2e6);
+    EXPECT_EQ(rig.core.rx().consumer_count(), 1u);
+    rig.core.stop_app();
 }
 
 TEST(Apps, TemplateLifecycle) {

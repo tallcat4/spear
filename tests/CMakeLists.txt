@@ -7,6 +7,7 @@ add_executable(spear_tests
   test_state.cpp
   test_channelizer.cpp
   test_leveler.cpp
+  test_tx.cpp
 )
 target_link_libraries(spear_tests PRIVATE spear_core spear_dsp GTest::gtest GTest::gtest_main PkgConfig::FFTW3F)
 include(GoogleTest)

@@ -311,14 +311,16 @@ bool Radio::is_open() const { return static_cast<bool>(usrp_); }
 
 void Radio::close() { usrp_.reset(); }
 
-bool Radio::wait_sensor(const std::string& sensor, bool mboard, std::string* err) {
+bool Radio::wait_sensor(const std::string& sensor, SensorScope scope, std::string* err) {
     using clock = std::chrono::steady_clock;
     const auto deadline = clock::now() + std::chrono::duration_cast<clock::duration>(std::chrono::duration<double>(opt_.lock_timeout_s));
     try {
-        const auto names = mboard ? usrp_->get_mboard_sensor_names() : usrp_->get_rx_sensor_names();
+        const auto names = scope == SensorScope::Mboard ? usrp_->get_mboard_sensor_names()
+                         : scope == SensorScope::Rx ? usrp_->get_rx_sensor_names() : usrp_->get_tx_sensor_names();
         if (std::find(names.begin(), names.end(), sensor) == names.end()) return true; // sensor 無し = 確認不能だが失敗ではない
         while (clock::now() < deadline) {
-            const auto v = mboard ? usrp_->get_mboard_sensor(sensor) : usrp_->get_rx_sensor(sensor);
+            const auto v = scope == SensorScope::Mboard ? usrp_->get_mboard_sensor(sensor)
+                         : scope == SensorScope::Rx ? usrp_->get_rx_sensor(sensor) : usrp_->get_tx_sensor(sensor);
             if (v.to_bool()) return true;
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
@@ -416,7 +418,7 @@ bool Radio::open(const RfConfig& cfg, std::string* err) {
             stage(3, "clock_source=internal (TCXO, ref_locked not applicable: " + ref + ")", true);
             return true;
         }
-        if (!wait_sensor("ref_locked", true, &e)) {
+        if (!wait_sensor("ref_locked", SensorScope::Mboard, &e)) {
             stage(3, e, false);
             set_state(DeviceState::Fault, "sensor ref_locked: " + e, 3);
             if (err) *err = e;
@@ -527,7 +529,7 @@ bool Radio::tune_rx(const RfConfig& cfg, std::string* err) {
                 events_->emit(EventKind::Warning, "radio", cb);
             }
         }
-        if (!wait_sensor("lo_locked", false, &e)) {
+        if (!wait_sensor("lo_locked", SensorScope::Rx, &e)) {
             stage(4, e, false);
             set_state(DeviceState::Fault, "sensor lo_locked: " + e, 4);
             if (err) *err = e;
@@ -577,5 +579,158 @@ uhd::rx_streamer::sptr Radio::make_rx_streamer(std::string* err) {
 }
 
 uhd::time_spec_t Radio::now() const { return usrp_->get_time_now(); }
+
+// ---- 送信 ----------------------------------------------------------------------
+
+bool Radio::tune_tx(const RfConfig& cfg, std::string* err) {
+    if (!usrp_) { if (err) *err = "not open"; return false; }
+    std::string e;
+    const LoCorrection corr = lo_correction();
+    const RfPortInfo& port = rf_port_info(cfg.tx_port);
+    try {
+        if (!rf_port_can_tx(cfg.tx_port)) throw uhd::value_error("port " + std::string(port.name) + " cannot transmit (TRXA / TRXB only)");
+        // 端子 → frontend。受信と同じく、frontend の存在を tree で先に確かめてから subdev spec を明示する(既定は 2 ch の "A:A A:B")
+        {
+            const auto fes = usrp_->get_tree()->list("/mboards/0/dboards/A/tx_frontends");
+            if (std::find(fes.begin(), fes.end(), std::string(port.frontend)) == fes.end()) {
+                std::string list;
+                for (const auto& f : fes) list += (list.empty() ? "" : ",") + f;
+                throw uhd::value_error("port " + std::string(port.name) + " needs tx frontend " + std::string(port.frontend) + "; device has {" + list + "}");
+            }
+            usrp_->set_tx_subdev_spec(uhd::usrp::subdev_spec_t(std::string(port.subdev)));
+            const std::string got = usrp_->get_tx_subdev_spec().to_string();
+            if (got != std::string(port.subdev))
+                throw uhd::value_error("tx subdev spec coerced: requested " + std::string(port.subdev) + ", actual " + got);
+        }
+        // 宣言を装置の能力範囲と照合。範囲外は適用不能(黙って丸めない)
+        {
+            const auto fr = usrp_->get_tx_freq_range();
+            const auto gr = usrp_->get_tx_gain_range();
+            const auto rr = usrp_->get_tx_rates();
+            const auto ants = usrp_->get_tx_antennas();
+            char rb[200];
+            if (corr.to_device(cfg.center_freq) < fr.start() || corr.to_device(cfg.center_freq) > fr.stop()) {
+                std::snprintf(rb, sizeof rb, "tx center_freq %.6f MHz outside [%.3f, %.3f] MHz", cfg.center_freq / 1e6, fr.start() / 1e6, fr.stop() / 1e6);
+                throw uhd::value_error(rb);
+            }
+            if (cfg.tx_gain < gr.start() || cfg.tx_gain > gr.stop()) {
+                std::snprintf(rb, sizeof rb, "tx_gain %.2f dB outside [%.2f, %.2f] dB", cfg.tx_gain, gr.start(), gr.stop());
+                throw uhd::value_error(rb);
+            }
+            if (cfg.sample_rate < rr.start() || cfg.sample_rate > rr.stop()) {
+                std::snprintf(rb, sizeof rb, "tx sample_rate %.6g outside [%.6g, %.6g]", cfg.sample_rate, rr.start(), rr.stop());
+                throw uhd::value_error(rb);
+            }
+            if (std::find(ants.begin(), ants.end(), std::string(port.uhd_antenna)) == ants.end()) {
+                std::string list;
+                for (const auto& a : ants) list += (list.empty() ? "" : ",") + a;
+                throw uhd::value_error("port " + std::string(port.name) + ": tx antenna " + std::string(port.uhd_antenna) + " not in {" + list + "}");
+            }
+        }
+        // 出力を最小にしてから周波数を合わせ、最後に宣言のゲインにする(tune の途中で意図しない周波数・出力を出さない)
+        usrp_->set_tx_gain(usrp_->get_tx_gain_range().start());
+        usrp_->set_tx_rate(cfg.sample_rate);
+        actual_tx_rate_ = usrp_->get_tx_rate();
+        const auto res = usrp_->set_tx_freq(uhd::tune_request_t(corr.to_device(cfg.center_freq)));
+        actual_tx_freq_ = corr.to_true(usrp_->get_tx_freq());
+        usrp_->set_tx_antenna(std::string(port.uhd_antenna));
+        usrp_->set_tx_bandwidth(cfg.bandwidth > 0 ? cfg.bandwidth : cfg.sample_rate);
+        const double actual_bw = usrp_->get_tx_bandwidth();
+        {
+            char cb[200];
+            if (std::abs(actual_tx_rate_ - cfg.sample_rate) > opt_.rate_tolerance_rel * cfg.sample_rate) {
+                std::snprintf(cb, sizeof cb, "tx sample_rate coerced: requested %.6f, actual %.6f Msps", cfg.sample_rate / 1e6, actual_tx_rate_ / 1e6);
+                throw uhd::value_error(cb);
+            }
+            if (std::abs(actual_tx_freq_ - cfg.center_freq) > opt_.freq_tolerance_hz) {
+                std::snprintf(cb, sizeof cb, "tx center_freq coerced: requested %.6f, actual %.6f MHz", cfg.center_freq / 1e6, actual_tx_freq_ / 1e6);
+                throw uhd::value_error(cb);
+            }
+            const double want_bw = cfg.bandwidth > 0 ? cfg.bandwidth : cfg.sample_rate;
+            if (std::abs(actual_bw - want_bw) > 0.25 * want_bw && events_) {
+                std::snprintf(cb, sizeof cb, "tx bandwidth coerced: requested %.3f, actual %.3f MHz", want_bw / 1e6, actual_bw / 1e6);
+                events_->emit(EventKind::Warning, "radio", cb);
+            }
+        }
+        if (!wait_sensor("lo_locked", SensorScope::Tx, &e)) {
+            stage(4, "tx " + e, false);
+            set_state(DeviceState::Fault, "sensor tx lo_locked: " + e, 4);
+            if (err) *err = e;
+            return false;
+        }
+        if (!set_tx_gain(cfg.tx_gain, &e)) throw uhd::value_error(e);
+        char buf[260];
+        std::snprintf(buf, sizeof buf, "TX rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f corr=%+.2fppm/%+.0fHz) tx_gain=%.2f port=%s (%s %s) lo_locked",
+                      actual_tx_rate_, usrp_->get_master_clock_rate(), actual_tx_freq_ / 1e6, res.actual_rf_freq / 1e6,
+                      res.actual_dsp_freq, corr.ppm, corr.error_hz(cfg.center_freq), actual_tx_gain_,
+                      std::string(port.name).c_str(), usrp_->get_tx_subdev_spec().to_string().c_str(), usrp_->get_tx_antenna().c_str());
+        stage(4, buf, true);
+        set_state(DeviceState::Ready, std::string("sensors: tx lo_locked=true; ") + buf, 4);
+        return true;
+    } catch (const uhd::exception& ex) {
+        e = std::string("uhd: ") + ex.what();
+    } catch (const std::exception& ex) {
+        e = ex.what();
+    }
+    stage(4, e, false);
+    set_state(DeviceState::Fault, "stage 4: " + e, 4);
+    if (err) *err = e;
+    return false;
+}
+
+bool Radio::set_tx_gain(double db, std::string* err) {
+    if (!usrp_) { if (err) *err = "not open"; return false; }
+    try {
+        const auto gr = usrp_->get_tx_gain_range();
+        char b[160];
+        if (db < gr.start() || db > gr.stop()) {
+            std::snprintf(b, sizeof b, "tx_gain %.2f dB outside [%.2f, %.2f] dB", db, gr.start(), gr.stop());
+            if (err) *err = b;
+            return false;
+        }
+        usrp_->set_tx_gain(db);
+        actual_tx_gain_ = usrp_->get_tx_gain();
+        if (std::abs(actual_tx_gain_ - db) > opt_.gain_tolerance_db) {
+            std::snprintf(b, sizeof b, "tx gain coerced: requested %.2f, actual %.2f dB", db, actual_tx_gain_);
+            if (err) *err = b;
+            return false;
+        }
+        return true;
+    } catch (const uhd::exception& ex) {
+        if (err) *err = std::string("uhd: ") + ex.what();
+        return false;
+    }
+}
+
+void Radio::quiesce_tx() {
+    if (!usrp_) return;
+    try {
+        usrp_->set_tx_gain(usrp_->get_tx_gain_range().start());
+        actual_tx_gain_ = usrp_->get_tx_gain();
+    } catch (const std::exception& ex) {
+        if (events_) events_->emit(EventKind::Warning, "radio", std::string("quiesce_tx: ") + ex.what());
+    }
+}
+
+bool Radio::read_tx_lo_locked(bool* locked) {
+    if (!usrp_) return false;
+    try {
+        *locked = usrp_->get_tx_sensor("lo_locked").to_bool();
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+uhd::tx_streamer::sptr Radio::make_tx_streamer(std::string* err) {
+    try {
+        uhd::stream_args_t sa("sc16", "sc16"); // native wire format (§1.3)
+        sa.channels = {0};
+        return usrp_->get_tx_stream(sa);
+    } catch (const uhd::exception& ex) {
+        if (err) *err = std::string("uhd: ") + ex.what();
+        return nullptr;
+    }
+}
 
 } // namespace spear

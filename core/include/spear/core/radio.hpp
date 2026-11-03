@@ -84,6 +84,17 @@ public:
     double retune_rx_at(double freq, const uhd::time_spec_t& at);
 
     uhd::rx_streamer::sptr make_rx_streamer(std::string* err = nullptr);
+
+    // ---- 送信(direction == TX)----
+    // 手順 4 の送信版。端子(tx_port = TRXA / TRXB)→ rate / freq / tx_gain / bandwidth を適用し、TX の lo_locked を確認する。
+    // 範囲外・coercion は受信と同じく失敗(黙って丸めない)。個体の LO 誤差は受信と同じ TCXO なので同じ補正をかける
+    bool tune_tx(const RfConfig& cfg, std::string* err = nullptr);
+    uhd::tx_streamer::sptr make_tx_streamer(std::string* err = nullptr);
+    // 運転中の送信ゲイン変更(送信 thread から)。範囲外・coercion は false(装置の値は変えない)
+    bool set_tx_gain(double db, std::string* err = nullptr);
+    // 送信を終える前に出力を最小にする(close 後も AD9361 の TX 経路が LO を漏らしうるため。漏れは実測で確かめる)
+    void quiesce_tx();
+    bool read_tx_lo_locked(bool* locked);   // 送信中に安全に読める(rx の lo_locked と同じ制御経路)
     uhd::usrp::multi_usrp::sptr usrp() const { return usrp_; }
     uhd::time_spec_t now() const;
 
@@ -116,10 +127,14 @@ public:
     const RadioOptions& options() const { return opt_; }
     double actual_rx_rate() const { return actual_rate_; }
     double actual_rx_freq() const { return actual_freq_; }   // 真の周波数(LO 補正を戻した値)
+    double actual_tx_rate() const { return actual_tx_rate_; }
+    double actual_tx_freq() const { return actual_tx_freq_; } // 真の周波数(LO 補正を戻した値)
+    double actual_tx_gain() const { return actual_tx_gain_; }
     LoCorrection lo_correction() const { return LoCorrection{opt_.freq_err_ppm}; }
 
 private:
-    bool wait_sensor(const std::string& sensor, bool mboard, std::string* err);
+    enum class SensorScope { Mboard, Rx, Tx };
+    bool wait_sensor(const std::string& sensor, SensorScope scope, std::string* err);
     void stage(int n, const std::string& detail, bool ok);
 
     void install_uhd_log_hook();
@@ -129,6 +144,7 @@ private:
     uhd::usrp::multi_usrp::sptr usrp_;
     RadioInfo info_;
     double actual_rate_ = 0, actual_freq_ = 0;
+    double actual_tx_rate_ = 0, actual_tx_freq_ = 0, actual_tx_gain_ = 0;
     mutable std::mutex st_mu_;
     DeviceStatus st_;
     SelfCheck self_check_;

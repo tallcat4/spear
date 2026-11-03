@@ -32,6 +32,7 @@ public:
     Source&        source()  { return *source_; }
     bool           has_source() const { return static_cast<bool>(source_); }
     Stream<sc16>&  rx()      { return source_->output(); }
+    TxStream&      tx()      { return source_->tx_input(); }   // 送信の入口(fan-in)。direction == TX の App が on_start で受け取る
 
     // active App は常に1つ (§2.3)。前の App があれば stop してから切り替える。
     // RF 宣言が装置に適用不能(範囲外・coercion・link 帯域超過 = Fault at stage 2〜4)なら
@@ -45,8 +46,20 @@ public:
     const PerformanceHold& performance_hold() const { return *hold_; }
     void stop_app();
     std::shared_ptr<App> active_app() const;
+    // 運転中の App の RF を構成し直す(App は止めない。送信 App の録音選択、汎用 App のレート変更など)。
+    // Source を止める → app->rf_will_change() → configure(cfg) → app->rf_changed() → Source を始める → 装置の適用を待つ(run_app と同じ判定)。
+    // 適用できなければ元の構成に戻して続け、false(App は動いたまま)。app が active でなければ false
+    bool reconfigure(const std::shared_ptr<App>& app, const RfConfig& cfg, std::string* err = nullptr);
+
+    // ---- TX MASTER(マスターアーム)----
+    // ARMED のときだけ送信できる。SAFE ならどの App の送信も Core の送信入口(TxStream)が拒否し、送信中なら直ちに burst を閉じる。
+    // 起動時は必ず SAFE(保存しない)。変更は Info event("core")で残す
+    void set_tx_armed(bool armed);
+    bool tx_armed() const { return tx_armed_.load(); }
 
 private:
+    // 宣言の適用結果を待つ: Streaming → true / Fault(stage 2〜4 = 構成起因)→ false(err)/ 装置待ちのまま期限 → true
+    bool wait_applied(std::string* err);
     EventBus events_;
     std::unique_ptr<PerformanceHold> hold_;   // health_ より先に作り、後に壊す(監視 thread が check() を呼ぶ)
     std::unique_ptr<HealthMonitor> health_;
@@ -55,6 +68,7 @@ private:
     std::shared_ptr<App> app_;
     double ready_timeout_s_ = 10.0;
     std::atomic<bool> hold_enabled_{false};
+    std::atomic<bool> tx_armed_{false};
 };
 
 } // namespace spear

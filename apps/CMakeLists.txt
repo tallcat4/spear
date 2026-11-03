@@ -42,6 +42,7 @@ endfunction()
 
 add_subdirectory(spectrum)
 add_subdirectory(recorder)
+add_subdirectory(replay)
 add_subdirectory(demod)
 add_subdirectory(std_t98)
 add_subdirectory(adsb)

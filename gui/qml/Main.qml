@@ -51,7 +51,10 @@ Window {
     }
     function askOffset(current, cb) { win.askOffset(current, cb) }
         function showDiagnostics() { shell.showDiagnostics(true) }
-        function restartWithRate(v) { shell.restartActiveWithRate(v) }   // 汎用 App のレート変更(App を再起動する)
+        function setRate(v) { shell.setActiveRate(v) }   // 汎用 App のレート変更(App は止めずに RF だけ構成し直す)
+        function applyRf() { shell.applyActiveRf() }      // App の宣言が変わったとき(送信 App の録音・端子の選択など)。App は止めない
+        // 多数の項目から 1 つ選ぶ(録音ファイル等)。items = [{label, sublabel?, value}]
+        function askList(title, note, items, current, cb) { win.askList(title, note, items, current, cb) }
     }
 
     // 固定パネル 1920x1200 前提の固定キャンバス (§1.2)。窓がそれより小さい/大きい場合は等倍縮尺で全体を収める。
@@ -75,6 +78,7 @@ Window {
                 onSelected: (i) => { if (!shell.busy) { Feedback.tap(); shell.startApp(i) } }
                 onAskGain: win.openGainEntry()
                 onAskPort: win.askPort(shell.draftPort, (v) => shell.draftPort = v)
+                onAskArm: armDialog.open()
             }
             // App のページ: レジストリの page_url を Loader で読む。ページには app / sys / ui が見える。
             Loader {
@@ -92,6 +96,15 @@ Window {
                         }
                     }
                 }
+            }
+            // App の運転中に RF の変更(ui.applyRf / ui.setRate)が却下されたとき: どの App のページでも理由を出す(元の構成で動き続けている)
+            Rectangle {
+                anchors.top: parent.top; anchors.horizontalCenter: parent.horizontalCenter; anchors.topMargin: Theme.pad
+                width: rfErr.implicitWidth + 2 * Theme.pad; height: rfErr.implicitHeight + Theme.pad
+                visible: win.appOpen && !win.diagOpen && shell.lastError.length > 0
+                color: Theme.red; z: 10
+                Text { id: rfErr; anchors.centerIn: parent; text: shell.lastError + "  (previous configuration kept)"
+                       color: "#000000"; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
             }
             DiagnosticsPage { anchors.fill: parent; visible: win.diagOpen }
         }
@@ -139,6 +152,15 @@ Window {
             acceptLabel: "EXIT"; cancelLabel: "CANCEL"
             onAccepted: shell.quit()
         }
+        // ---- TX MASTER の ARM の確認。SAFE に戻すのは確認なし(メニューの欄、ステータスバーの ARMED)----
+        ConfirmDialog {
+            id: armDialog
+            anchors.topMargin: Theme.statusBarH
+            title: "TX MASTER — ARM"
+            message: "Allow transmission?  Applications can transmit only while ARMED.  Connect a dummy load / attenuator first.  Tap ARMED in the status bar to return to SAFE."
+            acceptLabel: "ARM"; cancelLabel: "CANCEL"
+            onAccepted: sys.setTxArmed(true)
+        }
         // ---- 音量(OS の出力)。VOL のタップと音量キーで出る ----
         VolumePopup { id: volumePopup }
         // ---- 自前の数値入力(モーダル)。入力中もステータスバーは見せる ----
@@ -151,6 +173,13 @@ Window {
         // ---- 自前の選択入力(モーダル)。受信端子など少数の選択肢用 ----
         ChoiceEntry {
             id: choice
+            anchors.topMargin: Theme.statusBarH
+            property var callback: null
+            onAccepted: (v) => { if (callback) callback(v) }
+        }
+        // ---- 多数の項目からの選択(モーダル)。録音ファイルなど ----
+        ListEntry {
+            id: list
             anchors.topMargin: Theme.statusBarH
             property var callback: null
             onAccepted: (v) => { if (callback) callback(v) }
@@ -210,6 +239,10 @@ Window {
         entry.displayFactor = 1; entry.displayUnit = "dBFS"; entry.displayDecimals = 0; entry.allowNegative = true
         entry.callback = cb; entry.open(current)
     }
+    function askList(title, note, items, current, cb) {
+        list.title = title; list.note = note; list.items = items
+        list.callback = cb; list.open(current)
+    }
     function askLevel(title, unit, minimum, maximum, current, cb) {
         entry.title = title; entry.minimum = minimum; entry.maximum = maximum
         entry.units = [ { label: unit, factor: 1 } ]
@@ -223,6 +256,7 @@ Window {
     function demoRapidTune() { var a = shell.activeApp; if (a && a.stepFreq) { a.stepFreq(1e6); a.stepFreq(1e6); a.stepFreq(1e6) } }
     function demoEntryTune(mhzText) { openFreqEntry(); for (var i = 0; i < mhzText.length; ++i) entry.type(mhzText[i]); entry.commit(1e6, "MHz") }
     function openExitDialog() { exitDialog.open() }
+    function openArmDialog() { armDialog.open() }
     function openPortEntry() { askPort(shell.draftPort, (v) => shell.draftPort = v) }
     function openGainEntry() {
         askGain(shell.draftGain, (v) => {

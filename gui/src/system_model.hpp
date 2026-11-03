@@ -58,6 +58,13 @@ class SystemModel : public QObject {
     Q_PROPERTY(QString agcMode READ agcMode NOTIFY changed)    // "slow" / "fast"
     Q_PROPERTY(QString port READ port NOTIFY changed)          // 受信端子(装置パネルの名前: TRXA / RXA / RXB / TRXB)
     Q_PROPERTY(QString portUhd READ portUhd NOTIFY changed)    // その UHD 表現("A:A TX/RX")
+    // ---- 送信(direction == TX の App の運転中)。宣言は Source::config()、送信中かどうかは Core の TxStream(装置が burst の中)----
+    Q_PROPERTY(bool txMode READ txMode NOTIFY changed)
+    Q_PROPERTY(double txGain READ txGain NOTIFY changed)
+    Q_PROPERTY(QString txPort READ txPort NOTIFY changed)
+    Q_PROPERTY(bool transmitting READ transmitting NOTIFY changed)
+    Q_PROPERTY(int txUnderflows READ txUnderflows NOTIFY changed)
+    Q_PROPERTY(bool txArmed READ txArmed NOTIFY changed)   // TX MASTER(Core が所有)。SAFE なら全 App の送信を Core が拒否する
     // ---- センサ ----
     Q_PROPERTY(bool sensorsValid READ sensorsValid NOTIFY changed)
     Q_PROPERTY(bool loLocked READ loLocked NOTIFY changed)
@@ -119,6 +126,14 @@ public:
     QString agcMode() const { const auto n = agc_mode_name(cfg_.agc_mode); return QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())); }
     QString port() const { return QString::fromUtf8(rf_port_name(cfg_.port).data(), static_cast<qsizetype>(rf_port_name(cfg_.port).size())); }
     QString portUhd() const { const auto& i = rf_port_info(cfg_.port); return QString::fromUtf8(i.subdev.data(), static_cast<qsizetype>(i.subdev.size())) + " " + QString::fromUtf8(i.uhd_antenna.data(), static_cast<qsizetype>(i.uhd_antenna.size())); }
+    bool txMode() const { return cfg_.direction == Direction::TX; }
+    double txGain() const { return cfg_.tx_gain; }
+    QString txPort() const { const auto n = rf_port_name(cfg_.tx_port); return QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())); }
+    bool transmitting() const { return tx_.in_burst; }
+    int txUnderflows() const { return static_cast<int>(tx_.underflows); }
+    bool txArmed() const { return core_.tx_armed(); }
+    // 要求を Core へ渡すだけ(表示は Core から読み直す)。ARM の確認は呼ぶ側(メニュー)が行う
+    Q_INVOKABLE void setTxArmed(bool armed) { core_.set_tx_armed(armed); timerEvent(nullptr); }
     bool sensorsValid() const { return ds_.sensors.valid; }
     bool loLocked() const { return ds_.sensors.lo_locked; }
     double rxTemp() const { return ds_.sensors.rx_temp_c; }
@@ -173,6 +188,7 @@ private:
     bool warming_ = false;
     QStringList report_;
     RfConfig cfg_;
+    TxStats tx_;
     HealthSnapshot h_;
     QVariantList consumers_;
     double applied_freq_ = 0;   // Retune event(実際の周波数)

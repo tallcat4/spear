@@ -25,11 +25,13 @@ public:
     explicit ViewSource(QObject* parent = nullptr) : QObject(parent) {}
     void setProcessor(ViewProcessor* p) {
         vp_ = p;
+        ++generation_;   // 描画部品は世代が変わったら行番号・texture を作り直す(Core::reconfigure で App が processor を付け直す)
         if (vp_) { vp_->set_averaging(avg_); if (manual_) { vp_->set_db_range(lo_, hi_); vp_->cancel_auto_range(); } }
         Q_EMIT processorChanged();
         Q_EMIT rangeChanged();
     }
     ViewProcessor* processor() const { return vp_; }
+    uint64_t generation() const { return generation_; }
 
     double dbMin() const { return current().first; }
     double dbMax() const { return current().second; }
@@ -63,6 +65,7 @@ private:
         Q_EMIT rangeChanged();
     }
     ViewProcessor* vp_ = nullptr;
+    uint64_t generation_ = 0;
     int avg_ = 4;
     bool manual_ = false;
     float lo_ = -110, hi_ = -20;

@@ -17,7 +17,7 @@ Item {
         switch (action) {
         case "rec": if (app.recording) app.stopRecording(); else app.record(); break
         case "freq": ui.askFreq(sys.centerFreq, (v) => app.tune(v)); break
-        case "rate": if (!app.recording) ui.askRate(sys.sampleRate, (v) => ui.restartWithRate(v)); break
+        case "rate": if (!app.recording) ui.askRate(sys.sampleRate, (v) => ui.setRate(v)); break
         case "f-": app.stepFreq(-1e6); break
         case "f+": app.stepFreq(1e6); break
         case "ref": ui.askRef(app.view.dbMax, (v) => { app.view.dbMin = v - 90; app.view.dbMax = v }); break

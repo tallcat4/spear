@@ -18,10 +18,12 @@ Rectangle {
     }
     // 受信ゲイン(右上に常時)。手動 = 枠に「GAIN 50 dB」。AGC = 白箱に黒字「AGC SLOW / FAST」で明示し、横に AD9361 が今かけている
     // 実際のゲイン(RxGain event。受信していない・読めない(パッチ前の libuhd)ときは「-- dB」)。幅は固定(値で他の欄が動かない)
+    // 送信 App の運転中は送信ゲインを出す。burst を送っている間は赤で塗る(「TX」= 装置が今まさに送信している。Core の TxStream から)
     Rectangle {
         id: gainBlock
         anchors.right: rightText.left; anchors.rightMargin: Theme.pad; anchors.verticalCenter: parent.verticalCenter
         width: 250; height: Theme.statusBarH - 8
+        visible: !sys.txMode
         color: "transparent"; border.color: sys.agc ? Theme.textBright : Theme.line; border.width: 1
         Rectangle {
             id: gainMode
@@ -39,6 +41,18 @@ Rectangle {
             color: Theme.textBright; font.family: Theme.mono; font.pixelSize: Theme.fsLarge; font.bold: true
         }
     }
+    Rectangle {
+        id: txBlock
+        anchors.fill: gainBlock
+        visible: sys.txMode
+        color: sys.transmitting ? Theme.red : "transparent"; border.color: Theme.red; border.width: 1
+        Text { anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
+               text: sys.transmitting ? "TX ON" : "TX"; color: sys.transmitting ? "#000000" : Theme.red
+               font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
+        Text { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
+               text: sys.txGain.toFixed(1) + " dB"; color: sys.transmitting ? "#000000" : Theme.textBright
+               font.family: Theme.mono; font.pixelSize: Theme.fsLarge; font.bold: true }
+    }
     // 出力の音量(OS。SystemVolume)。タップで音量の操作を出す(キオスクには OS の音量の表示が無い)
     signal volumeTapped()
     Rectangle {
@@ -51,8 +65,18 @@ Rectangle {
                color: volume.muted ? Theme.amber : Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsBase }
         MouseArea { anchors.fill: parent; onClicked: { Feedback.tap(); volume.refresh(); bar.volumeTapped() } }
     }
+    // TX MASTER が ARMED の間はどの画面でも赤で出す。タップで即 SAFE(全 App の送信を Core が止める)
+    Rectangle {
+        id: armBlock
+        anchors.right: volBlock.left; anchors.rightMargin: visible ? Theme.pad : 0; anchors.verticalCenter: parent.verticalCenter
+        width: visible ? 130 : 0; height: Theme.statusBarH - 8
+        visible: sys.txArmed
+        color: Theme.red
+        Text { anchors.centerIn: parent; text: "ARMED"; color: "#000000"; font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
+        MouseArea { anchors.fill: parent; onClicked: { Feedback.tap(); sys.setTxArmed(false) } }
+    }
     Item {
-        anchors.left: parent.left; anchors.right: volBlock.left; anchors.rightMargin: Theme.pad; height: parent.height
+        anchors.left: parent.left; anchors.right: armBlock.left; anchors.rightMargin: Theme.pad; height: parent.height
         clip: true
     Row {
         anchors.verticalCenter: parent.verticalCenter
@@ -73,12 +97,13 @@ Rectangle {
         Sep {}
         Cell { text: Theme.fmtFreq(sys.centerFreq); bright: true }
         Cell { text: Theme.fmtRate(sys.sampleRate) }
-        Cell { text: sys.port }   // 受信端子。運転中にどの端子で受けているかを常時見せる(端子の LED と一致するはず)
+        Cell { text: sys.txMode ? "TX " + sys.txPort : sys.port; warn: sys.txMode }   // 受信端子。送信 App の間は送信端子。運転中にどの端子で受けているかを常時見せる(端子の LED と一致するはず)
         Sep {}
         Cell { text: "OVF " + sys.overflowCount; warn: sys.overflowCount > 0 }
         Cell { text: "OOS " + sys.oosCount; warn: sys.oosCount > 0 }
         Cell { text: "TMO " + sys.timeoutCount; warn: sys.timeoutCount > 0 }
-        Cell { text: "DISC " + sys.discontinuityCount; warn: sys.discontinuityCount > 0 }
+        Cell { text: "DISC " + sys.discontinuityCount; warn: sys.discontinuityCount > 0; visible: !sys.txMode }
+        Cell { text: "UNDF " + sys.txUnderflows; warn: sys.txUnderflows > 0; visible: sys.txMode }
         Sep {}
         Cell { text: sys.sensorsValid ? (sys.loLocked ? "LO LOCK" : "LO UNLOCK") : "LO ----"
                warn: sys.sensorsValid && !sys.loLocked }
