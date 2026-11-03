@@ -40,6 +40,8 @@ apps/jr_train/
   tests/refgen/                     参照ベクトル生成器(Cargo。原本の Rust を path 依存で呼ぶ開発用ツール。CMake の対象外)
   LICENSE.MIT                       移植元のライセンス(移植したファイルの SPDX は MIT)
 tools/jr_train_decode/              spear-jr-train-decode(SigMF / 原本と同じ IQ WAV / 生 sc16 → 復号。原本の decode-wave と同じ形式の出力、保存、frames、WAV)
+                                    --frames-dir はチャネル・区間ごとに無線フレーム(訂正前)と payloads.txt(訂正後の CELP 158 bit = 音声合成の入力、
+                                    または欠落)を書く。音声合成だけを改良するときの固定入力に使う
 widgets/qml/ConstellationView.qml   コンスタレーション(新規の共通ウィジェット)
 ```
 

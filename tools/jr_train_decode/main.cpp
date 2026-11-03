@@ -10,10 +10,13 @@
 //                 全体の report.json)。原本の出力と diff で比べられる
 //   --save:       GUI の保存と同じ形式(recording-…/ に WAV・raw-frames.jsonl・data-messages.jsonl)
 //   --frames-dir: チャネル・連続区間ごとに frames.bin(48 byte/フレーム)+ indices.txt(原本の `decode-frames` の入力)+ samples.txt(各フレームの radio.rx sample index(概算)と音声の訂正ビット数、不合格は -1)
+//                 + payloads.txt(1 行 1 フレーム「index 訂正ビット数 ペイロード」。ペイロードは voice::Voice::push() に渡す 158 bit を
+//                 LSB first で詰めた 20 byte の hex。音声として不合格なら「index -1 -」= push(index, nullopt))
 //   --export-wav: 回転・間引き後の帯域 IQ(work_rate、ステレオ float32、左 I・右 Q)。原本の `decode-wave` に渡せる
 //   --simulate-drops: ライブの取りこぼしを再現する。FILE は 1 行に「録音ファイル内の sample 位置 sample 数」。その区間を読み飛ばし、
 //                 reset(既定、App と同じ)なら作り直し、zero なら同じ長さの 0 を流す(作り直さない)
 #include "presets.hpp"
+#include "protocol/voice_frame.hpp"
 #include "receiver.hpp"
 #include "spear/core/sigmf.hpp"
 #include "storage.hpp"
@@ -91,6 +94,7 @@ private:
 // 原本 decode-frames の入力(1 チャネル・1 連続区間)。bit_offset が 384 の倍数で進む間は同じ区間
 struct FrameStream {
     std::ofstream bin, idx, smp;   // smp: フレームの radio.rx sample index(FrameTiming。概算 ±数シンボル)
+    std::ofstream pay;             // payloads.txt: 音声合成への入力(訂正後の CELP ペイロード、または欠落)
     uint64_t epoch = 0, origin = 0, last = 0;
     int segment = -1;
     bool open = false;
@@ -329,6 +333,7 @@ int main(int argc, char** argv) {
                 s.bin.close();
                 s.idx.close();
                 s.smp.close();
+                s.pay.close();
                 ++s.segment;
                 char name[64];
                 std::snprintf(name, sizeof name, "%sHz-%02d", cfg.channels[c].id.c_str(), s.segment);
@@ -337,6 +342,7 @@ int main(int argc, char** argv) {
                 s.bin.open(dir / "frames.bin", std::ios::binary);
                 s.idx.open(dir / "indices.txt");
                 s.smp.open(dir / "samples.txt");
+                s.pay.open(dir / "payloads.txt");
                 std::ofstream(dir / "format.txt") << protocol::to_string(cfg.channels[c].format) << "\n";
                 s.epoch = ev.epoch;
                 s.origin = ev.frame.bit_offset;
@@ -347,6 +353,14 @@ int main(int argc, char** argv) {
             s.idx << (ev.frame.bit_offset - s.origin) / protocol::kFrameBits << "\n";
             // sample index と音声の誤り訂正の結果(訂正したビット数。音声フレームとして通らなければ -1)
             s.smp << t.input_sample_index << " " << (ev.corrected_bits ? static_cast<int>(*ev.corrected_bits) : -1) << "\n";
+            s.pay << (ev.frame.bit_offset - s.origin) / protocol::kFrameBits;
+            if (const auto speech = protocol::decode_voice(ev.frame.received)) {   // Pipeline と同じ関数(合成器に渡るものと同じ)
+                char hex[41];
+                for (std::size_t i = 0; i < speech->payload.size(); ++i) std::snprintf(hex + 2 * i, 3, "%02x", speech->payload[i]);
+                s.pay << " " << speech->corrected_bits << " " << hex << "\n";
+            } else {
+                s.pay << " -1 -\n";
+            }
         }
         message_counts[c] += ev.messages.size();
         if (quiet) return;
