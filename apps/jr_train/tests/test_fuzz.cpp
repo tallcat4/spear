@@ -217,7 +217,7 @@ TEST(JrTrainFuzz, VoiceSynthesisStreams) {
     while (std::getline(f, line)) {
         if (line == "B") {
             finish();
-            v = std::make_unique<voice::Voice>();
+            v = std::make_unique<voice::Voice>(voice::Decoder::JrVoice);
             want.clear();
             got.clear();
         } else if (line.rfind("P ", 0) == 0) {

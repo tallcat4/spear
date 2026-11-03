@@ -5,17 +5,22 @@
 #include "voice.hpp"
 
 #include "common.hpp"
+#include "enhance.hpp"
 #include "stream.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <exception>
 #include <limits>
+#include <variant>
 
 namespace spear::jr_train::voice {
 
+// 2 つの復号器は同じ面(push / missing_frame / read / flush / has_output / synthesized / emitted)を持つ
 struct Voice::Impl {
-    VoiceStream voice;
+    using Stream = std::variant<VoiceStream, EnhanceStream>;
+    explicit Impl(Decoder d) : voice(d == Decoder::Enhance ? Stream(std::in_place_type<EnhanceStream>) : Stream(std::in_place_type<VoiceStream>)) {}
+    Stream voice;
     std::optional<uint32_t> last_index;
     VoiceStatus status;
 
@@ -31,8 +36,10 @@ struct Voice::Impl {
         } catch (const std::exception&) {
             ok = false;
         }
-        status.synthesized = voice.synthesized;
-        status.output = voice.emitted;
+        std::visit([&](auto& v) {
+            status.synthesized = v.synthesized;
+            status.output = v.emitted;
+        }, voice);
         const auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
         status.last_decode_us = static_cast<uint32_t>(std::min<long long>(us, std::numeric_limits<uint32_t>::max()));
         uint32_t& maximum = flush ? status.maximum_flush_us : status.maximum_frame_us;
@@ -44,12 +51,12 @@ struct Voice::Impl {
     // 原本 Decoder::ready
     int ready(uint32_t index) const {
         if (status.failed != 0 || status.finished != 0 || (last_index && index <= *last_index)) return -2;
-        if (voice.has_output()) return -3;
+        if (std::visit([](const auto& v) { return v.has_output(); }, voice)) return -3;
         return 0;
     }
 };
 
-Voice::Voice() : impl_(std::make_unique<Impl>()) {}
+Voice::Voice(Decoder decoder) : impl_(std::make_unique<Impl>(decoder)) {}
 Voice::~Voice() = default;
 Voice::Voice(Voice&&) noexcept = default;
 Voice& Voice::operator=(Voice&&) noexcept = default;
@@ -61,14 +68,18 @@ void Voice::push(uint32_t index, const std::optional<Payload>& payload) {
     const int code = d.guard(
         [&] {
             d.last_index = index;
-            if (payload) d.voice.push(index, *payload);
-            else d.voice.missing_frame();
+            std::visit([&](auto& v) {
+                if (payload) v.push(index, *payload);
+                else v.missing_frame();
+            }, d.voice);
         },
         false);
     if (code != 0) throw VoiceError("CELP synthesis failed; restart reception");
 }
 
-std::optional<Output> Voice::read() { return impl_->voice.read(); }
+std::optional<Output> Voice::read() {
+    return std::visit([](auto& v) { return v.read(); }, impl_->voice);
+}
 
 void Voice::flush() {
     Impl& d = *impl_;
@@ -76,7 +87,7 @@ void Voice::flush() {
     if (d.status.finished != 0) return;
     const int code = d.guard(
         [&] {
-            d.voice.flush();
+            std::visit([](auto& v) { v.flush(); }, d.voice);
             d.status.finished = 1;
         },
         true);
@@ -84,5 +95,7 @@ void Voice::flush() {
 }
 
 const VoiceStatus& Voice::status() const { return impl_->status; }
+
+Decoder Voice::decoder() const { return std::holds_alternative<EnhanceStream>(impl_->voice) ? Decoder::Enhance : Decoder::JrVoice; }
 
 } // namespace spear::jr_train::voice

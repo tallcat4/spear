@@ -76,12 +76,17 @@ struct VoiceOp {
     uint32_t index = 0;
     uint64_t epoch = 0;       // Drain: 出す音声の epoch(記録した時点の値)
     voice::Payload payload{};
+    voice::Decoder decoder = voice::Decoder::Enhance;   // Reset: 作り直す復号器(記録した時点の選択)
 };
 
 class Pipeline {
 public:
-    Pipeline(ChannelConfig config, double rate, double center);
+    Pipeline(ChannelConfig config, double rate, double center, voice::Decoder decoder = voice::Decoder::Enhance);
     ChannelConfig config;
+
+    // 音声の復号器を替える(spear の追加): 今の復号器の先読みを吐き出してから作り直す。以後の Reset もこの復号器で作る
+    std::vector<Audio> set_voice_decoder(voice::Decoder decoder);
+    voice::Decoder voice_decoder() const { return decoder_; }
 
     void discontinuity();
     // IQ を処理し、完成した音声を返す。フレームごとに observe を呼ぶ。原本の Err は std::runtime_error
@@ -107,6 +112,7 @@ private:
     double rate_, center_;
     dsp::Demodulator dsp_;
     protocol::Synchronizer sync_;
+    voice::Decoder decoder_;
     voice::Voice voice_;
     protocol::DataDecoder data_;
     std::vector<uint8_t> dibits_;

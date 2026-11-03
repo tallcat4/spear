@@ -1,7 +1,7 @@
 // spear-jr-train-decode — 録音を JR TRAIN RADIO の Receiver に流す headless 解析(§10.4)。docs/apps/jr_train.md
 //   spear-jr-train-decode <sigmf base> [--preset east|central|west] [--center Hz] [--threads N] [--quiet]
 //                         [--decode-out DIR] [--save DIR] [--frames-dir DIR] [--export-wav out.wav] [--seconds S] [--block N]
-//                         [--simulate-drops FILE [--drop-mode reset|zero]]
+//                         [--simulate-drops FILE [--drop-mode reset|zero]] [--voice enhance|jrvoice]
 //   spear-jr-train-decode --raw-sc16 FILE --rate Hz --capture-center Hz [同上]
 //   spear-jr-train-decode --wav FILE --capture-center Hz [同上]     原本と同じ IQ WAV(ステレオ float32 / PCM16、左 I・右 Q)
 // 受信するチャネル: --presets-file JSON(原本と同じ形式)、--routes id,id(路線から選ぶ。共用波も受信、--no-common で外す)
@@ -12,6 +12,7 @@
 //   --frames-dir: チャネル・連続区間ごとに frames.bin(48 byte/フレーム)+ indices.txt(原本の `decode-frames` の入力)+ samples.txt(各フレームの radio.rx sample index(概算)と音声の訂正ビット数、不合格は -1)
 //                 + payloads.txt(1 行 1 フレーム「index 訂正ビット数 ペイロード」。ペイロードは voice::Voice::push() に渡す 158 bit を
 //                 LSB first で詰めた 20 byte の hex。音声として不合格なら「index -1 -」= push(index, nullopt))
+//   --voice:      音声の復号器(App の VOICE DEC と同じ)。既定 enhance(mrl-celp-c)。原本の音声と比べるときは jrvoice
 //   --export-wav: 回転・間引き後の帯域 IQ(work_rate、ステレオ float32、左 I・右 Q)。原本の `decode-wave` に渡せる
 //   --simulate-drops: ライブの取りこぼしを再現する。FILE は 1 行に「録音ファイル内の sample 位置 sample 数」。その区間を読み飛ばし、
 //                 reset(既定、App と同じ)なら作り直し、zero なら同じ長さの 0 を流す(作り直さない)
@@ -134,7 +135,7 @@ std::string status_json(const PipelineStatus& st) {
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::puts("usage: spear-jr-train-decode <sigmf base> [--preset east|central|west] [--center Hz] [--threads N] [--seconds S] [--quiet]\n"
-                  "                             [--decode-out DIR] [--save DIR] [--frames-dir DIR] [--export-wav out.wav]\n"
+                  "                             [--decode-out DIR] [--save DIR] [--frames-dir DIR] [--export-wav out.wav] [--voice enhance|jrvoice]\n"
                   "       spear-jr-train-decode --raw-sc16 FILE --rate Hz --capture-center Hz [...]");
         return 1;
     }
@@ -265,6 +266,12 @@ int main(int argc, char** argv) {
     cfg.rotate_hz = band_center - capture_center;
     cfg.band_center_hz = band_center;
     cfg.threads = std::stoi(arg(argc, argv, "--threads", "0"));
+    if (const std::string v = arg(argc, argv, "--voice", "enhance"); v == "jrvoice") {
+        cfg.voice_decoder = voice::Decoder::JrVoice;
+    } else if (v != "enhance") {
+        std::fprintf(stderr, "--voice: enhance or jrvoice\n");
+        return 1;
+    }
     for (const auto& c : channels) cfg.channels.push_back(channel_config(c));
     std::unique_ptr<Receiver> rxp;
     try {

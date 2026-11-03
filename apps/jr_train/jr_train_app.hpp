@@ -3,6 +3,7 @@
 //   * 全チャネルを同時に復調・復号する(フレーム同期、音声の誤り訂正と合成、データ電文、運行把握)
 //   * 音声は 1 チャネルを再生する。AUTO: 最初に始まった通話を選び、終われば続いている通話のうち開始が早いものへ(原本と同じ規則)。
 //     タイルを手で選ぶと選択を固定する(AUTO が外れる)
+//   * VOICE DEC: 音声の復号器を切り替える(全チャネル、受信は止めない)。ENH = mrl-celp-c の聞きやすさ優先の復号(既定)、JRV = jr-voice(原本の学習済みの後処理)
 //   * 画面下: 選択チャネルのコンスタレーション / 受信データ(電文)/ 運行把握(VIEW で切り替え)
 //   * SAVE: 復号した音声(チャネル別 WAV)・生フレーム・電文(JSONL)を保存する(原本と同じ形式)
 //   * REC IQ: radio.rx(1.92 MS/s ci16)を SigMF で録音する(golden の収集。spear-jr-train-decode で再現できる)
@@ -43,6 +44,7 @@ class JrTrainApp final : public appfw::GuiApp {
     Q_PROPERTY(bool autoSelect READ autoSelect WRITE setAutoSelect NOTIFY autoSelectChanged)      // 通話を自動選択
     Q_PROPERTY(bool mute READ mute WRITE setMute NOTIFY muteChanged)
     Q_PROPERTY(QString lowerView READ lowerView WRITE setLowerView NOTIFY lowerViewChanged)      // "const" / "data" / "ops"
+    Q_PROPERTY(QString voiceDecoder READ voiceDecoder WRITE setVoiceDecoder NOTIFY voiceDecoderChanged)   // "enhance" / "jrvoice"
     // 路線から受信するチャネルを選ぶ(原本の「路線から選ぶ」)。空 = プリセットの全チャネル
     Q_PROPERTY(QString routeSelection READ routeSelection WRITE setRouteSelection NOTIFY routeSelectionChanged)   // 路線 ID をコンマ区切り
     Q_PROPERTY(bool includeCommon READ includeCommon WRITE setIncludeCommon NOTIFY routeSelectionChanged)         // 路線選択時も共用波を受信
@@ -104,6 +106,8 @@ public:
     void setMute(bool m);
     QString lowerView() const { return lower_view_; }
     void setLowerView(const QString& v);
+    QString voiceDecoder() const { return voice_decoder_ == jr_train::voice::Decoder::JrVoice ? QStringLiteral("jrvoice") : QStringLiteral("enhance"); }
+    void setVoiceDecoder(const QString& d);
     Q_INVOKABLE double channelOffsetHz(int ch) const;
 
     QVariantList channels() const;
@@ -140,6 +144,7 @@ Q_SIGNALS:
     void autoSelectChanged();
     void muteChanged();
     void lowerViewChanged();
+    void voiceDecoderChanged();
     void routeSelectionChanged();
     void metersChanged();
     void recordingChanged();
@@ -179,6 +184,7 @@ private:
     std::atomic<bool> auto_select_{true};
     bool mute_ = false;
     QString lower_view_ = "const";
+    std::atomic<jr_train::voice::Decoder> voice_decoder_{jr_train::voice::Decoder::Enhance};   // GUI thread が書き、DSP thread が受信機へ渡す
     double built_center_ = 0;             // Receiver を組んだときの実 LO
 
     // ---- DSP thread 専用 ----

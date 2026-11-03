@@ -1,7 +1,8 @@
 // JR TRAIN RADIO のページ (1920×1200)
 //   上 : 帯域スペクトラム(jr_train.band 240 kS/s、チャネルマーカー付き)
 //   中 : チャネルのタイル(同期・通話・EVM・周波数誤差。タップで選択して固定)
-//   下 : 選択チャネル — VIEW で切り替え: コンスタレーション / 受信データ(電文)/ 運行把握。右に読み出しと保存の状態
+//   下 : 選択チャネル — VIEW で切り替え: コンスタレーション / 受信データ(電文)/ 運行把握。右に読み出しと保存の状態、
+//        音声の復号器(VOICE DEC をタップ: ENH / JRV)
 // 受信の可否はフレーム同期(マーカー 2/3)で判断する。搬送波ロックは空きチャネルでも隣接波の漏れで立つことがあるので補助表示。
 import QtQuick
 import Spear.Theme
@@ -17,6 +18,7 @@ Item {
     readonly property var chans: app.channels
     readonly property var ss: app.saveStatus
     readonly property var viewNames: ({ "const": "CONST", "data": "DATA", "ops": "OPS" })
+    readonly property var decoderNames: ({ "enhance": "ENH", "jrvoice": "JRV" })
 
     // 帯域中心・LO オフセット・プリセット・保存内容は site.conf(jr_train.*)。画面からは変えない
     readonly property var softKeys: [
@@ -207,8 +209,9 @@ Item {
                               value: (app.mute ? "MUTE  " : "") + (app.monitoredChannel >= 0 && app.monitoredChannel < page.chans.length ? page.chans[app.monitoredChannel].label : "--")
                                      + (app.autoSelect ? "  (AUTO)" : "  (FIXED)")
                               valueColor: app.mute ? Theme.textDim : Theme.text }
-                    Readout { label: "CALLS"; value: app.activeCalls.length > 0 ? app.activeCalls.map(i => page.chans[i] ? page.chans[i].label : "?").join(" ") : "--"; width: 270; height: 52; valueSize: Theme.fsBase }
+                    Readout { label: "CALLS"; value: app.activeCalls.length > 0 ? app.activeCalls.map(i => page.chans[i] ? page.chans[i].label : "?").join(" ") : "--"; width: 200; height: 52; valueSize: Theme.fsBase }
                     Readout { label: "SYNC CH"; value: app.activeChannels + " / " + app.numChannels; width: 130; height: 52; valueColor: app.activeChannels > 0 ? Theme.green : Theme.text }
+                    ValueField { label: "VOICE DEC"; value: page.decoderNames[app.voiceDecoder]; width: 130; height: 52; onActivated: decoderEntry.open(app.voiceDecoder) }
                 }
                 Row {
                     spacing: 6
@@ -343,5 +346,14 @@ Item {
                 }
             }
         }
+    }
+
+    // ---- 音声の復号器(VOICE DEC のタップ)。全チャネルに効き、受信は止めない(今の復号器の先読みを吐き出してから替える) ----
+    ChoiceEntry {
+        id: decoderEntry
+        title: "VOICE DECODER"
+        choices: [ { label: "ENH", sublabel: "mrl-celp-c", value: "enhance" },
+                   { label: "JRV", sublabel: "jr-voice", value: "jrvoice" } ]
+        onAccepted: (v) => app.voiceDecoder = v
     }
 }

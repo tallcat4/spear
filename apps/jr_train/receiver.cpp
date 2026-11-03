@@ -47,7 +47,7 @@ Receiver::Receiver(ReceiverConfig cfg) : cfg_(std::move(cfg)) {
         if (auto e = dsp::validate(work_rate_, cc.frequency_hz - cfg_.band_center_hz); !e.empty()) throw std::invalid_argument(cc.label + ": " + e);
         auto c = std::make_unique<Channel>();
         c->index = static_cast<int>(i);
-        c->pipe = std::make_unique<Pipeline>(cc, work_rate_, cfg_.band_center_hz);
+        c->pipe = std::make_unique<Pipeline>(cc, work_rate_, cfg_.band_center_hz, cfg_.voice_decoder);
         c->pipe->set_deferred_voice(true);
         ch_.push_back(std::move(c));
     }
@@ -244,6 +244,12 @@ void Receiver::flush() {
         if (obs_.audio)
             for (const auto& a : tail) obs_.audio(c->index, a);
     }
+}
+
+// 合成は切り離してあるので、ここでは操作(先読みの吐き出し → 作り直し)を溜めるだけ。音声は次の process() で渡る
+void Receiver::set_voice_decoder(voice::Decoder decoder) {
+    cfg_.voice_decoder = decoder;
+    for (auto& c : ch_) c->pipe->set_voice_decoder(decoder);
 }
 
 const PipelineStatus& Receiver::pipeline_status(int ch) const { return ch_.at(static_cast<std::size_t>(ch))->pipe->status(); }

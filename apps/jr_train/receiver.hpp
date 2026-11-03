@@ -36,6 +36,7 @@ struct ReceiverConfig {
     double work_rate_target = 240e3;         // decim = floor(in_rate / これ)(1 以上)。原本の既定 240 kS/s
     double band_center_hz = 0;               // 帯域中心(チャネルのオフセットの基準)
     std::vector<ChannelConfig> channels;
+    voice::Decoder voice_decoder = voice::Decoder::Enhance;   // 音声の復号器(set_voice_decoder で替えられる)
     int threads = 0;                         // 処理するスレッド数(呼び出し元を含む)。0 = 自動(物理コア数 ≒ ハードウェアスレッド数 / 2、チャネル数まで)
 };
 
@@ -71,6 +72,9 @@ public:
     void discontinuity();
     // 入力の終わり: 音声合成の先読みを吐き出す(録音の再生終了時など)
     void flush();
+    // 全チャネルの音声の復号器を替える(process() と同じスレッドから。今の復号器の先読みは次の process() で出る)
+    void set_voice_decoder(voice::Decoder decoder);
+    voice::Decoder voice_decoder() const { return cfg_.voice_decoder; }
 
     // 状態(process() と同じスレッドから読む)。snapshot は EVM・コンスタレーション・電文の履歴を更新する
     const PipelineStatus& pipeline_status(int ch) const;

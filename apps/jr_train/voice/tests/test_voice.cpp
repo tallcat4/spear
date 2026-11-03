@@ -104,7 +104,7 @@ std::vector<Frame> load_frames(const std::string& name) {
 }
 
 std::vector<Frame> run(const std::vector<Event>& events) {
-    Voice voice;
+    Voice voice{Decoder::JrVoice};
     std::vector<Frame> out;
     auto drain = [&](uint32_t step) {
         while (auto o = voice.read()) out.push_back({step, o->index, o->pcm});
@@ -172,7 +172,7 @@ Payload lcg_payload(uint32_t index) {
 }
 
 std::vector<uint32_t> decode_indices(const std::vector<Event>& events) {
-    Voice voice;
+    Voice voice{Decoder::JrVoice};
     std::vector<uint32_t> indices;
     auto drain = [&] {
         while (auto o = voice.read()) indices.push_back(o->index);
@@ -189,7 +189,7 @@ std::vector<uint32_t> decode_indices(const std::vector<Event>& events) {
 }
 
 TEST(JrVoiceStream, FirstFrameWaitsForSevenFutureFramesAndFlushKeepsTail) {
-    Voice voice;
+    Voice voice{Decoder::JrVoice};
     for (uint32_t i = 0; i < 8; ++i) {
         voice.push(i, seed_payload(static_cast<uint8_t>(i)));
         if (i < 7) {
@@ -248,7 +248,7 @@ TEST(JrVoiceStream, MissingOnlyStreamHasNoOutput) {
 }
 
 std::vector<std::pair<uint32_t, Pcm>> decode_pcm(const std::vector<Event>& events) {
-    Voice voice;
+    Voice voice{Decoder::JrVoice};
     std::vector<std::pair<uint32_t, Pcm>> out;
     for (const auto& e : events) {
         voice.push(e.index, e.payload);
@@ -327,7 +327,7 @@ TEST(JrVoiceStream, StatesFromAnEarlierCallDoNotLeakPastAGap) {
 // ---- 原本 src/tests.rs(C ABI の受理規則を Voice の API で)----
 
 TEST(JrVoiceApi, ValidatesPayloadAndRequiresDrain) {
-    Voice voice;
+    Voice voice{Decoder::JrVoice};
     Payload bad{};
     bad[19] = 0x80;
     EXPECT_THROW(voice.push(0, bad), VoiceError);
@@ -340,7 +340,7 @@ TEST(JrVoiceApi, ValidatesPayloadAndRequiresDrain) {
 }
 
 TEST(JrVoiceApi, IndicesMustIncreaseAndFinishedStreamRejectsInput) {
-    Voice voice;
+    Voice voice{Decoder::JrVoice};
     Payload p{};
     voice.push(5, p);
     EXPECT_THROW(voice.push(5, p), VoiceError);

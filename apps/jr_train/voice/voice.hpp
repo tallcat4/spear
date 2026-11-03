@@ -5,6 +5,8 @@
 //   出力: 8 kHz・16 bit・モノラルの PCM、40 ms(320 sample)ごと。元のフレーム index を保つ。
 //   先読み 7 フレーム(280 ms): 連続入力では 8 フレーム目で最初の出力が出る。flush() で残りを出す。
 // 呼び出しのたびに read() で出力を空にすること(原本の C ABI と同じ受理規則: 未読の出力があると push は失敗する)。
+// 復号器は 2 つから選ぶ(spear の追加): Decoder::JrVoice = 上の jr-voice、Decoder::Enhance = mrl-celp-c の聞きやすさ優先の復号
+//   (学習済みの後処理なし、先読み 1 フレーム。enhance.hpp)。どちらも受理と出力の規則(index、320 sample、drain、flush)は同じ。
 // Qt / UHD / spear_core に依存しない。
 #pragma once
 
@@ -35,9 +37,11 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+enum class Decoder : uint8_t { Enhance, JrVoice };
+
 class Voice {
 public:
-    Voice();
+    explicit Voice(Decoder decoder = Decoder::Enhance);
     ~Voice();
     Voice(Voice&&) noexcept;
     Voice& operator=(Voice&&) noexcept;
@@ -47,6 +51,7 @@ public:
     std::optional<Output> read();
     void flush();
     const VoiceStatus& status() const;
+    Decoder decoder() const;
 
 private:
     struct Impl;

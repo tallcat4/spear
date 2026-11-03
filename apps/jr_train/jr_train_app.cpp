@@ -44,7 +44,7 @@ JrTrainApp::JrTrainApp(appfw::AppInfo info, QObject* parent) : appfw::GuiApp(std
         if (p.id == "east") preset_ = &p;
     recompute_active();
     // 再起動をまたいで残す運転状態(プリセット・LO オフセット・保存内容は site.conf、観測値は宣言しない)
-    persist({"selectedChannel", "autoSelect", "mute", "lowerView", "routeSelection", "includeCommon", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange",
+    persist({"selectedChannel", "autoSelect", "mute", "lowerView", "voiceDecoder", "routeSelection", "includeCommon", "bandView.dbMin", "bandView.dbMax", "bandView.manualRange",
              "bandView.averaging"});
 }
 
@@ -228,6 +228,13 @@ void JrTrainApp::setLowerView(const QString& v) {
     Q_EMIT lowerViewChanged();
 }
 
+// 受信機は組み直さない: DSP thread が次のブロックの前に全チャネルの復号器を替える(先読みは吐き出してから)
+void JrTrainApp::setVoiceDecoder(const QString& d) {
+    if (!(d == "enhance" || d == "jrvoice") || d == voiceDecoder()) return;
+    voice_decoder_ = d == "jrvoice" ? voice::Decoder::JrVoice : voice::Decoder::Enhance;
+    Q_EMIT voiceDecoderChanged();
+}
+
 QVariantList JrTrainApp::channels() const {
     std::lock_guard<std::mutex> lk(mu_);
     QVariantList out;
@@ -352,6 +359,7 @@ std::unique_ptr<Receiver> JrTrainApp::build_receiver(Core& core) {
     c.rotate_hz = preset_->center_hz - built_center_;
     c.band_center_hz = preset_->center_hz;
     c.threads = threads_;
+    c.voice_decoder = voice_decoder_;
     {
         std::lock_guard<std::mutex> lk(mu_);
         rx_channels_ = active_;
@@ -608,6 +616,7 @@ void JrTrainApp::run() {
             rx = build_receiver(*core());
             have_gen = false;
         }
+        if (const auto want = voice_decoder_.load(); rx->voice_decoder() != want) rx->set_voice_decoder(want);
         // 連続性: generation の切替(USB 再接続など)と欠落はチャネルの DSP と同期を作り直す(時刻の違う IQ をつながない)
         const auto gap = cont.check(h);
         if ((have_gen && h.generation != generation) || gap) {

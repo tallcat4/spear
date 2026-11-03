@@ -30,15 +30,15 @@ ChannelConfig channel_config(const ChannelDef& c) {
     return {std::to_string(static_cast<uint64_t>(c.frequency_hz)), c.label, c.frequency_hz, c.service == Service::Common ? protocol::Format::Common : protocol::Format::Slotted};
 }
 
-Pipeline::Pipeline(ChannelConfig cfg, double rate, double center)
-    : config(std::move(cfg)), rate_(rate), center_(center), dsp_(rate, config.frequency_hz - center), data_(config.format) {
+Pipeline::Pipeline(ChannelConfig cfg, double rate, double center, voice::Decoder decoder)
+    : config(std::move(cfg)), rate_(rate), center_(center), dsp_(rate, config.frequency_hz - center), decoder_(decoder), voice_(decoder), data_(config.format) {
     if (!std::isfinite(center) || !std::isfinite(config.frequency_hz) || config.frequency_hz <= 0) throw std::invalid_argument("Invalid channel frequency");
 }
 
 void Pipeline::discontinuity() {
     dsp_ = dsp::Demodulator(rate_, config.frequency_hz - center_);
     sync_ = protocol::Synchronizer{};
-    voice_ = voice::Voice{};
+    voice_ = voice::Voice{decoder_};
     voice_ops_.clear();
     data_.reset_assembly();
     origin_.reset();
@@ -157,6 +157,15 @@ std::vector<Audio> Pipeline::flush_idle(uint64_t bit_offset) {
     return {};
 }
 
+std::vector<Audio> Pipeline::set_voice_decoder(voice::Decoder decoder) {
+    if (decoder == decoder_) return {};
+    decoder_ = decoder;
+    voice_op({VoiceOp::Kind::Flush});
+    auto audio = drain();
+    voice_op({VoiceOp::Kind::Reset});
+    return audio;
+}
+
 std::vector<Audio> Pipeline::drain() {
     std::vector<Audio> audio;
     voice_op({VoiceOp::Kind::Drain, 0, status_.epoch}, &audio);
@@ -170,6 +179,7 @@ std::vector<Audio> Pipeline::flush() {
 
 // 同期なら今すぐ実行する(例外もその場で出る: 原本と同じ)。切り離しているなら溜める
 void Pipeline::voice_op(VoiceOp op, std::vector<Audio>* out) {
+    op.decoder = decoder_;
     if (deferred_) {
         voice_ops_.push_back(op);
         return;
@@ -183,7 +193,7 @@ void Pipeline::execute(const VoiceOp& op, std::vector<Audio>& out) {
     case VoiceOp::Kind::Push: voice_.push(op.index, op.payload); break;
     case VoiceOp::Kind::Missing: voice_.push(op.index, std::nullopt); break;
     case VoiceOp::Kind::Flush: voice_.flush(); break;
-    case VoiceOp::Kind::Reset: voice_ = voice::Voice{}; break;
+    case VoiceOp::Kind::Reset: voice_ = voice::Voice{op.decoder}; break;
     case VoiceOp::Kind::Drain:
         while (auto o = voice_.read()) {
             ++status_.audio_frames;

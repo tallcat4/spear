@@ -242,7 +242,8 @@ TEST(JrTrainPipeline, FramesVoiceAndDataMatchRust) {
             is >> name >> fmt;
             const Format format = fmt == "common" ? Format::Common : Format::Slotted;
             const double freq = format == Format::Common ? 352'625'000.0 : 352'600'000.0;
-            pipe = std::make_unique<Pipeline>(ChannelConfig{std::to_string(static_cast<uint64_t>(freq)), name, freq, format}, 240000.0, 352603125.0);
+            pipe = std::make_unique<Pipeline>(ChannelConfig{std::to_string(static_cast<uint64_t>(freq)), name, freq, format}, 240000.0, 352603125.0,
+                                          voice::Decoder::JrVoice);   // 音声は原本と同じ jr-voice で比べる
             expected.clear();
             got.clear();
         } else if (l.rfind("f ", 0) == 0) {
@@ -268,14 +269,17 @@ TEST(JrTrainPipeline, FramesVoiceAndDataMatchRust) {
 
 // ---- 通し: 帯域 IQ → Receiver(DSP・同期・音声・データ)----
 
-TEST(JrTrainPipeline, EndToEndIqMatchesRust) {
-    const auto ls = lines("e2e.txt");
-    ASSERT_FALSE(ls.empty());
+struct E2e {
     double rate = 0, center = 0;
     std::size_t samples = 0;
     std::vector<std::pair<uint64_t, Format>> chans;
     std::vector<std::vector<std::string>> expected;
-    for (const auto& l : ls) {
+    std::vector<std::complex<float>> iq;
+};
+E2e load_e2e() {
+    E2e v;
+    auto& [rate, center, samples, chans, expected, iq] = v;
+    for (const auto& l : lines("e2e.txt")) {
         std::istringstream is(l);
         std::string k;
         is >> k;
@@ -294,22 +298,32 @@ TEST(JrTrainPipeline, EndToEndIqMatchesRust) {
     }
     std::ifstream f(path("e2e_240k.sc16"), std::ios::binary);
     std::vector<char> raw{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
-    ASSERT_EQ(raw.size(), samples * 4);
-    std::vector<std::complex<float>> iq(samples);
+    if (raw.size() != samples * 4) return {};
+    iq.resize(samples);
     for (std::size_t i = 0; i < samples; ++i) {
         int16_t re, im;
         std::memcpy(&re, &raw[4 * i], 2);
         std::memcpy(&im, &raw[4 * i + 2], 2);
         iq[i] = {static_cast<float>(re) / 32768.f, static_cast<float>(im) / 32768.f};
     }
-    // Receiver(全チャネル並列、ブロックは原本と同じ 4096)の出力を原本の行形式にする
+    return v;
+}
+ReceiverConfig e2e_config(const E2e& v) {
     ReceiverConfig cfg;
-    cfg.in_rate = rate;
-    std::vector<ChannelConfig> configs;
-    for (const auto& [freq, fmt] : chans) configs.push_back({std::to_string(freq), "e2e", static_cast<double>(freq), fmt});
-    cfg.channels = configs;
-    cfg.band_center_hz = center;
+    cfg.in_rate = v.rate;
+    for (const auto& [freq, fmt] : v.chans) cfg.channels.push_back({std::to_string(freq), "e2e", static_cast<double>(freq), fmt});
+    cfg.band_center_hz = v.center;
     cfg.threads = 3;
+    return cfg;
+}
+
+TEST(JrTrainPipeline, EndToEndIqMatchesRust) {
+    const auto v = load_e2e();
+    ASSERT_FALSE(v.iq.empty());
+    const auto& [rate, center, samples, chans, expected, iq] = v;
+    // Receiver(全チャネル並列、ブロックは原本と同じ 4096)の出力を原本の行形式にする。音声は原本と同じ jr-voice で
+    ReceiverConfig cfg = e2e_config(v);
+    cfg.voice_decoder = voice::Decoder::JrVoice;
     Receiver rx(cfg);
     std::vector<std::vector<std::string>> got(chans.size());
     Observer o;
@@ -347,6 +361,44 @@ TEST(JrTrainPipeline, EndToEndIqMatchesRust) {
             EXPECT_EQ(pick(got[c], "m "), pick(expected[c], "m "));
             EXPECT_NEAR(static_cast<double>(pick(got[c], "a ").size()), static_cast<double>(pick(expected[c], "a ").size()), 3.0);
         }
+    }
+}
+
+// 受信中に音声の復号器を替える(App の VOICE DEC): 受信機は作り直さず、受理した音声フレームはどちらの復号器でも 1 回ずつ index の順に出る
+TEST(JrTrainPipeline, VoiceDecoderSwitchesMidStream) {
+    const auto v = load_e2e();
+    ASSERT_FALSE(v.iq.empty());
+    using D = voice::Decoder;
+    for (const auto& [first, second] : {std::pair{D::JrVoice, D::Enhance}, std::pair{D::Enhance, D::JrVoice}}) {
+        ReceiverConfig cfg = e2e_config(v);
+        cfg.voice_decoder = first;
+        Receiver rx(cfg);
+        std::vector<std::optional<std::pair<uint64_t, uint32_t>>> last(v.chans.size());
+        std::vector<uint64_t> heard(v.chans.size());
+        Observer o;
+        o.audio = [&](int ch, const Audio& a) {
+            auto& l = last[static_cast<std::size_t>(ch)];
+            if (l && l->first == a.epoch) EXPECT_GT(a.index, l->second) << "channel " << ch;
+            l = std::make_pair(a.epoch, a.index);
+            ++heard[static_cast<std::size_t>(ch)];
+        };
+        rx.set_observer(o);
+        const std::size_t half = v.samples / 2;
+        for (std::size_t i = 0; i < v.samples; i += 4096) {
+            if (i <= half && half < i + 4096) rx.set_voice_decoder(second);
+            rx.process(std::span<const std::complex<float>>(v.iq).subspan(i, std::min<std::size_t>(4096, v.samples - i)), i);
+        }
+        rx.flush();
+        EXPECT_EQ(rx.voice_decoder(), second);
+        uint64_t voice_frames = 0;
+        for (std::size_t c = 0; c < v.chans.size(); ++c) {
+            const auto& st = rx.pipeline_status(static_cast<int>(c));
+            EXPECT_EQ(rx.resets(static_cast<int>(c)), 0u) << "channel " << c;
+            EXPECT_EQ(st.audio_frames, heard[c]) << "channel " << c;
+            EXPECT_EQ(st.audio_frames, st.voice_frames) << "channel " << c;
+            voice_frames += st.voice_frames;
+        }
+        EXPECT_GT(voice_frames, 0u) << "the vectors carry voice";
     }
 }
 

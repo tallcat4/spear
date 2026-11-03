@@ -29,6 +29,8 @@ apps/jr_train/
   protocol/data.*, text.cpp, lha.cpp  データ電文(data/mod.rs・packet.rs・operation.rs)、JIS 文字列(text.rs)、LH5 展開(lha.rs)、電文の JSON
   protocol/jis0208_table.cpp        JIS X 0208 → Unicode の表(refgen が encoding_rs から生成。WHATWG index-jis0208、CC0)
   voice/                            音声合成(jr-voice の移植。celp/ は mcelp-codec 由来、models/ は原本の係数 4 MB を埋め込む)
+  voice/enhance.*, voice/mrl/       mrl-celp-c の聞きやすさ優先の復号(既定)。mrl/ は github.com/tallcat4/mrl-celp-c の decoder/ をそのまま(mrl/README.md)。
+                                    Voice(Decoder::Enhance / JrVoice)で選ぶ(下記「音声の復号器」)
   pipeline.*                        1 チャネルの受信処理(pipeline.rs: DSP → 同期 → 音声 / データ、epoch、履歴、運行把握)
   call_monitor.*                    通話の自動選択(monitor.rs)
   storage.*                         保存(recording.rs / wave.rs: チャネル別 WAV、raw-frames.jsonl、data-messages.jsonl)
@@ -61,7 +63,8 @@ widgets/qml/ConstellationView.qml   コンスタレーション(新規の共通�
 | フレーム同期 | 384 bit = 192 シンボル = 40 ms。bit 0/128/256 にマーカー `0x3D22 / 0xE867 / 0xE867`(下位 14 bit の一致を数え 2/3 以上)。3 フレーム連続で捕捉、3 フレーム連続の不一致で外れる | 原本 |
 | デスクランブル | マーカーを除く 336 bit に PN9(全 1 から)を XOR → 42 byte | 原本 |
 | 音声フレーム | byte 5–15 / 21–31 の 176 bit = K=9 畳み込み(0x1AF / 0x11D、パンクチャ)、78 bit + CRC-8(0x19B)。外側: CRC-16 + 短縮 RS(パリティ 6)。逆変換 → 外符号の RS 訂正 → Viterbi → 合同訂正(上限つき)の順。出力は 158 bit(20 byte) | 原本 |
-| 音声合成 | CELP(整数)+ GRU / MLP の後処理(予測・補正・プランナ・時間方向)。先読み 7 フレーム(280 ms)、8 kHz・16 bit。音声が 100 ms 途切れたら先読みを吐き出す | 原本 |
+| 音声の復号(ENH、既定) | mrl-celp-c の `mrl_decode_enhanced`: パラメータの復号は原本と同じで、浮動小数の励振・合成、三菱 CELP 型の適応ポストフィルタ、AMR-WB のピッチ強調・ノイズ強調・位相分散、G.718 型のバスポストフィルタ、ソフトリミッタ(既定の設定、×0.5)。先読み 1 フレーム(40 ms)。欠落・index の飛びで区間を閉じて作り直し、区間の端を 10 ms で絞る | mrl-celp-c(下記「音声の復号器」) |
+| 音声合成(JRV) | CELP(整数)+ GRU / MLP の後処理(予測・補正・プランナ・時間方向)。先読み 7 フレーム(280 ms)、8 kHz・16 bit。音声が 100 ms 途切れたら先読みを吐き出す | 原本 |
 | データフレーム | RS(42,30)(12 根、t = 6)+ CRC-16 → 28 byte。Slotted(データ波・音声波): 16 スロット周期、トラフィック 3–7 / 11–15、チャネル状況・呼設定は単独フレーム。Common(共用波): 全フレームがパケット | 原本 |
 | 電文 | 在線 / 登録 / 転送 / 通告(Slotted)、一覧 / 旅客案内(0x21、LH5 圧縮あり)/ 運行把握(0x22/C9、LH5 の線区表)(Common)。解釈できないものは Unsupported として生のまま | 原本 |
 | 通話の自動選択 | 受理した音声フレームの時刻(IQ の共通時間軸)で通話の始まりを決め、早い順。1 s 途切れたら終わり。同期確立の 120 ms 待ってから決める。手動で選ぶと固定 | 原本 |
@@ -78,6 +81,7 @@ widgets/qml/ConstellationView.qml   コンスタレーション(新規の共通�
 | 前段 | 1.92 MS/s → 240 kS/s を spear の `FirDecimator` で | 原本の既定 240 kS/s に合わせる。`FirDecimator` のほうが CIC より通過域が平坦 |
 | 並列化 | ブロックごとのタスク(チャネルの DSP〜フレーム、前のブロックで溜めた音声合成)を、呼び出し元と worker が重い順に 1 つずつ取る。ブロックごとに全タスクの完了を待つ。音声は 1 ブロック遅れて渡す(中身と各チャネル内の順序は同期と同じ)。Observer は呼び出し元のスレッドで、チャネルの順に | 移植直後の 22 波は 1 コアに収まらなかった(下記「負荷と最適化」)。静的な割り当てでは通話中のチャネルの worker が全体を待たせた(2026-10-31)。出力は取る順に依らず決定的で、App 側の排他が要らない |
 | 最適化 | 演算順を変えずに速くする方法だけを使う: 剰余の除去、帰還の無い段で出力を複数まとめて計算、状態・出力・窓を**またいで**の SIMD(レーンごとの演算は原本の 1 要素分と同じ)。AVX2 版は `target_clones` で既定の x86-64 版と併せ持つ | 原本とのビット一致を保つ(SIMD の幅や命令セットで値が変わらない)。`-march=native` は使わない(spear 全体の方針) |
+| 音声の復号器 | ENH(mrl-celp-c、既定)と JRV(jr-voice)を画面の VOICE DEC で切り替える。全チャネル同時、受信機は作り直さない: DSP thread が次のブロックの前に各チャネルで「今の復号器の先読みを吐き出す → 新しい復号器で作り直す」を合成への操作として積む。以後の作り直し(index の飛び・100 ms の無音・欠落)も選んだ復号器で。受理と出力の規則(index、320 sample、drain してから push、flush)はどちらも同じ | 聴き比べのため両方残す(2026-11-03 決定)。jr-voice は原本とのビット一致の基準として残す。受信を止めずに比べられる |
 | 内部エラー | 原本はチャネルの worker が失敗すると受信全体を止める。spear ではそのチャネルだけ作り直して続ける(`resets` に数える) | 可搬機で受信を止めない(§9.2) |
 | 受信の判定 | タイルの「SYNC」= 直近 1 s にフレーム同期。「VOICE」= 通話中。搬送波ロックは補助表示 | 原本の搬送波ロックは、空きチャネルでも隣接波の漏れや雑音で立つ(参照ベクトルの空きチャネルでも LOCK、EVM 2〜3% になる例がある) |
 | 音声の再生 | 1 チャネルだけ(原本と同じ)。AudioSink 8 kHz。再生を始めるとき 200 ms の無音を前置。新しく選んだチャネルでは 600 ms より古い音声を捨てる | 原本の UI と同じ規則。到着の揺らぎ(ブロック 8.5 ms、合成の先読み)を吸収する |
@@ -97,13 +101,13 @@ widgets/qml/ConstellationView.qml   コンスタレーション(新規の共通�
 | `jr_train.threads` | 0(自動) | 処理するスレッド数(呼び出し元を含む)。自動 = ハードウェアスレッド数 / 2(物理コア数) |
 | `jr_train.save_audio` / `save_raw` / `save_messages` | 1 / 1 / 1 | SAVE で保存する内容 |
 
-路線の選択(ROUTE)と AUTO / MUTE / VIEW は運転状態として `state.conf` に残る。
+路線の選択(ROUTE)と AUTO / MUTE / VIEW / VOICE DEC は運転状態として `state.conf` に残る。
 
 ## 画面とソフトキー
 - 上: 帯域スペクトラム(チャネルのマーカー。緑 = 同期、琥珀 = 選択・通話中)
 - 中: チャネルのタイル(VOICE / SYNC / LOCK、EVM、周波数誤差、電文の数。♪ = 再生中)。タップで選択して固定(AUTO が外れる)
 - 下左(VIEW で切り替え): CONST = コンスタレーション / DATA = 選択チャネルの電文(新しい順)/ OPS = 運行把握の表
-- 下右: 選択チャネルの統計、再生中のチャネルと通話の一覧、負荷・欠落、保存と録音の状態
+- 下右: 選択チャネルの統計、再生中のチャネルと通話の一覧、負荷・欠落、保存と録音の状態。VOICE DEC(タップで選ぶ: ENH / JRV。全チャネルに効く)
 - ソフトキー: AUTO(通話の自動選択)/ MUTE / VIEW / SAVE(復号結果の保存)/ REC IQ / ROUTE / DIAG
 - ROUTE(原本の「路線から選ぶ」): 区間の一覧を D 番号で絞り込み、タップで選ぶ(文字の検索はキーボードが無いので D 番号の絞り込みで代える)。
   受信する周波数(音声 2 波・データ 1 波、重複は 1 波)と共用波の有無を確かめて APPLY。受信をやり直す(保存中なら区切る)。ALL CHANNELS で全チャネルに戻す。
@@ -119,7 +123,7 @@ widgets/qml/ConstellationView.qml   コンスタレーション(新規の共通�
 - **音声合成**(`voice/tests`): 8 つのシナリオ(連続・欠落・index の飛び・区切り・同一ペイロード等、446 フレーム)で PCM・出力の位置とタイミングが**ビット一致**。原本の契約テストも移植。
 - **パイプライン**(`test_protocol.cpp`): 音声フレーム → 欠落 → 誤りつき音声 → データ → 再同期 の列を Pipeline に通し、フレームの事象・電文・**合成した PCM**・状態・履歴・運行把握が一致。
 - **通し**(`EndToEndIqMatchesRust`): 3 チャネル(音声・データ・共用波)を変調した 2.4 s の帯域 IQ を Receiver(並列)に通し、原本の `Pipeline::process` と
-  フレーム・電文・**PCM**・状態が一致。CLI(`--decode-out`)の `audio.wav` と `data.jsonl` は原本の `jr-receiver decode-wave` の出力と**バイト単位で同一**。
+  フレーム・電文・**PCM**・状態が一致。CLI(`--decode-out --voice jrvoice`)の `audio.wav` と `data.jsonl` は原本の `jr-receiver decode-wave` の出力と**バイト単位で同一**(既定の `--voice enhance` では audio.wav は原本と違う)。
 - **前段**(`test_receiver.cpp`): 参照ベクトルを ×8 に補間して +250 kHz にずらした 1.92 MS/s を Receiver に入れ、各チャネルが原本と同等以上に同期すること。
 - **通話の自動選択・保存**(`test_storage.cpp`): 原本 monitor.rs / recording.rs のテストを移植(優先順位、欠落・再同期での分割、WAV の中身、失敗時の INCOMPLETE、JSONL の行)。
 - **プリセット・路線**(`test_storage.cpp`): 組み込みが原本と同じ(東 22 波・112 区間、東海 3 波・2 区間、西 19 波・19 区間、西の共用波 352.54375 MHz)、
@@ -206,6 +210,20 @@ widgets/qml/ConstellationView.qml   コンスタレーション(新規の共通�
 - 欠落の影響の再現: `spear-jr-train-decode --simulate-drops FILE`(1 行に「録音ファイル内の sample 位置 sample 数」。sidecar の discontinuity から作る)で、
   ライブと同じ欠落を入れると COMMON の音声は 1472 → 987 フレーム(全チャネルの作り直し)。同じ欠落を 0 で埋めて作り直さなければ 1242、
   読み飛ばすだけなら 1137(`--drop-mode zero|skip`)。欠落そのものが 1 回ごとにほぼ 1 フレームを壊すので、溢れさせないことが先。
+### 音声の復号器(mrl-celp-c、2026-11-03)
+mrl-celp-c(commit `e9fbb4e`)の `decoder/` のうち、ビット一致版・三菱型のポストフィルタ・聞きやすさ優先の復号を `voice/mrl/` に取り込んだ。
+帯域拡張(`widen.c`、16 kHz)は入れていない(AudioSink・保存は 8 kHz)。誤り訂正(`fec/`)は spear の `protocol/voice_frame` と同じものなので使わない。
+- `mrl_decode_enhanced` は 160 sample 遅れる(フレーム n の出力 = [n − 1 の後半 | n の前半])。`EnhanceStream` は n + 1 を復号したときに n の 320 sample を出し、
+  区間の最後は `mrl_enhanced_flush` で埋める。並べた結果は `mrl2wav --enhance` と同じ(区間の端の 10 ms を除く)。
+- 欠落の扱いは jr-voice と同じ規則(受理したフレームの index だけを出す)。mrl-celp-c には欠落の補間が無いので、欠落と index の飛びで区間を閉じ、復号器を作り直す。
+- テスト(`voice/tests/test_enhance.cpp`): 取り込んだ `mrl_decode`(ビット一致版)が C++ 移植の `celp::Native` と 400 フレームで同じ PCM、
+  `Voice(Enhance)` が `mrl2wav --enhance` と同じ並び、参照ベクトルの 8 つの操作列で出す index が jr-voice と同じ、作り直しで前の通話の状態が残らない、受理の規則。
+  `test_protocol.cpp` の通しの IQ で、受信の途中で ENH ⇔ JRV を替えても、受理した音声フレームが 1 回ずつ index の順に出る。原本と比べるテストは JRV で回す。
+  mrl-celp-c の参照ベクトル(macOS で作ったもの)は FZ-G2 の Arch でも 720 フレームすべてビット一致した(`make test`。spear には入れていない)。
+- 実録音(2026-10-22 の停車中 434 s、D4 V1 の音声 1146 フレーム)を `spear-jr-train-decode --voice enhance|jrvoice --threads 1` で: どちらも 1146 フレームすべて音声になった。
+  処理は全体で実時間の 31 %(ENH)/ 33 %(JRV)。D4 V1 の audio.wav は ENH が rms 1179・最大 30199、JRV が rms 1367・最大 21201、どちらもクリップ 0。
+  聞きやすさはまだ比べていない(「未検証」9)。
+
 ### 差分ファジング
 `tests/refgen` の bin `fuzz` が乱数の入力(誤りを入れた音声・データフレーム、モードや外符号だけを壊したもの、乱数の包絡、壊した LH5、乱数の文字列、
 壊したパケットを混ぜた電文の列、欠落と index の飛びを含む音声ペイロードの列、無信号・飽和・DC・強い隣接波・引き込み範囲外の周波数ずれ・振幅の段差・途切れの IQ)を
@@ -252,6 +270,7 @@ Rust のコードを spear に置くのは §2.5 の例外ではなく、ビル�
    (`docs/gui/jr_train.png`、`docs/gui/jr_train_ops.png`)。帯域スペクトラムの右端の目盛り「+120.0 kHz」が枠の外にはみ出していた件は、
    共通の `SpectrumView` で両端のラベルを枠の内側に寄せて直した(main `aa5848b`)。
 8. ~~Arch(glibc、GCC)での参照ベクトルの一致~~ → 2026-10-16 に確認(DSP・プロトコル・音声・差分ファジングのすべてでビット一致。上記「参照ベクトル」)。
+9. 音声の復号器 ENH と JRV の聴き比べ(実信号、通話中の切り替えを含む)。ENH は欠落のたびに作り直すので、誤りの多い区間(走行中のマルチパス)で途切れ方を比べる。
 
 ## 実機テストの手順
 1. Arch でビルドとテスト: `cmake -S . -B build -G Ninja && ninja -C build && ctest --test-dir build`
@@ -264,7 +283,7 @@ Rust のコードを spear に置くのは §2.5 の例外ではなく、ビル�
    復号結果は `~/spear/recordings/jr_train/recording-…/`、IQ は `~/spear/recordings/jr_train_<preset>_<UTC>.sigmf-*`。
 6. オフラインで再現と原本との突き合わせ:
    ```
-   spear-jr-train-decode ~/spear/recordings/jr_train_east_XXXX --quiet --decode-out out/cpp --export-wav out/band.wav
+   spear-jr-train-decode ~/spear/recordings/jr_train_east_XXXX --quiet --voice jrvoice --decode-out out/cpp --export-wav out/band.wav
    jr-receiver decode-wave out/band.wav 352603125 out/rust east        # 原本(--no-default-features でビルド可)
    cmp out/cpp/<ID>/audio.wav out/rust/<ID>/audio.wav                  # チャネルごとに audio.wav / data.jsonl が一致するか(report.json・messages.json は書式が違う)
    ```
@@ -285,5 +304,6 @@ Rust のコードを spear に置くのは §2.5 の例外ではなく、ビル�
 `apps/jr_train/` の移植したファイル(dsp / protocol / voice / pipeline / call_monitor / storage / presets)は原本(MIT)の派生物。
 各ファイルに `SPDX-License-Identifier: MIT` と著作権表示を残し、`apps/jr_train/LICENSE.MIT` に原本の許諾文を置く。MIT のコードは GPL-3.0 の spear に結合できる。
 `voice/celp/` は原本が mcelp-codec(github.com/soltia48/mcelp-codec、MIT)から取り込んだもので、`voice/celp/LICENSE` を残す。
+`voice/mrl/` は mrl-celp-c(github.com/tallcat4/mrl-celp-c、MIT、© 2026 KIRISHIKI Yudai・tallcat4)の取り込みで、`voice/mrl/LICENSE` を残す。
 `voice/models/*.bin` は原本の係数そのまま(原本のライセンスに従う)。`protocol/jis0208_table.cpp` は WHATWG Encoding Standard の index(CC0)に由来する。
 原本の LH5 とフレーム復号には「reference から移植」とあるが、出典の記載は無い。リポジトリ全体が MIT で公開されているので、これらも MIT として扱う(2026-10-15 決定)。

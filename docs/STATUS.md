@@ -26,6 +26,8 @@ hold し、キオスクセッションを入れた(`docs/kiosk.md`)。屋上で�
 - Plasma から起動した App は、起動時からの利用者の systemd の制限(rtprio 0)を引き継ぐ。再起動後は 99。
 
 JR TRAIN RADIO の残り:
+- 音声の復号器に mrl-celp-c(聞きやすさ優先の復号、既定)を足し、jr-voice と画面の VOICE DEC で切り替えられるようにした(2026-11-03)。
+  実信号での聴き比べがまだ(`docs/apps/jr_train.md`「音声の復号器」「未検証」9)。
 - 通話中は音声合成のタスク(1 フレーム ≒ 5 ms)をブロックの待ち合わせが待つ。合成を複数ブロックにまたがって走らせる案。
 - 欠落があると全チャネルを作り直す。短い欠落は 0 で埋めて作り直さない案(ライブの欠落の再現で音声 987 → 1242 フレーム。
   `spear-jr-train-decode --simulate-drops`)。performance で欠落が出なくなったので優先度は低い。
@@ -70,7 +72,7 @@ IQ → DSP → 軟判定 FEC → Tracker → ソルバーの回帰試験では�
 | `apps/std_t98` | 30ch 受信機(C++ のみ、Qt / UHD 非依存)、プロトコル、同期の状態機械(フライホイール)、AMBE(blip25c)、秘話(PN、ffnn の C++ 推論、hybrid の ONNX Runtime 推論、鍵探索ワーカー)、GUI(帯域スペクトラム / チャネル格子 / アイ / フレーム / 鍵 / 全 ch 同時音声) | 実録音 golden(`~/spear/golden/std_t98`)、Python 参照実装との一致(プロトコル・AMBE・秘話)、実機の送信で確認(平文・秘話) |
 | `apps/adsb` | 1090 MHz Mode S / ADS-B 受信機(C++ のみ: 回転 → 低域 FIR → 電力 → プリアンブル / PPM → CRC-24、DF17/18/11 + AP 形式)、航空機表(CPR 偶奇 / 局所)、GUI(表 / ミニマップ(埋め込みのオフライン地図 Natural Earth + OurAirports。全機が入るよう自動で範囲を合わせる)/ 電力窓 / 統計)。radio.rx を 8 Msps のまま Lossless で消費 | 既知ベクトル(The 1090MHz Riddle)、合成 PPM で provenance をサンプル単位で確認、ライフサイクル、実録音 golden(`~/spear/golden/adsb`、羽田近傍 3 s / 136 フレーム)、実機で動作(`docs/apps/adsb.md`) |
 | `apps/slpr` | 特定小電力(422 MHz 帯、単信 20 ch、ICOM 準拠の 01–20)の同時 NFM 受信機(C++ のみ: 回転 → resamp1 → PFB 32 × 12.5 kHz → quadrature demod → LPF → DC 阻止 → 床相対 squelch(attack / hold))、加算ミキサ、GUI(帯域スペクトラム / 20ch 格子 / 選択 ch の IQ) | 合成 NFM(2 ch 同時、隣接の漏れ、provenance、hold)、ライフサイクル、実機で ch12 の実信号(`docs/apps/slpr.md`) |
-| `apps/jr_train` | JR 在来線デジタル列車無線の多波受信機(C++ のみ、Qt / UHD 非依存): 回転 + FIR ÷8(1.92 MS/s → 240 kS/s)→ チャネルごとの Pipeline(π/4-DQPSK 復調・64 状態 MLSE・フレーム同期・音声の誤り訂正・CELP + GRU/MLP の音声合成・データ電文・LH5・運行把握)。worker スレッドで並列。通話の自動選択、保存(WAV / JSONL)。GUI(帯域スペクトラム / タイル / コンスタレーション・電文・運行把握 / SAVE / REC IQ)。プリセット east / central / west | 原本(Rust)とのビット一致(Mac、`tests/vectors`、refgen)、差分ファジング(規模 5 ですべて一致)、原本の単体テストの移植、TSan。Mac で spear 全体をビルドしてライフサイクルテストと画面を確認。Arch(FZ-G2)でもビット一致、実機で負荷(22 波 20 分)と画面を確認。**実信号での受信は未確認**(`docs/apps/jr_train.md`) |
+| `apps/jr_train` | JR 在来線デジタル列車無線の多波受信機(C++ のみ、Qt / UHD 非依存): 回転 + FIR ÷8(1.92 MS/s → 240 kS/s)→ チャネルごとの Pipeline(π/4-DQPSK 復調・64 状態 MLSE・フレーム同期・音声の誤り訂正・音声の復号(mrl-celp-c の聞きやすさ優先 / CELP + GRU/MLP の jr-voice を切り替え)・データ電文・LH5・運行把握)。worker スレッドで並列。通話の自動選択、保存(WAV / JSONL)。GUI(帯域スペクトラム / タイル / コンスタレーション・電文・運行把握 / SAVE / REC IQ)。プリセット east / central / west | 原本(Rust)とのビット一致(Mac、`tests/vectors`、refgen)、差分ファジング(規模 5 ですべて一致)、原本の単体テストの移植、TSan。Mac で spear 全体をビルドしてライフサイクルテストと画面を確認。Arch(FZ-G2)でもビット一致、実機で負荷(22 波 20 分)と画面を確認。**実信号での受信は未確認**(`docs/apps/jr_train.md`) |
 | `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード。秘話呼は鍵を探索して復号)、`spear-adsb-decode`(録音 → フレーム表 / 航空機一覧 / golden)、`spear-jr-train-decode`(録音 → 音声・電文・統計。原本の decode-wave と同じ形式の出力、保存、frames、WAV) | — |
 
 ## 未完の作業・既知の問題
