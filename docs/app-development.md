@@ -28,7 +28,7 @@ docs/apps/<id>.md    実装メモ
 |---|---|
 | メタデータ | `spear_add_app(ID NAME DESCRIPTION DIRECTION CLASS HEADER PAGE SOURCES [LIBS] [UNLISTED])` |
 | RF 宣言 | シェルの草案が `set_rf_config()` で渡され、`declare_rf_config()` で Core へ。適用不能なら App 起動失敗(§7.1)。方向は `DIRECTION` で固定(草案の方向は使わない) |
-| 送信(DIRECTION TX) | `tx_gain` / `tx_port`(TRXA / TRXB)を宣言。`on_start` で `core.tx()` を受け取り、自前の thread で block を `write()`(空くまで待つ。false = SAFE か停止)。burst は `StartOfBurst` / `EndOfBurst` の flag。block の BlockPool は App と同じ寿命にする。TX MASTER が SAFE なら Core が拒否する(`docs/apps/replay.md`) |
+| 送信(DIRECTION TX) | `tx_atten`(最大出力からの減衰 dB。既定 = 最小出力)/ `tx_port`(TRXA / TRXB)を宣言。`on_start` で `core.tx()` を受け取り、自前の thread で block を `write()`(空くまで待つ。false = SAFE か停止)。burst は `StartOfBurst` / `EndOfBurst` の flag。block の BlockPool は App と同じ寿命にする。TX MASTER が SAFE なら Core が拒否する(`docs/apps/replay.md`) |
 | `on_start(Core&)` | `core.rx()` に subscribe、DSP チェーンを静的に構成、DSP 用 thread を起動。**GUI thread で呼ばれる**(基底が保証) |
 | `on_stop()` | consumer / thread を全て解放。stop 後に `core.rx().consumer_count()` が 0 になること(テストで確認) |
 | RF の構成し直し | `Core::reconfigure`(シェルの `ui.applyRf()` / `ui.setRate()`): App は止まらず画面も State もそのまま。Core が Source を止め、`on_stop()` → configure → `on_start()` → Source 再開。stream は作り直されるので、on_start で毎回 subscribe し直す書き方ならそのまま対応する。適用できなければ元の構成に戻る |

@@ -41,8 +41,10 @@ public:
     // 送信の入口(fan-in, §4.1)。direction == TX の宣言で configure したあと、App が on_start で受け取って write する。
     // stop() で閉じる(App の待ちが解ける)。次の configure で作り直す
     virtual TxStream& tx_input() = 0;
-    // 運転中の送信ゲイン変更。宣言(config().tx_gain)は即座に更新し、送信 thread が装置へ適用する(retune と同じ形、要求は失われない)
-    virtual bool set_tx_gain(double db) = 0;
+    // 運転中の送信の減衰の変更。宣言(config().tx_atten)は即座に更新し、送信 thread が装置へ適用する(retune と同じ形、要求は失われない)
+    virtual bool set_tx_atten(double db) = 0;
+    // 減衰の上限 [dB](= 最小出力)。実機は開いた装置の gain range から、開く前と装置なしは kTxAttenFullRangeDb
+    virtual double tx_atten_max() const { return kTxAttenFullRangeDb; }
     virtual uint64_t generation() const = 0;
 
     // 現在の宣言(コピー、thread-safe)。retune 要求は即座にここへ反映される。
@@ -78,6 +80,10 @@ protected:
 inline bool check_direction(const RfConfig& cfg, std::string* err) {
     if (cfg.direction == Direction::TX && !rf_port_can_tx(cfg.tx_port)) {
         if (err) *err = "tx_port " + std::string(rf_port_name(cfg.tx_port)) + " cannot transmit (TRXA / TRXB only)";
+        return false;
+    }
+    if (cfg.direction == Direction::TX && cfg.tx_atten < 0) {   // 上限は装置の範囲(Radio が照合)
+        if (err) *err = "tx_atten must be >= 0 dB (0 = maximum output)";
         return false;
     }
     return true;
@@ -116,7 +122,7 @@ public:
     bool running() const override { return running_.load(); }
     Stream<sc16>& output() override { return *stream_; }
     TxStream& tx_input() override { return *tx_; }
-    bool set_tx_gain(double db) override;
+    bool set_tx_atten(double db) override;
     // 送信先(装置の代わり)。既定は NullSink。テストは中身を確かめる Sink を差す。start 前に呼ぶ
     void set_tx_sink(std::shared_ptr<Sink> s) { tx_sink_ = s ? std::move(s) : std::make_shared<NullSink>(); }
     uint64_t generation() const override { return generation_.load(); }

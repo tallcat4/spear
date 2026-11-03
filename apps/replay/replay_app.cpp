@@ -20,7 +20,7 @@ constexpr std::size_t kPoolBlocks = kDefaultTxQueueBlocks + 8;
 
 ReplayApp::ReplayApp(appfw::AppInfo info, QObject* parent)
     : appfw::GuiApp(std::move(info), parent), pool_(kDefaultBlockSamples * sizeof(sc16), kPoolBlocks) {
-    // 送信ゲインは保存しない(起動のたびに 0 dB から。意図しない出力で始めない)
+    // 送信の減衰は保存しない(プロセスの起動のたびに最小出力から。意図しない出力で始めない)
     persist({"file", "loop", "txPort", "view.dbMin", "view.dbMax", "view.manualRange", "view.averaging"});
 }
 
@@ -120,7 +120,7 @@ RfConfig ReplayApp::declare_rf_config() const {
         c.sample_rate = file_rate_;
         c.bandwidth = 0;
     }
-    c.tx_gain = tx_gain_;
+    c.tx_atten = tx_atten_;
     c.tx_port = tx_port_;
     return c;
 }
@@ -131,16 +131,15 @@ bool ReplayApp::configCurrent() const {
     return c.direction == Direction::TX && c.center_freq == file_freq_ && c.sample_rate == file_rate_ && c.tx_port == tx_port_;
 }
 
-void ReplayApp::setTxGain(double db) {
-    db = std::clamp(db, 0.0, kMaxTxGainDb);
-    tx_gain_ = db;
-    if (core()) core()->source().set_tx_gain(db);   // 運転中は Core の宣言を変える(送信 thread が適用し TxGain event)
+void ReplayApp::setTxAtten(double db) {
+    tx_atten_ = db;
+    if (core()) core()->source().set_tx_atten(db);   // 運転中は Core の宣言を変える(送信 thread が装置の範囲で照合して適用し TxAtten event)
     Q_EMIT statsChanged();
 }
 
 void ReplayApp::on_start(Core& core) {
     tx_ = &core.tx();
-    tx_gain_ = core.source().config().tx_gain;
+    tx_atten_ = core.source().config().tx_atten;
     position_ = 0;
     passes_ = 0;
     set_error({});

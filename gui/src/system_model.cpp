@@ -39,7 +39,7 @@ int severity_of(const Event& e) {
     case EventKind::UhdLog:
         return e.value >= 4 ? 3 : (e.value == 3 ? 2 : 0); // uhd severity: warning=3, error=4
     case EventKind::DeviceState: case EventKind::Reconnected: case EventKind::StartupStage: case EventKind::Retune:
-    case EventKind::TimeReference: case EventKind::TxBurst: case EventKind::TxGain:
+    case EventKind::TimeReference: case EventKind::TxBurst: case EventKind::TxAtten:
         return 1;
     default:
         return 0;
@@ -89,7 +89,7 @@ SystemModel::SystemModel(Core& core, QObject* parent) : QObject(parent), core_(c
             if (e.kind == EventKind::Retune) applied_freq_ = static_cast<double>(e.value);
             // 状態に関わる event は 250 ms のポーリングを待たず即時に Core を読み直す
             if (e.kind == EventKind::Retune || e.kind == EventKind::DeviceState || e.kind == EventKind::Reconnected ||
-                e.kind == EventKind::TxBurst || e.kind == EventKind::TxGain ||
+                e.kind == EventKind::TxBurst || e.kind == EventKind::TxAtten ||
                 e.kind == EventKind::StartupStage || (e.kind == EventKind::Info && e.source == "core"))
                 timerEvent(nullptr);
             Q_EMIT eventArrived(severity_of(e), QString::fromUtf8(std::string(to_string(e.kind)).c_str()), QString::fromStdString(e.detail));
@@ -108,6 +108,7 @@ void SystemModel::timerEvent(QTimerEvent*) {
         ds_ = core_.source().device_status();
         cfg_ = core_.source().config();
         tx_ = core_.tx().stats();
+        tx_atten_max_ = core_.source().tx_atten_max();
         lo_corr_ppm_ = core_.source().lo_correction_ppm();
         warming_ = core_.source().warming_up();
         // 受信が止まったら実ゲインは無い(次の受信の最初の RxGain event で戻る。その event は stage 6 より前に来るので、止まった時だけ消す)

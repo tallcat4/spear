@@ -613,8 +613,9 @@ bool Radio::tune_tx(const RfConfig& cfg, std::string* err) {
                 std::snprintf(rb, sizeof rb, "tx center_freq %.6f MHz outside [%.3f, %.3f] MHz", cfg.center_freq / 1e6, fr.start() / 1e6, fr.stop() / 1e6);
                 throw uhd::value_error(rb);
             }
-            if (cfg.tx_gain < gr.start() || cfg.tx_gain > gr.stop()) {
-                std::snprintf(rb, sizeof rb, "tx_gain %.2f dB outside [%.2f, %.2f] dB", cfg.tx_gain, gr.start(), gr.stop());
+            tx_atten_max_ = gr.stop() - gr.start();
+            if (cfg.tx_atten < 0 || cfg.tx_atten > tx_atten_max_) {
+                std::snprintf(rb, sizeof rb, "tx_atten %.2f dB outside [0, %.2f] dB", cfg.tx_atten, tx_atten_max_);
                 throw uhd::value_error(rb);
             }
             if (cfg.sample_rate < rr.start() || cfg.sample_rate > rr.stop()) {
@@ -658,11 +659,11 @@ bool Radio::tune_tx(const RfConfig& cfg, std::string* err) {
             if (err) *err = e;
             return false;
         }
-        if (!set_tx_gain(cfg.tx_gain, &e)) throw uhd::value_error(e);
+        if (!set_tx_atten(cfg.tx_atten, &e)) throw uhd::value_error(e);
         char buf[260];
-        std::snprintf(buf, sizeof buf, "TX rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f corr=%+.2fppm/%+.0fHz) tx_gain=%.2f port=%s (%s %s) lo_locked",
+        std::snprintf(buf, sizeof buf, "TX rate=%.6g (mcr=%.6g) freq=%.6f MHz (rf=%.6f dsp=%.1f corr=%+.2fppm/%+.0fHz) tx_atten=%.2f (uhd gain %.2f) port=%s (%s %s) lo_locked",
                       actual_tx_rate_, usrp_->get_master_clock_rate(), actual_tx_freq_ / 1e6, res.actual_rf_freq / 1e6,
-                      res.actual_dsp_freq, corr.ppm, corr.error_hz(cfg.center_freq), actual_tx_gain_,
+                      res.actual_dsp_freq, corr.ppm, corr.error_hz(cfg.center_freq), actual_tx_atten_, actual_tx_gain_,
                       std::string(port.name).c_str(), usrp_->get_tx_subdev_spec().to_string().c_str(), usrp_->get_tx_antenna().c_str());
         stage(4, buf, true);
         set_state(DeviceState::Ready, std::string("sensors: tx lo_locked=true; ") + buf, 4);
@@ -678,20 +679,24 @@ bool Radio::tune_tx(const RfConfig& cfg, std::string* err) {
     return false;
 }
 
-bool Radio::set_tx_gain(double db, std::string* err) {
+bool Radio::set_tx_atten(double db, std::string* err) {
     if (!usrp_) { if (err) *err = "not open"; return false; }
     try {
+        // UHD の TX gain は相対値: AD9361 の TX 減衰 = gain range の上限 − gain(UHD ad9361_device.cpp: atten = AD9361_MAX_GAIN − value)
         const auto gr = usrp_->get_tx_gain_range();
+        tx_atten_max_ = gr.stop() - gr.start();
         char b[160];
-        if (db < gr.start() || db > gr.stop()) {
-            std::snprintf(b, sizeof b, "tx_gain %.2f dB outside [%.2f, %.2f] dB", db, gr.start(), gr.stop());
+        if (db < 0 || db > tx_atten_max_) {
+            std::snprintf(b, sizeof b, "tx_atten %.2f dB outside [0, %.2f] dB", db, tx_atten_max_);
             if (err) *err = b;
             return false;
         }
-        usrp_->set_tx_gain(db);
+        const double gain = gr.stop() - db;
+        usrp_->set_tx_gain(gain);
         actual_tx_gain_ = usrp_->get_tx_gain();
-        if (std::abs(actual_tx_gain_ - db) > opt_.gain_tolerance_db) {
-            std::snprintf(b, sizeof b, "tx gain coerced: requested %.2f, actual %.2f dB", db, actual_tx_gain_);
+        actual_tx_atten_ = gr.stop() - actual_tx_gain_;
+        if (std::abs(actual_tx_atten_ - db) > opt_.gain_tolerance_db) {
+            std::snprintf(b, sizeof b, "tx atten coerced: requested %.2f, actual %.2f dB", db, actual_tx_atten_);
             if (err) *err = b;
             return false;
         }
@@ -705,8 +710,10 @@ bool Radio::set_tx_gain(double db, std::string* err) {
 void Radio::quiesce_tx() {
     if (!usrp_) return;
     try {
-        usrp_->set_tx_gain(usrp_->get_tx_gain_range().start());
+        const auto gr = usrp_->get_tx_gain_range();
+        usrp_->set_tx_gain(gr.start());
         actual_tx_gain_ = usrp_->get_tx_gain();
+        actual_tx_atten_ = gr.stop() - actual_tx_gain_;
     } catch (const std::exception& ex) {
         if (events_) events_->emit(EventKind::Warning, "radio", std::string("quiesce_tx: ") + ex.what());
     }

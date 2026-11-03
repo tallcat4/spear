@@ -87,7 +87,7 @@ bool RecordingSource::configure(const RfConfig& cfg, std::string* err) {
     }
     c.gain = cfg.gain; c.agc = cfg.agc; c.port = cfg.port;   // 無意味だが害もない(表示用)
     // 送信の宣言はそのまま受ける(送信先は Sink。録音の rate / center は送信の rate / center としても使う)
-    c.direction = cfg.direction; c.tx_gain = cfg.tx_gain; c.tx_port = cfg.tx_port;
+    c.direction = cfg.direction; c.tx_atten = cfg.tx_atten; c.tx_port = cfg.tx_port;
     return ThreadedSource::configure(c, err);
 }
 

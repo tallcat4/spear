@@ -30,7 +30,7 @@ std::string_view to_string(EventKind k) {
     case EventKind::LoUnlock:         return "lo_unlock";
     case EventKind::RxGain:           return "rx_gain";
     case EventKind::TxBurst:          return "tx_burst";
-    case EventKind::TxGain:           return "tx_gain";
+    case EventKind::TxAtten:          return "tx_atten";
     case EventKind::Info:             return "info";
     case EventKind::Warning:          return "warning";
     case EventKind::Error:            return "error";

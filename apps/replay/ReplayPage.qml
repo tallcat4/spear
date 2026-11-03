@@ -1,5 +1,5 @@
 // IQ REPLAY TX のページ: 上に送っている IQ の SpectrumView、下に送信パネル。
-// 送信中かどうか・送信ゲイン・端子は Core(sys.transmitting / sys.txGain / sys.txPort)から読む。TX MASTER も Core(sys.txArmed)。
+// 送信中かどうか・送信の減衰・端子は Core(sys.transmitting / sys.txAtten / sys.txPort)から読む。TX MASTER も Core(sys.txArmed)。
 import QtQuick
 import Spear.Theme
 import Spear.Widgets
@@ -13,7 +13,7 @@ Item {
     readonly property var softKeys: [
         { label: app.sending ? "STOP" : "TRANSMIT", action: "tx", active: app.sending, enabled: app.sending || page.canSend },
         { label: "FILE", action: "file", enabled: !app.sending && !shell.busy },   // 録音を変えると装置を録音の center / rate で構成し直す(App は止めない)
-        { label: "TX GAIN", action: "gain" },
+        { label: "TX ATTEN", action: "atten" },
         { label: app.loop ? "LOOP ON" : "LOOP OFF", action: "loop", active: app.loop },
         { label: "TX PORT", action: "port", enabled: !app.sending && !shell.busy },
         { label: "REF LVL", action: "ref" }, { label: "DIAG", action: "diag" } ]
@@ -25,7 +25,9 @@ Item {
             ui.askList("RECORDING TO TRANSMIT", "Transmitted as recorded: same center frequency, sample rate and IQ.  The radio is reconfigured for the selection.",
                        app.recordings, app.file, (v) => { if (v !== app.file || !app.configCurrent) { app.file = v; ui.applyRf() } })
             break
-        case "gain": ui.askLevel("TX GAIN  (0 dB = minimum output)", "dB", 0, app.txGainLimit(), sys.txGain, (v) => app.setTxGain(v)); break
+        // 送信の強さは減衰量で入れる(0 = 最大出力、上限 = 最小出力)。上限は装置の範囲(Core)。dBm ではない
+        case "atten": ui.askLevel("TX ATTENUATION  (0 dB = maximum output, " + sys.txAttenMax + " dB = minimum; relative, not dBm)", "dB", 0, sys.txAttenMax,
+                                  sys.txAtten, (v) => app.setTxAtten(v), 2); break   // 装置は 0.25 dB 刻み
         case "loop": app.loop = !app.loop; break
         case "port":
             ui.askList("TX PORT", "Only the TX/RX ports can transmit.",
@@ -70,15 +72,17 @@ Item {
 
         Grid {
             x: lamp.x + lamp.width + Theme.pad * 2; y: Theme.pad
-            columns: 4; columnSpacing: Theme.pad; rowSpacing: Theme.pad
+            columns: 5; columnSpacing: Theme.pad; rowSpacing: Theme.pad
             Readout { label: "TX FREQ"; value: app.fileValid ? Theme.fmtFreq(app.fileFreq) : "--"; width: 320; valueColor: Theme.textBright }
             Readout { label: "RATE"; value: app.fileValid ? Theme.fmtRate(app.fileRate) : "--"; width: 220 }
-            Readout { label: "TX GAIN"; value: sys.txGain.toFixed(1) + " dB"; width: 220; valueColor: sys.txGain > 0 ? Theme.amber : Theme.textBright }
+            // 最大出力からどれだけ下げているか(AD9361 の TX 減衰)。出力の絶対値(dBm)は個体・周波数・録音のレベルで変わるので出さない
+            Readout { label: "TX ATTEN (0 = MAX OUT)"; value: sys.txAtten.toFixed(2) + " dB"; width: 300
+                      valueColor: sys.txAtten < sys.txAttenMax ? Theme.amber : Theme.textBright }
             Readout { label: "TX PORT"; value: sys.txPort; width: 180 }
             Readout { label: "POSITION"; value: app.positionSeconds.toFixed(1) + " / " + app.fileSeconds.toFixed(1) + " s"; width: 320 }
             Readout { label: "PASSES"; value: app.loop ? (app.passes + 1).toString() : "ONCE"; width: 220 }
             Readout { label: "UNDERFLOW"; value: sys.txUnderflows.toString(); width: 220; valueColor: sys.txUnderflows > 0 ? Theme.red : Theme.green }
-            Readout { label: "LO CORR"; value: sys.loCorrectionPpm.toFixed(2) + " ppm"; width: 180 }
+            Readout { label: "LO CORR"; value: sys.loCorrectionPpm.toFixed(2) + " ppm"; width: 300 }
         }
         Column {
             x: Theme.pad; y: 200; width: parent.width - 2 * Theme.pad; spacing: 6

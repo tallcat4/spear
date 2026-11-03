@@ -67,13 +67,14 @@ void ThreadedSource::stop() {
     if (running_.exchange(false)) { if (config().direction != Direction::TX) on_stop(); state_since_ns_ = host_now_ns(); }
 }
 
-bool ThreadedSource::set_tx_gain(double db) {
+bool ThreadedSource::set_tx_atten(double db) {
+    if (db < 0 || db > tx_atten_max()) return false;   // 装置が無くても範囲は実機と同じ(宣言を変えない)
     {
         std::lock_guard lk(cfg_mu_);
-        cfg_.tx_gain = db;
+        cfg_.tx_atten = db;
     }
     bump_state();
-    if (events_) events_->emit(EventKind::TxGain, name_, "tx gain set (no hardware)", {}, std::llround(db));
+    if (events_) events_->emit(EventKind::TxAtten, name_, "tx atten set (no hardware)", {}, std::llround(db));
     return true;
 }
 

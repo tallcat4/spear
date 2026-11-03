@@ -47,10 +47,11 @@ Rectangle {
         visible: sys.txMode
         color: sys.transmitting ? Theme.red : "transparent"; border.color: Theme.red; border.width: 1
         Text { anchors.left: parent.left; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter
-               text: sys.transmitting ? "TX ON" : "TX"; color: sys.transmitting ? "#000000" : Theme.red
+               text: sys.transmitting ? "TX ON ATT" : "TX ATT"; color: sys.transmitting ? "#000000" : Theme.red
                font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: true }
         Text { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
-               text: sys.txGain.toFixed(1) + " dB"; color: sys.transmitting ? "#000000" : Theme.textBright
+               // 送信の減衰(最大出力からの下げ幅)。Core の宣言そのもの
+               text: sys.txAtten.toFixed(1) + " dB"; color: sys.transmitting ? "#000000" : Theme.textBright
                font.family: Theme.mono; font.pixelSize: Theme.fsLarge; font.bold: true }
     }
     // 出力の音量(OS。SystemVolume)。タップで音量の操作を出す(キオスクには OS の音量の表示が無い)

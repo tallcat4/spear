@@ -5,7 +5,7 @@
 //   * 送信するのは TRANSMIT を押した間だけ。App の起動直後・停止後・録音の終わりでは何も送らない
 //     (burst の外では B210 の ATR が送信経路を切っている。b200_impl.cpp update_atrs: IDLE = STATE_RX1_OFF)。
 //   * Core の TX MASTER が SAFE なら、TRANSMIT を押しても Core が拒否する(App は拒否を表示するだけ)。
-//   * 送信ゲインは起動のたびに 0 dB(最小)から。保存しない。
+//   * 送信の減衰はプロセスの起動のたびに全範囲(最小出力)から。保存しない。
 //   * 送信する周波数・レートは録音の値(captures[0])そのまま。UI から LO / rate を変える手段は置かない。
 #pragma once
 
@@ -75,10 +75,9 @@ public:
     Q_INVOKABLE void refreshRecordings();
     Q_INVOKABLE void transmit();       // 録音の先頭から 1 つの burst を始める
     Q_INVOKABLE void stopTransmit();   // burst を閉じる(EOB)
-    // 送信ゲイン: 運転中は Core の宣言(sys.txGain)を変える。起動前の値は App が持つ(起動時に宣言する。保存しない)
-    Q_INVOKABLE void setTxGain(double db);
-    Q_INVOKABLE double txGainLimit() const { return kMaxTxGainDb; }
-    static constexpr double kMaxTxGainDb = 89.75;   // B210(AD9361)の TX gain range の上限。範囲の照合は Radio が装置の値で行う
+    // 送信の減衰 [dB](0 = 最大出力、sys.txAttenMax = 最小出力)。運転中は Core の宣言(sys.txAtten)を変える。
+    // 起動前の値は App が持つ(起動時に宣言する。保存しない = プロセスの起動のたびに最小出力から)。範囲の照合は Core(Radio)
+    Q_INVOKABLE void setTxAtten(double db);
 
 Q_SIGNALS:
     void fileChanged();
@@ -114,7 +113,7 @@ private:
     QString file_;
     bool loop_ = false;
     RfPort tx_port_ = RfPort::TrxA;
-    double tx_gain_ = 0;   // 起動時に宣言する送信ゲイン(運転中の値は Core が持つ)
+    double tx_atten_ = kTxAttenFullRangeDb;   // 起動時に宣言する送信の減衰(運転中の値は Core が持つ)
     QStringList dirs_;
     QVariantList recordings_;
     bool file_valid_ = false;

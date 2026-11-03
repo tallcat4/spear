@@ -170,15 +170,16 @@ TEST(TxSource, StopUnblocksProducer) {
     EXPECT_TRUE(done);
 }
 
-TEST(TxSource, TxGainIsDeclaredImmediately) {
+TEST(TxSource, TxAttenIsDeclaredImmediately) {
     EventBus ev;
     SyntheticSource src(&ev, {});
     std::atomic<bool> arm{true};
     src.set_tx_arm(&arm);
     ASSERT_TRUE(src.configure(tx_cfg()));
     const auto v0 = src.state_version();
-    EXPECT_TRUE(src.set_tx_gain(12.5));
-    EXPECT_DOUBLE_EQ(src.config().tx_gain, 12.5);
+    EXPECT_DOUBLE_EQ(src.config().tx_atten, kTxAttenFullRangeDb);   // 既定は最小出力
+    EXPECT_TRUE(src.set_tx_atten(12.5));
+    EXPECT_DOUBLE_EQ(src.config().tx_atten, 12.5);
     EXPECT_GT(src.state_version(), v0);
 }
 

@@ -61,8 +61,9 @@ public:
     bool running() const override { return running_.load(); }
     Stream<sc16>& output() override { return *stream_; }
     TxStream& tx_input() override { return *tx_; }
-    // 送信ゲイン: 宣言は即座に更新し、送信 thread が次の block の前に装置へ適用して TxGain event で報告する(最新値が勝ち、失われない)
-    bool set_tx_gain(double db) override;
+    // 送信の減衰: 宣言は即座に更新し、送信 thread が次の block の前に装置へ適用して TxAtten event で報告する(最新値が勝ち、失われない)
+    bool set_tx_atten(double db) override;
+    double tx_atten_max() const override { return radio_.tx_atten_max(); }
     uint64_t generation() const override { return generation_.load(); }
     RfConfig config() const override { std::lock_guard lk(cfg_mu_); return cfg_; }
     uint64_t state_version() const override { return state_version_.load() + radio_.state_version(); }
@@ -114,7 +115,7 @@ private:
     uhd::tx_streamer::sptr tx_streamer_;
     std::thread tx_async_th_;
     std::atomic<bool> tx_async_stop_{false};
-    std::atomic<bool> tx_gain_pending_{false};   // set_tx_gain の要求。送信 thread が取り出して config().tx_gain を適用する
+    std::atomic<bool> tx_atten_pending_{false};  // set_tx_atten の要求。送信 thread が取り出して config().tx_atten を適用する
     std::atomic<uint64_t> tx_index_{0};          // generation 内の送信済み sample 数(event の範囲)
 
     std::thread th_;

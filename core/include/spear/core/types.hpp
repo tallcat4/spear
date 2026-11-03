@@ -189,6 +189,10 @@ constexpr bool parse_agc_mode(std::string_view s, AgcMode* out) {
     return false;
 }
 
+// 送信の減衰の全範囲 [dB](B2xx = AD9361 の TX 減衰器、0.25 dB 刻み。UHD ad9361_device.cpp の AD9361_MAX_GAIN)。
+// 送信の宣言の既定値(= 最小出力)と、装置を開く前の表示の上限に使う。装置ごとの範囲の照合は Radio が装置の値で行う
+inline constexpr double kTxAttenFullRangeDb = 89.75;
+
 // ---- RF 宣言 (§7.1) -------------------------------------------------------------
 // App が Core へ宣言する RF 条件。Core はそのまま適用する(適用不能なら App 起動失敗)。
 struct RfConfig {
@@ -204,7 +208,9 @@ struct RfConfig {
     // ---- 送信(direction == TX のときだけ意味を持つ)----
     // 受信の gain / port とは別の項目にする。シェルの草案の gain は受信の値(30〜40 dB)で、送信に流用すると
     // 意図しない出力になる。既定は送信ゲインの最小(0 dB)。center_freq / sample_rate は送信でもそのまま使う
-    double      tx_gain     = 0.0;           // dB(AD9361 の TX 減衰を UHD の gain 尺度で表したもの。0 = 最小出力)
+    // 送信の強さは「最大出力からの減衰 [dB]」で宣言する(0 = 最大出力)。UHD の TX gain(= 上限 − 減衰の相対値)への換算は Radio だけが行う。
+    // 出力の絶対値(dBm)ではない。既定は全範囲 = 最小出力
+    double      tx_atten    = kTxAttenFullRangeDb;
     RfPort      tx_port     = RfPort::TrxA;  // 送信できるのは TRXA / TRXB だけ(rf_port_can_tx)
 };
 

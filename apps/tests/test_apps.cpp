@@ -171,7 +171,7 @@ TEST(Apps, ReplaySendsRecordingOnlyWhenArmed) {
     EXPECT_EQ(decl.direction, Direction::TX);
     EXPECT_DOUBLE_EQ(decl.center_freq, 422.175e6);
     EXPECT_DOUBLE_EQ(decl.sample_rate, 1e6);
-    EXPECT_DOUBLE_EQ(decl.tx_gain, 0.0);
+    EXPECT_DOUBLE_EQ(decl.tx_atten, kTxAttenFullRangeDb);   // 既定は最小出力
     ASSERT_TRUE(core.run_app(app));
     EXPECT_TRUE(app->configCurrent());
     // SAFE: App は送信を始めない(Core も拒否する)

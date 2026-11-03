@@ -41,7 +41,7 @@ enum class EventKind : uint8_t {
     LoUnlock,           // 受信中に lo_locked が false になった / 復帰した(value: 0=unlock, 1=relock)
     RxGain,             // AD9361 が実際にかけている受信ゲインが変わった(AGC 中)。value = gain [dB], detail = "gain=<dB> digital=<dB> agc=<mode>"
     TxBurst,            // 送信の burst が始まった / 終わった(value: 1=開始, 0=終了)。range = 送信済み sample の範囲
-    TxGain,             // 送信ゲインを装置へ適用した。value = gain [dB]
+    TxAtten,            // 送信の減衰を装置へ適用した。value = 減衰 [dB](四捨五入)。detail に UHD の gain も書く
     // App
     Info,
     Warning,

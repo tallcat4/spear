@@ -1,10 +1,10 @@
 // spear-replay — 録音 IQ の送信を GUI なしで確かめる(要件 §6, §7.2 Replay Transmitter, §4.3 の TX 不変条件)
 //
-//   spear-replay <sigmf base> [--source b210|synthetic] [--tx-gain dB] [--port TRXA|TRXB] [--loops N]
+//   spear-replay <sigmf base> [--source b210|synthetic] [--tx-atten dB] [--port TRXA|TRXB] [--loops N]
 //                [--serial S] [--freq-err-ppm P] [--idle-s S] [--seconds S] --arm
 //
 // 録音の center / rate で装置を送信に構成し、録音を N 回つなげて 1 つの burst として送る(既定 1 回)。
-// 送信ゲインの既定は 0 dB(最小)。必ず減衰器 / ダミーロードを付けた状態で使う。
+// 送信の減衰(--tx-atten、0 = 最大出力)の既定は全範囲 = 最小出力。必ず減衰器 / ダミーロードを付けた状態で使う。
 // --arm: Core の TX MASTER を ARMED にする。付けなければ Core が送信を拒否する(GUI のメニューの TX MASTER と同じ仕組み)。
 // --seconds: 先頭から S 秒分だけ送る(長い録音の一部で確かめる)。
 // --idle-s: burst の前に streamer を開いたまま待つ秒数(burst の外で何も出ていないことを受信機で確かめる用)。
@@ -91,7 +91,7 @@ private:
 
 int main(int argc, char** argv) {
     if (argc < 2 || argv[1][0] == '-') {
-        std::fprintf(stderr, "usage: %s <sigmf base> [--source b210|synthetic] [--tx-gain dB] [--port TRXA|TRXB] [--loops N] [--serial S] [--freq-err-ppm P] [--idle-s S] [--seconds S] --arm\n", argv[0]);
+        std::fprintf(stderr, "usage: %s <sigmf base> [--source b210|synthetic] [--tx-atten dB] [--port TRXA|TRXB] [--loops N] [--serial S] [--freq-err-ppm P] [--idle-s S] [--seconds S] --arm\n", argv[0]);
         return 2;
     }
     std::signal(SIGINT, on_sigint);
@@ -103,13 +103,13 @@ int main(int argc, char** argv) {
     cfg.direction = Direction::TX;
     cfg.sample_rate = probe.meta().sample_rate;
     cfg.center_freq = probe.meta().captures.empty() ? 0.0 : probe.meta().captures.front().frequency;
-    cfg.tx_gain = std::atof(arg(argc, argv, "--tx-gain", "0"));
+    cfg.tx_atten = std::atof(arg(argc, argv, "--tx-atten", std::to_string(kTxAttenFullRangeDb).c_str()));   // 既定 = 最小出力
     if (!parse_rf_port(arg(argc, argv, "--port", "TRXA"), &cfg.tx_port)) { std::fprintf(stderr, "unknown port\n"); return 2; }
     const int loops = std::max(1, std::atoi(arg(argc, argv, "--loops", "1")));
     const double idle_s = std::atof(arg(argc, argv, "--idle-s", "0"));
-    std::printf("file: %s  %.6f MHz  %.0f sps  %llu samples (%.2f s) x %d, tx_gain %.2f dB, port %s\n", base.c_str(), cfg.center_freq / 1e6,
+    std::printf("file: %s  %.6f MHz  %.0f sps  %llu samples (%.2f s) x %d, tx_atten %.2f dB, port %s\n", base.c_str(), cfg.center_freq / 1e6,
                 cfg.sample_rate, static_cast<unsigned long long>(probe.total_samples()), probe.total_samples() / cfg.sample_rate, loops,
-                cfg.tx_gain, std::string(rf_port_name(cfg.tx_port)).c_str());
+                cfg.tx_atten, std::string(rf_port_name(cfg.tx_port)).c_str());
     probe.close();
 
     Core core(".");

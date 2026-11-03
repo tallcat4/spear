@@ -211,13 +211,13 @@ void B210LiveSource::tear_down(bool device_lost) {
     st_.streaming = false;
 }
 
-bool B210LiveSource::set_tx_gain(double db) {
+bool B210LiveSource::set_tx_atten(double db) {
     {
         std::lock_guard lk(cfg_mu_);
-        cfg_.tx_gain = db;   // 宣言は即時。適用は送信 thread が TxGain event で報告
+        cfg_.tx_atten = db;   // 宣言は即時。適用は送信 thread が TxAtten event で報告
     }
     state_version_++;
-    tx_gain_pending_ = true;
+    tx_atten_pending_ = true;
     return true;
 }
 
@@ -635,14 +635,14 @@ bool B210LiveSource::tx_loop() {
         if (events_) events_->emit(EventKind::TxBurst, "radio.tx", why, here(), 0);
     };
     while (!stop_req_) {
-        if (tx_gain_pending_.exchange(false)) {
-            const double g = config().tx_gain;
+        if (tx_atten_pending_.exchange(false)) {
+            const double a = config().tx_atten;
             std::string err;
-            if (radio_.set_tx_gain(g, &err)) {
-                char d[64];
-                std::snprintf(d, sizeof d, "tx_gain=%.2f dB", radio_.actual_tx_gain());
-                if (events_) events_->emit(EventKind::TxGain, "radio.tx", d, here(), std::llround(radio_.actual_tx_gain()));
-            } else if (events_) events_->emit(EventKind::Error, "radio.tx", "tx gain not applied: " + err, here());
+            if (radio_.set_tx_atten(a, &err)) {
+                char d[80];
+                std::snprintf(d, sizeof d, "tx_atten=%.2f dB (uhd tx gain %.2f)", radio_.actual_tx_atten(), radio_.actual_tx_gain());
+                if (events_) events_->emit(EventKind::TxAtten, "radio.tx", d, here(), std::llround(radio_.actual_tx_atten()));
+            } else if (events_) events_->emit(EventKind::Error, "radio.tx", "tx atten not applied: " + err, here());
             state_version_++;
         }
         auto ob = q.pop(std::chrono::milliseconds(50));

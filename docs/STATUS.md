@@ -111,7 +111,7 @@ IQ → DSP → 軟判定 FEC → Tracker → ソルバーの回帰試験では�
    - M3 の順序: ADS-B より先に STD-T98 を実装した。
    - §7.1 の宣言項目 `antenna` は `RfConfig::port`(装置パネルの端子名)で表す。UHD の frontend(subdev)と antenna への分解は Radio だけが行う。
    - §6 の TX Sink: `B210LiveSink` を別の物にせず、`B210LiveSource` の送信 session にした(装置は 1 台で、開くのは Radio だけ)。装置なしの Source では送信先が `Sink`(既定 `NullSink`)。
-     送信の宣言は `RfConfig::direction / tx_gain / tx_port`(受信の gain / port と別)。方向は App の定義(`DIRECTION`)が決める。
+     送信の宣言は `RfConfig::direction / tx_atten / tx_port`(受信の gain / port と別。送信の強さは最大出力からの減衰 [dB] で宣言し、UHD の gain への換算は Radio だけ)。方向は App の定義(`DIRECTION`)が決める。
    - TX MASTER(マスターアーム)は要件に無い。Core が所有し、SAFE なら全 App の送信を拒否する(2026-11-04、意図しない送信の防止)。
 
 8. JR TRAIN RADIO(2026-10-15 移植、実機なし): Arch でのビルド・テスト(参照ベクトルは Mac 生成。厳密比較には refgen を Arch で再実行)、実機での同期・音声・電文・負荷・画面の確認、golden の録音(手順は `docs/apps/jr_train.md`「実機テストの手順」)。

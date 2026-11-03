@@ -86,12 +86,14 @@ public:
     uhd::rx_streamer::sptr make_rx_streamer(std::string* err = nullptr);
 
     // ---- 送信(direction == TX)----
-    // 手順 4 の送信版。端子(tx_port = TRXA / TRXB)→ rate / freq / tx_gain / bandwidth を適用し、TX の lo_locked を確認する。
+    // 手順 4 の送信版。端子(tx_port = TRXA / TRXB)→ rate / freq / tx_atten / bandwidth を適用し、TX の lo_locked を確認する。
     // 範囲外・coercion は受信と同じく失敗(黙って丸めない)。個体の LO 誤差は受信と同じ TCXO なので同じ補正をかける
     bool tune_tx(const RfConfig& cfg, std::string* err = nullptr);
     uhd::tx_streamer::sptr make_tx_streamer(std::string* err = nullptr);
-    // 運転中の送信ゲイン変更(送信 thread から)。範囲外・coercion は false(装置の値は変えない)
-    bool set_tx_gain(double db, std::string* err = nullptr);
+    // 送信の減衰 [dB](0 = 最大出力)を UHD の TX gain(= gain range の上限 − 減衰)に換算して適用する。宣言を UHD の gain へ写すのはここだけ。
+    // 運転中は送信 thread から。範囲外・coercion は false(装置の値は変えない)
+    bool set_tx_atten(double db, std::string* err = nullptr);
+    double tx_atten_max() const { return tx_atten_max_; }   // 開いた装置の TX gain range の幅(開く前は kTxAttenFullRangeDb)
     // 送信を終える前に出力を最小にする(close 後も AD9361 の TX 経路が LO を漏らしうるため。漏れは実測で確かめる)
     void quiesce_tx();
     bool read_tx_lo_locked(bool* locked);   // 送信中に安全に読める(rx の lo_locked と同じ制御経路)
@@ -129,7 +131,8 @@ public:
     double actual_rx_freq() const { return actual_freq_; }   // 真の周波数(LO 補正を戻した値)
     double actual_tx_rate() const { return actual_tx_rate_; }
     double actual_tx_freq() const { return actual_tx_freq_; } // 真の周波数(LO 補正を戻した値)
-    double actual_tx_gain() const { return actual_tx_gain_; }
+    double actual_tx_gain() const { return actual_tx_gain_; }    // UHD の値(診断用)
+    double actual_tx_atten() const { return actual_tx_atten_; }
     LoCorrection lo_correction() const { return LoCorrection{opt_.freq_err_ppm}; }
 
 private:
@@ -144,7 +147,8 @@ private:
     uhd::usrp::multi_usrp::sptr usrp_;
     RadioInfo info_;
     double actual_rate_ = 0, actual_freq_ = 0;
-    double actual_tx_rate_ = 0, actual_tx_freq_ = 0, actual_tx_gain_ = 0;
+    double actual_tx_rate_ = 0, actual_tx_freq_ = 0, actual_tx_gain_ = 0, actual_tx_atten_ = kTxAttenFullRangeDb;
+    double tx_atten_max_ = kTxAttenFullRangeDb;
     mutable std::mutex st_mu_;
     DeviceStatus st_;
     SelfCheck self_check_;

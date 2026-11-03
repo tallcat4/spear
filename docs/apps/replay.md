@@ -10,7 +10,7 @@
 2. メニュー右上の **TX MASTER** をタップし、確認で ARM。ARMED の間はステータスバーに赤い `ARMED` が出る(タップで即 SAFE)。
 3. IQ REPLAY TX を起動 → FILE で録音を選ぶ(App は止めずに、Core が録音の center / rate で装置を構成し直す。`Core::reconfigure`)。
 4. TRANSMIT で録音の先頭から 1 つの burst として送る。終わり(LOOP OFF)か STOP で burst を閉じる。
-   TX GAIN は運転中に変えられる。保存しないので、プロセスを起動するたびに 0 dB から(FILE / TX PORT による App の再起動では前の値を引き継ぐ)。
+   TX ATTEN(送信の減衰量。0 = 最大出力、89.75 dB = 最小)は運転中に変えられる。保存しないので、プロセスを起動するたびに 0 dB から(FILE / TX PORT による App の再起動では前の値を引き継ぐ)。
 
 録音一覧は `record_dir`(既定 `~/spear/recordings`)と、site.conf の `replay.dirs=<dir>:<dir>`(golden 等)を再帰的に探す。新しい順。
 
@@ -30,7 +30,9 @@ burst の外の LO の漏れが端子に出ていないことは、受信機で�
   App は Source より先に始まる(`Core::run_app`)ので、装置の open(数秒)の間も write は待ち続けなければならない
   (最初は 1 s で諦めていて、実機で 32 block だけ送って underflow になった。`TxSource.ProducerStartedBeforeSourceWaitsForIt`)。
   block は producer の BlockPool を指すので、App は pool を App と同じ寿命にする(`close()` は残りを捨てる)。
-* `Source::tx_input()` / `set_tx_gain()`、`Core::tx()`、`RfConfig::tx_gain / tx_port`(受信の gain / port とは別。草案の受信ゲインを送信に流用しない)。
+* `Source::tx_input()` / `set_tx_atten()` / `tx_atten_max()`、`Core::tx()`、`RfConfig::tx_atten / tx_port`(受信の gain / port とは別。草案の受信ゲインを送信に流用しない)。
+  送信の強さは「最大出力からの減衰 [dB]」で宣言する。UHD の TX gain(= gain range の上限 − 減衰)への換算と範囲の照合は Radio だけが行い、
+  App・画面・ツールは装置の数値(B210 の 89.75 など)を持たない(2026-11-04、ユーザーの指摘で gain から変更)。
 * `B210LiveSource` の送信 session(`run_tx`): probe → open → `tune_tx` → streamer → 定常(`tx_loop`)。`recv_async_msg` を別 thread で読み、
   UNDERFLOW / UNDERFLOW_IN_PACKET / SEQ_ERROR / TIME_ERROR / BURST_ACK を区別したまま 100 ms ごとにまとめて event にする。TX の lo_locked も監視。
   受信は流さない(全二重は別 session として後から足せる形)。
@@ -43,12 +45,12 @@ burst の外の LO の漏れが端子に出ていないことは、受信機で�
   却下の理由はシェルがどの App のページでも上部に赤で出す。
 * `SigmfReader`(`RecordingSource` から抽出。録音を読む 2 つ目の利用者)。
 * `Spear.Input` の `ListEntry`(8 件を超える選択。ページ送り)と `ui.askList`。
-* `SystemModel`: `txMode / txGain / txPort / transmitting / txUnderflows / txArmed`。ステータスバーは送信 App の間 `TX <gain>`(送信中は赤で塗る)と送信端子、UNDF を出す。
+* `SystemModel`: `txMode / txAtten / txAttenMax / txPort / transmitting / txUnderflows / txArmed`。ステータスバーは送信 App の間 `TX ATT <減衰>`(送信中は赤で塗る)と送信端子、UNDF を出す。
 * `EventKind::TxBurst / TxGain`。
 * `tools/spear-replay`: ヘッドレス送信(`--arm` が無ければ Core が拒否する)。
 
 ## 実機(2026-11-04、FZ-G2 + B210 5IWG5D5、TRXA → 減衰器 → STD-T99 機)
-`spear-replay ~/spear/golden/std_t99/ch18 --tx-gain 0 --port TRXA --seconds 30 --freq-err-ppm <個体の LO 誤差>`:
+`spear-replay ~/spear/golden/std_t99/ch18 --tx-atten 89.75 --port TRXA --seconds 30 --freq-err-ppm <個体の LO 誤差>`:
 146.734375 MHz(CH18 は +250 kHz)、4 Msps、120,000,000 sample を 1 burst、underflow 0、seq_error 0、burst ack。
 **STD-T99 機で受信できた**(自分の送信機の録音を送り返したもの)。送信キューは常に 32/32(読み込みが装置より速い)。
 
@@ -57,6 +59,9 @@ burst の外の LO の漏れが端子に出ていないことは、受信機で�
 2. GUI の App からの実機送信(ヘッドレスでは確認済み)。STOP の遅れはキュー分(32 block = 4 Msps で約 130 ms)。即時に止めるのは TX MASTER の SAFE。
 3. 録音の欠落・retune は表示だけで、連続した IQ として最初の周波数で送る(送信の途中で周波数は変えない)。
 4. 送信ゲインの上限は装置の範囲(B210 で 89.75 dB)。現場の上限を site.conf で決める仕組みは無い。
+   UHD の TX gain は出力(dBm)ではなく相対値: AD9361 の TX 減衰 = 89.75 − gain(UHD `ad9361_device.cpp`、0.25 dB 刻み)。
+   宣言・画面・ステータスバーとも減衰量(TX ATTEN、最大出力からの下げ幅)で扱い、UHD の gain は Radio の event / ログにだけ出る。出力の絶対値は、個体の周波数ごとの
+   最大出力(Ettus の B210 仕様は 3.5 GHz 以下で 10 dBm 以上。互換機は未測定)と録音の IQ レベル(dBFS)で決まるので、較正するまで出さない。
 5. 送信中の spectrum は送っている IQ(App 内の `replay.tx`)を表示するもので、空中の信号ではない。
 6. `--source file:<録音>` で起動すると、`RecordingSource` は再生する録音の center / rate を変えないので、送信する録音が同じでない限り
    `configCurrent` が false のままで TRANSMIT できない(開発時だけの制約)。

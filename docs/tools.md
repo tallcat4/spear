@@ -15,7 +15,7 @@
 - RF の center / rate は各 App が決める(汎用 App は FREQ / RATE キーを持つ)。メニューで設定するのは装置共通の GAIN(AGC 可。AGC SLOW / AGC FAST を選ぶ)と RX PORT(受信端子)だけ。右側の欄をタップして開く。メニューのソフトキーは EXIT だけ。
 - 画面の設計は `docs/gui/DESIGN.md`。
 - 送信はメニュー右上の TX MASTER を ARM したときだけ(起動時は必ず SAFE)。ARMED の間はステータスバーに赤い ARMED が出て、タップで即 SAFE。
-  ヘッドレスの送信は `build/tools/spear-replay <sigmf base> --arm [--tx-gain dB] [--port TRXA] [--seconds S] [--freq-err-ppm P]`(`--arm` が無ければ Core が拒否する)。
+  ヘッドレスの送信は `build/tools/spear-replay <sigmf base> --arm [--tx-atten dB] [--port TRXA] [--seconds S] [--freq-err-ppm P]`(`--arm` が無ければ Core が拒否する)。
 
 ### デスクトップへの登録
 
