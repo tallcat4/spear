@@ -16,6 +16,7 @@ S.P.E.A.R. は、タブレット PC(Panasonic FZ-G2)と USRP B210 を、持ち�
 | ADS-B | 航空機の位置を受信して一覧と地図に出す | [adsb.md](adsb.md) |
 | SLPR 20CH RX | 特定小電力トランシーバー 20 チャネルを同時に受信して聞く | [slpr.md](slpr.md) |
 | JR TRAIN RADIO | JR 在来線デジタル列車無線を全チャネル同時に受信して、音声とデータを見る(開発中) | [jr_train.md](jr_train.md) |
+| STD-T99 DIGICOM | デジタル小電力コミュニティ無線(デジコミ)の 1 チャネルを受信し、呼の情報と音声を出す | [std_t99.md](std_t99.md) |
 
 ## 用意するもの
 

@@ -15,4 +15,5 @@ TSAN_OPTIONS="halt_on_error=1" ./build-ci-tsan/apps/adsb/tests/spear_adsb_tests
 TSAN_OPTIONS="halt_on_error=1" ./build-ci-tsan/apps/slpr/tests/spear_slpr_tests
 TSAN_OPTIONS="halt_on_error=1" ./build-ci-tsan/apps/jr_train/tests/spear_jr_train_tests
 TSAN_OPTIONS="halt_on_error=1" ./build-ci-tsan/apps/jr_train/voice/tests/spear_jr_train_voice_tests
+TSAN_OPTIONS="halt_on_error=1" ./build-ci-tsan/apps/std_t99/tests/spear_std_t99_tests --gtest_filter='StdT99Voice.*:StdT99Call.*:StdT99Spec.VectorsDecodeWithValidCrc'   # 復号スレッド(VoiceWorker)
 echo "CI OK"

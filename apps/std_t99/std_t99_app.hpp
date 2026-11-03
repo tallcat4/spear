@@ -153,7 +153,7 @@ private:
     std_t99::MonitorStatus status_;
     QString tune_warning_;
     std::atomic<double> dsp_load_{0};
-    uint64_t cur_generation_ = 0;            // DSP thread 専用(event の provenance)
+    std::atomic<uint64_t> cur_generation_{0};   // DSP thread が書き、復号スレッドも読む(std_t99.audio のブロックの generation)
 
     appfw::ViewSource band_view_, channel_view_;
     appfw::TraceSource eye_;

@@ -8,12 +8,14 @@
 #include "monitor.hpp"
 #include "spec_iq.hpp"
 #include "voice/tokuder.hpp"
+#include "voice/worker.hpp"
 
 #include "spear/core/sigmf.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cstdlib>
+#include <mutex>
 #include <fstream>
 #include <random>
 
@@ -171,6 +173,35 @@ TEST(StdT99Spec, NoFramesFromNoise) {
     for (auto& x : noise) x = {g(rng), g(rng)};
     const auto c = run(noise, kReceiverRate, 0);
     EXPECT_EQ(c.frames.size(), 0u);
+}
+
+TEST(StdT99Voice, WorkerThreadGivesTheSameAudio) {
+    // App の経路(DSP thread → VoiceWorker の専用スレッド)と、その場で復号した音声がサンプル単位で一致する。
+    // 励振の雑音は Decoder ごとに同じ種なので決定的。TSan でもこのテストを回す(scripts/ci.sh)
+    const auto iq = spec::spec_iq(kReceiverRate, 180, {"1-1", "6-1"});
+    const auto direct = run(iq, kReceiverRate, 0).audio;
+    std::vector<float> threaded;
+    std::mutex mu;
+    std::vector<bool> plays;
+    {
+        VoiceWorker worker([&](std::span<const float> pcm, bool play) {
+            std::lock_guard<std::mutex> lk(mu);
+            threaded.insert(threaded.end(), pcm.begin(), pcm.end());
+            plays.push_back(play);
+        });
+        MonitorObserver o;
+        o.voice = [&](const VoiceCommand& c) { worker.submit(c); };
+        Monitor m(kReceiverRate, 0, o);
+        for (std::size_t pos = 0; pos < iq.size(); pos += 1000)
+            m.process(std::span<const cf32>(iq.data() + pos, std::min<std::size_t>(1000, iq.size() - pos)), pos);
+        m.flush_voice();
+        worker.drain();
+        EXPECT_EQ(worker.dropped(), 0u);
+    }
+    ASSERT_FALSE(direct.empty());
+    ASSERT_EQ(threaded.size(), direct.size());
+    for (std::size_t i = 0; i < direct.size(); ++i) ASSERT_EQ(threaded[i], direct[i]) << "sample " << i;
+    for (bool p : plays) EXPECT_TRUE(p) << "全受信(モニター)ではすべて再生";
 }
 
 TEST(StdT99Call, SelectiveCallTable) {
