@@ -46,8 +46,9 @@ std::optional<std::string> normalize_device_id(int maker, int64_t individual);
 class CallMonitor {
 public:
     static constexpr std::size_t kHistory = 100;
-    // 受信したフレームごとに呼ぶ(Session::update の後)。戻り値: このフレームで新しい送信が始まったか
-    bool frame(const Frame& f, const Session& session, const std::vector<Decoded>& decoded, double utc, uint64_t rx_index);
+    // 受信したフレームごとに呼ぶ(Session::update の後)。戻り値: このフレームで新しい送信が始まったか。
+    // t: 受信機の時刻 [s](フレームの間隔の判定。壁時計は録音の復号では使えない)、utc: 表示用の壁時計
+    bool frame(const Frame& f, const Session& session, const std::vector<Decoded>& decoded, double t, double utc, uint64_t rx_index);
     const std::optional<CallInfo>& current() const { return call_; }
     const std::deque<CallInfo>& history() const { return history_; }   // 新しい順(現在の呼を含む)
     void reset() { call_.reset(); history_.clear(); count_ = 0; }
@@ -55,6 +56,7 @@ public:
 private:
     void remember(const CallInfo& c);
     std::optional<CallInfo> call_;
+    double last_t_ = -1e9;
     std::deque<CallInfo> history_;
     uint64_t count_ = 0;
 };

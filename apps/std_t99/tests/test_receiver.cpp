@@ -3,14 +3,18 @@
 //     原本は SDR# の IQ レート(37.5〜250 kHz)で試していた。SPEAR では App の 4 Msps(LO から 250 kHz)と、Front を素通しにした 100 kHz
 //   * 80 ms 格子に対する開始位置 20 通り、雑音だけ 60 s でフレームが出ないこと
 //   * 選択呼出の着信判定(表 Annex 2-4-14、受信接続試験 表 Annex 2-7-6)、チャネル表
-// 実録音の golden はまだ無い(実機の受信は未確認。docs/apps/std_t99.md)。
+//   * golden: 実機の録音(~/spear/golden/std_t99/ch18.sigmf-*、2026-11-03、CH18、4 Msps)。無ければ skip
 #include "channels.hpp"
 #include "monitor.hpp"
 #include "spec_iq.hpp"
 #include "voice/tokuder.hpp"
 
+#include "spear/core/sigmf.hpp"
+
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <fstream>
 #include <random>
 
 using namespace spear;
@@ -134,15 +138,15 @@ TEST(StdT99Spec, ReceivesAt4MspsWithLoOffset) {
     const auto c = run(iq, rate, lo_offset);
     check_spec(c, "4 Msps");
     EXPECT_TRUE(c.status.have_offset);
-    // 表示用のずれ(同期中の弁別器出力の平均)は原本のままで、真値の 6〜7 割に出る(100 kHz でも同じ。docs/apps/std_t99.md「既知の問題」)。
-    // 復号は各フレームが同期語の DC を差し引くので影響しない。ここでは符号だけを見る
-    EXPECT_GT(c.status.freq_offset_hz, 30);
+    // 表示用のずれ(同期語の DC × 315 Hz)。原本の弁別器出力の平均は 6〜7 割に出ていた
+    EXPECT_NEAR(c.status.freq_offset_hz, 180, 30);
 }
 
 TEST(StdT99Spec, ReceivesAt100kHzWithCarrierOffsets) {
     for (double offset : {-600.0, -350.0, 0.0, 420.0}) {
         const auto c = run(spec::spec_iq(kReceiverRate, offset), kReceiverRate, 0);
         check_spec(c, "100 kHz offset " + std::to_string(offset));
+        EXPECT_NEAR(c.status.freq_offset_hz, offset, 30) << "offset " << offset;
     }
 }
 
@@ -197,4 +201,47 @@ TEST(StdT99Call, ChannelTable) {
     EXPECT_EQ(find_channel(146934375), 10);
     EXPECT_EQ(find_channel(146000000), std::nullopt);
     EXPECT_DOUBLE_EQ(channel_freq_hz(kCallingChannel), 146984375.0);
+}
+
+// ---- golden: 実機の録音 ----
+// 2026-11-03 に FZ-G2 + B210(TRXA、AGC slow、LO = CH18 − 250 kHz、LO 補正なし)で録った 118 s。
+// 送信機は 1 台(034-0010744、発信者名 TallCat、一斉呼出): 音声 4 回(うち 1 回は 0.3 s)と緊急通信 1(位置通知)2 回。
+// 同期バーストは 1 送信に音声で 2 個、緊急で 6 個続く。それを 1 送信にまとめること(CallMonitor)もここで確かめる。
+TEST(StdT99Golden, LiveRecordingCh18) {
+    std::string base = std::string(std::getenv("HOME") ? std::getenv("HOME") : "") + "/spear/golden/std_t99/ch18";
+    sigmf::Meta meta;
+    std::string err;
+    if (!sigmf::read(base, meta, &err)) GTEST_SKIP() << "golden が無い: " << base;
+    ASSERT_FALSE(meta.captures.empty());
+    const double shift = channel_freq_hz(18) - meta.captures.front().frequency;
+    uint64_t frames = 0, crc = 0;
+    MonitorObserver o;
+    o.frame = [&](const FrameEvent& e) { ++frames; crc += e.frame.crc_ok(); };
+    Monitor mon(meta.sample_rate, shift, o);
+    std::ifstream f(sigmf::data_path(base), std::ios::binary);
+    std::vector<sc16> raw(1 << 16);
+    std::vector<cf32> iq(raw.size());
+    uint64_t index = 0;
+    while (f.read(reinterpret_cast<char*>(raw.data()), static_cast<std::streamsize>(raw.size() * sizeof(sc16))) || f.gcount() > 0) {
+        const auto n = static_cast<std::size_t>(f.gcount()) / sizeof(sc16);
+        for (std::size_t i = 0; i < n; ++i) iq[i] = cf32(raw[i].real() / 32768.f, raw[i].imag() / 32768.f);
+        mon.process(std::span<const cf32>(iq.data(), n), index);
+        index += n;
+    }
+    EXPECT_EQ(frames, 290u);
+    EXPECT_EQ(crc, 290u);
+    const auto& h = mon.calls().history();
+    ASSERT_EQ(h.size(), 6u);
+    int emergency = 0;
+    for (const auto& c : h) {
+        EXPECT_EQ(c.caller.value_or(""), "034-0010744");
+        EXPECT_EQ(c.call_type(), "ALL CALL");
+        EXPECT_TRUE(c.ended);
+        emergency += c.call_control == 1;
+    }
+    EXPECT_EQ(emergency, 2);
+    EXPECT_EQ(h.back().name, "TallCat") << "最初の送信(履歴は新しい順)";
+    const auto st = mon.status();
+    // LO 補正なしの録音: この B210 の +2.93 ppm × 146.98 MHz = +431 Hz に送信機側の +36 Hz(+0.25 ppm)
+    EXPECT_NEAR(st.freq_offset_hz, 467, 15);
 }

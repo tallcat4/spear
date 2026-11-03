@@ -74,7 +74,7 @@ struct ChannelMetrics {
     bool   locked = false;
     uint64_t frames = 0, crc_frames = 0, locks = 0, flywheel_frames = 0, dropped_frames = 0;
     double sps = 0;
-    double freq_offset_hz = 0;          // discriminator DC while locked; add to --freq-error
+    double freq_offset_hz = 0;          // SPEAR: 同期語の DC × 偏移(搬送波のずれ、表示用)
     bool   have_offset = false;
 };
 

@@ -101,19 +101,13 @@ void Receiver::process(std::span<const spear::cf32> in, uint64_t first_index) {
     iq_up_.resize(bin.size() * static_cast<std::size_t>(cfg_.resamp2) + 2);
     const std::size_t n2 = up_.process(bin, iq_up_);
     disc_.resize(n2);
-    double disc_sum = 0;
     for (std::size_t i = 0; i < n2; ++i) {
         const spear::cf32 p = iq_up_[i] * std::conj(quad_prev_);
         quad_prev_ = iq_up_[i];
         disc_[i] = std::atan2(p.imag(), p.real()) * quad_gain_;
-        disc_sum += disc_[i];
     }
-    // Whitened 4FSK has no DC, so the discriminator mean while locked is the carrier offset
-    if (m.locked && n2) {
-        const double offset = disc_sum / static_cast<double>(n2) * cfg_.fsk_dev_hz;
-        m.freq_offset_hz = m.have_offset ? 0.98 * m.freq_offset_hz + 0.02 * offset : offset;
-        m.have_offset = true;
-    }
+    // SPEAR: 搬送波のずれの表示は同期語の DC(下の on_candidate)から求める。原本は同期中の弁別器出力のブロック平均を
+    // IIR で追っていて、真値の 6〜7 割に出ていた(2026-11-03、試験信号と実機録音で確認)
     filt_.resize(n2 + 1);
     const std::size_t n3 = rrc_.process(std::span<const float>(disc_.data(), n2), filt_);
     for (std::size_t i = 0; i < n3; ++i) filt_[i] *= cfg_.post_filt_gain;
@@ -132,7 +126,15 @@ void Receiver::process(std::span<const spear::cf32> in, uint64_t first_index) {
     auto on_candidate = [&](const SyncCandidate& cand) {
         // Carrier offset appears as DC on the symbols (±2.5 ppm = ±370 Hz at 147 MHz, more than one 315 Hz level).
         // The sync word sums to zero, so its window mean is the DC; a flywheel frame reuses the last one.
-        if (cand.sync_ok) frame_dc_ = static_cast<float>(cand.dc);
+        if (cand.sync_ok) {
+            frame_dc_ = static_cast<float>(cand.dc);
+            // SPEAR: 同期語の DC [シンボル単位] → 搬送波のずれ [Hz]。弁別器の出力は 1 = 315 Hz で、RRC(DC 利得 1)の後に
+            // post_filt_gain × post_sync_gain(= 1.15)が掛かっている。シンボルの判定点(±1 / ±3)はパルスの山の高さで合わせてあるので、
+            // DC はこの利得で割り戻す(試験信号で −600〜+420 Hz のずれがすべて 1.15 倍に出たことから)
+            const double offset = cand.dc / (cfg_.post_filt_gain * cfg_.post_sync_gain) * cfg_.fsk_dev_hz;
+            m.freq_offset_hz = m.have_offset ? 0.8 * m.freq_offset_hz + 0.2 * offset : offset;
+            m.have_offset = true;
+        }
         std::vector<float> corrected(cand.symbols.begin(), cand.symbols.end());
         for (auto& s : corrected) s -= frame_dc_;
         Frame f = decode_frame(corrected);
@@ -189,7 +191,8 @@ void Receiver::eye(std::size_t n3) {
             const double t = start - static_cast<double>(eye_base_) + 2.0 * sps * k / (eye_points_ - 1);
             const auto i0 = static_cast<std::size_t>(t);
             const double mu = t - static_cast<double>(i0);
-            eye_trace_[static_cast<std::size_t>(k)] = (eye_buf_[i0] + static_cast<float>(mu) * (eye_buf_[i0 + 1] - eye_buf_[i0])) * cfg_.post_sync_gain;
+            // SPEAR: 判定と同じく同期語の DC(搬送波のずれ)を引いて描く。引かないと、ずれの分だけアイが上下にずれる
+            eye_trace_[static_cast<std::size_t>(k)] = (eye_buf_[i0] + static_cast<float>(mu) * (eye_buf_[i0 + 1] - eye_buf_[i0])) * cfg_.post_sync_gain - frame_dc_;
         }
         on_eye_(eye_trace_);
     }

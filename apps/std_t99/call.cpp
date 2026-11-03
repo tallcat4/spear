@@ -46,9 +46,18 @@ void CallMonitor::remember(const CallInfo& c) {
     if (history_.size() > kHistory) history_.pop_back();
 }
 
-bool CallMonitor::frame(const Frame& f, const Session& session, const std::vector<Decoded>& decoded, double utc, uint64_t rx_index) {
-    // 同期バーストの PICH1(CRC OK)で送信が始まる。途中から聞いたフレームも 1 つの呼にする。終話の後の同期バーストも新しい呼
-    const bool new_call = f.sync_burst() && f.halves[0].control && f.halves[0].control->crc_ok;
+bool CallMonitor::frame(const Frame& f, const Session& session, const std::vector<Decoded>& decoded, double t, double utc, uint64_t rx_index) {
+    // 同期バーストの PICH1(CRC OK)で送信が始まる。途中から聞いたフレームも 1 つの呼にする。終話の後の同期バーストも新しい呼。
+    // 実機は 1 送信の頭に同期バーストを続けて送る(2026-11-03 の実機: 音声 2 個、緊急の位置通知 6 個)。前の呼が終話しておらず、
+    // フレームが途切れず(0.25 s 以内 = 80 ms 間隔の 3 フレーム未満)、発信者が同じなら同じ送信の続き。
+    // std-t99-receiver-sharp(ReceiverWorker.cs)は同期バーストごとに呼を分けていたので、1 送信が履歴の 2〜7 件に分かれていた
+    bool new_call = f.sync_burst() && f.halves[0].control && f.halves[0].control->crc_ok;
+    if (new_call && call_ && !call_->ended && t - last_t_ < 0.25) {
+        const auto& s = session.state();
+        const auto caller = s.caller ? std::optional<std::string>(s.caller->str()) : std::nullopt;
+        if (!caller || !call_->caller || *caller == *call_->caller) new_call = false;
+    }
+    last_t_ = t;
     bool started = false;
     if (!call_ || new_call || (call_->ended && f.sync_burst())) {
         if (call_) remember(*call_);
@@ -78,9 +87,9 @@ bool CallMonitor::frame(const Frame& f, const Session& session, const std::vecto
     if (s.gps_time) c.gps_time = s.gps_time;
     for (const auto& d : decoded) {
         if (d.channel == "PICH2") c.kind = d.message.type;
-        const int t = d.message.type;
-        if ((t == kRemoteRequest || t == kLocationRequest || t == kDeviceIdRequest) && std::find(c.requests.begin(), c.requests.end(), t) == c.requests.end())
-            c.requests.push_back(t);
+        const int type = d.message.type;
+        if ((type == kRemoteRequest || type == kLocationRequest || type == kDeviceIdRequest) && std::find(c.requests.begin(), c.requests.end(), type) == c.requests.end())
+            c.requests.push_back(type);
     }
     remember(c);
     return started;

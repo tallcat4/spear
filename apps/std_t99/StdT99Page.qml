@@ -138,15 +138,15 @@ Item {
                 x: Theme.pad; y: 30; spacing: 6
                 Row {
                     spacing: 6
-                    Readout { label: "LATITUDE"; value: page.call.hasPosition ? page.call.latText : "—"; width: 300; height: 58; valueColor: Theme.textBright }
-                    Readout { label: "LONGITUDE"; value: page.call.hasPosition ? page.call.lonText : "—"; width: 310; height: 58; valueColor: Theme.textBright }
-                    Readout { label: "ALTITUDE"; value: page.call.hasPosition ? page.call.altitude + " m" : "—"; width: posCard.width - 2 * Theme.pad - 622; height: 58 }
+                    Readout { label: "LATITUDE"; value: !page.call.hasPosition ? "—" : page.call.gpsValid ? page.call.latText : "NO FIX"; width: 300; height: 58; valueColor: Theme.textBright }
+                    Readout { label: "LONGITUDE"; value: !page.call.hasPosition ? "—" : page.call.gpsValid ? page.call.lonText : "NO FIX"; width: 310; height: 58; valueColor: Theme.textBright }
+                    Readout { label: "ALTITUDE"; value: page.call.hasPosition && page.call.gpsValid ? page.call.altitude + " m" : "—"; width: posCard.width - 2 * Theme.pad - 622; height: 58 }
                 }
                 Row {
                     spacing: 6
-                    Readout { label: "DECIMAL"; value: page.call.hasPosition ? page.call.lat.toFixed(6) + ", " + page.call.lon.toFixed(6) : "—"; width: 300; height: 58 }
+                    Readout { label: "DECIMAL"; value: page.call.hasPosition && page.call.gpsValid ? page.call.lat.toFixed(6) + ", " + page.call.lon.toFixed(6) : "—"; width: 300; height: 58 }
                     Readout { label: "GPS TIME"; value: page.call.hasGpsTime ? page.call.gpsTime : "—"; width: 310; height: 58 }
-                    Readout { label: "SPEED / DIR"; value: page.call.hasGpsTime ? page.call.speedKn.toFixed(1) + " kn  " + page.call.direction + "°" : "—"; width: posCard.width - 2 * Theme.pad - 622; height: 58 }
+                    Readout { label: "SPEED / DIR"; value: page.call.hasGpsTime && page.call.gpsTime !== "NO FIX" ? page.call.speedKn.toFixed(1) + " kn  " + page.call.direction + "°" : "—"; width: posCard.width - 2 * Theme.pad - 622; height: 58 }
                 }
             }
         }

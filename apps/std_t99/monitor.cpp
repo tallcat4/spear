@@ -52,7 +52,7 @@ void Monitor::on_frame(const Frame& f) {
     have_frame_ = true;
     const auto decoded = session_.update(f);
     const auto idx = rx_index(f.input_sample_index);
-    const bool new_call = calls_.frame(f, session_, decoded, utc_now(), idx);
+    const bool new_call = calls_.frame(f, session_, decoded, static_cast<double>(f.input_sample_index) / kReceiverRate, utc_now(), idx);
     const std::string json = session_.json(f, decoded, static_cast<double>(f.input_sample_index) / kReceiverRate, -1);
     if (obs_.frame) obs_.frame(FrameEvent{f, decoded, json, idx, new_call});
     // 音声: 同期バーストか終話で流れを終える。通信チャネルのフレームが流れを作る。再生は待受の判定(保存は常に)
