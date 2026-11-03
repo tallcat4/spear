@@ -1,6 +1,7 @@
 // spear-jr-train-decode — 録音を JR TRAIN RADIO の Receiver に流す headless 解析(§10.4)。docs/apps/jr_train.md
 //   spear-jr-train-decode <sigmf base> [--preset east|central|west] [--center Hz] [--threads N] [--quiet]
-//                         [--decode-out DIR] [--save DIR] [--frames-dir DIR] [--export-wav out.wav] [--seconds S]
+//                         [--decode-out DIR] [--save DIR] [--frames-dir DIR] [--export-wav out.wav] [--seconds S] [--block N]
+//                         [--simulate-drops FILE [--drop-mode reset|zero]]
 //   spear-jr-train-decode --raw-sc16 FILE --rate Hz --capture-center Hz [同上]
 //   spear-jr-train-decode --wav FILE --capture-center Hz [同上]     原本と同じ IQ WAV(ステレオ float32 / PCM16、左 I・右 Q)
 // 受信するチャネル: --presets-file JSON(原本と同じ形式)、--routes id,id(路線から選ぶ。共用波も受信、--no-common で外す)
@@ -10,6 +11,8 @@
 //   --save:       GUI の保存と同じ形式(recording-…/ に WAV・raw-frames.jsonl・data-messages.jsonl)
 //   --frames-dir: チャネル・連続区間ごとに frames.bin(48 byte/フレーム)+ indices.txt(原本の `decode-frames` の入力)+ samples.txt(各フレームの radio.rx sample index(概算)と音声の訂正ビット数、不合格は -1)
 //   --export-wav: 回転・間引き後の帯域 IQ(work_rate、ステレオ float32、左 I・右 Q)。原本の `decode-wave` に渡せる
+//   --simulate-drops: ライブの取りこぼしを再現する。FILE は 1 行に「録音ファイル内の sample 位置 sample 数」。その区間を読み飛ばし、
+//                 reset(既定、App と同じ)なら作り直し、zero なら同じ長さの 0 を流す(作り直さない)
 #include "presets.hpp"
 #include "receiver.hpp"
 #include "spear/core/sigmf.hpp"
@@ -25,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace spear;
@@ -362,12 +366,21 @@ int main(int argc, char** argv) {
         return 1;
     }
     in.seekg(static_cast<std::streamoff>(data_offset));
-    const std::size_t block = 65536;
+    const std::size_t block = std::max(1, std::stoi(arg(argc, argv, "--block", "65536")));   // GUI は 16384
     std::vector<sc16> raw16(block);
     std::vector<cf32> iq(block);
     uint64_t idx = 0;
     const uint64_t limit = std::min(total_samples, seconds_limit > 0 ? static_cast<uint64_t>(seconds_limit * rate) : UINT64_MAX);
     std::size_t next_break = 0;
+    std::vector<std::pair<uint64_t, uint64_t>> drops;
+    if (const char* f = arg(argc, argv, "--simulate-drops", nullptr)) {
+        std::ifstream df(f);
+        uint64_t b = 0, n = 0;
+        while (df >> b >> n) drops.emplace_back(b, n);
+        std::sort(drops.begin(), drops.end());
+    }
+    const std::string drop_mode = arg(argc, argv, "--drop-mode", "reset");
+    std::size_t next_drop = 0;
     const auto t0 = std::chrono::steady_clock::now();
     try {
         while (idx < limit) {
@@ -376,7 +389,21 @@ int main(int argc, char** argv) {
                 if (breaks[next_break] > 0) rx.discontinuity();
                 ++next_break;
             }
+            if (next_drop < drops.size() && drops[next_drop].first <= idx) {
+                const uint64_t n = std::min(drops[next_drop].second, limit - idx);
+                ++next_drop;
+                in.seekg(static_cast<std::streamoff>(n * (dtype == DataType::ComplexInt16 ? sizeof(sc16) : sizeof(cf32))), std::ios::cur);
+                if (drop_mode == "zero") {
+                    std::vector<cf32> zeros(static_cast<std::size_t>(n));
+                    rx.process(zeros, idx);
+                } else if (drop_mode == "reset") {
+                    rx.discontinuity();
+                }
+                idx += n;
+                continue;
+            }
             if (next_break < breaks.size()) want = std::min<std::size_t>(want, breaks[next_break] - idx);
+            if (next_drop < drops.size()) want = std::min<std::size_t>(want, drops[next_drop].first - idx);
             std::size_t n = 0;
             if (dtype == DataType::ComplexInt16) {
                 in.read(reinterpret_cast<char*>(raw16.data()), static_cast<std::streamsize>(want * sizeof(sc16)));

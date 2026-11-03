@@ -187,12 +187,17 @@ void trellis(Trellis& t, const float* costs, float (*hr_out)[kStates], float (*h
                 V norm{};
                 for (std::size_t k = 0; k < 4; ++k) norm += hr[k][current] * hr[k][current] + hi[k][current] * hi[k][current];
                 const M m = norm > sixteen;
-                V root;
-                for (std::size_t l = 0; l < kLanes; ++l) root[l] = std::sqrt(norm[l]);
-                const V gain = four / root;
-                for (std::size_t k = 0; k < 4; ++k) {
-                    hr[k][current] = select(m, hr[k][current] * gain, hr[k][current]);
-                    hi[k][current] = select(m, hi[k][current] * gain, hi[k][current]);
+                // 縮めるレーンが無ければ平方根と除算を省く(選ばれない値なので結果は同じ)
+                int32_t any = 0;
+                for (std::size_t l = 0; l < kLanes; ++l) any |= m[l];
+                if (any) {
+                    V root;
+                    for (std::size_t l = 0; l < kLanes; ++l) root[l] = std::sqrt(norm[l]);
+                    const V gain = four / root;
+                    for (std::size_t k = 0; k < 4; ++k) {
+                        hr[k][current] = select(m, hr[k][current] * gain, hr[k][current]);
+                        hi[k][current] = select(m, hi[k][current] * gain, hi[k][current]);
+                    }
                 }
             }
             best[current] = cost;

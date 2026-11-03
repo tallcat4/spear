@@ -39,6 +39,7 @@ void Pipeline::discontinuity() {
     dsp_ = dsp::Demodulator(rate_, config.frequency_hz - center_);
     sync_ = protocol::Synchronizer{};
     voice_ = voice::Voice{};
+    voice_ops_.clear();
     data_.reset_assembly();
     origin_.reset();
     last_offset_.reset();
@@ -87,7 +88,7 @@ std::vector<Audio> Pipeline::frame(const protocol::Frame& f, const std::function
                                          (f.bit_offset - *origin_) / protocol::kFrameBits > UINT32_MAX)) ||
                             (last_offset_ && f.bit_offset <= *last_offset_);
     if (new_stream) {
-        voice_ = voice::Voice{};
+        voice_op({VoiceOp::Kind::Reset});
         data_.reset_assembly();
         origin_.reset();
         last_speech_.reset();
@@ -105,10 +106,12 @@ std::vector<Audio> Pipeline::frame(const protocol::Frame& f, const std::function
         last_speech_ = f.bit_offset;
         ++status_.voice_frames;
         status_.corrected_bits += speech->corrected_bits;
-        voice_.push(index, speech->payload);
+        VoiceOp op{VoiceOp::Kind::Push, index};
+        op.payload = speech->payload;
+        voice_op(op);
     } else {
         ++status_.rejected_voice;
-        voice_.push(index, std::nullopt);
+        voice_op({VoiceOp::Kind::Missing, index});
     }
     auto messages = data_.decode(f.received, f.bit_offset);
     for (const auto& m : messages) {
@@ -145,9 +148,9 @@ std::vector<Audio> Pipeline::frame(const protocol::Frame& f, const std::function
 // 音声が 100 ms 無ければ合成の先読みを吐き出す(呼の終わりの推定ではない: 監視側は 1 s の欠落まで許す)
 std::vector<Audio> Pipeline::flush_idle(uint64_t bit_offset) {
     if (last_speech_ && (bit_offset > *last_speech_ ? bit_offset - *last_speech_ : 0) >= 960) {
-        voice_.flush();
+        voice_op({VoiceOp::Kind::Flush});
         auto audio = drain();
-        voice_ = voice::Voice{};
+        voice_op({VoiceOp::Kind::Reset});
         last_speech_.reset();
         return audio;
     }
@@ -156,16 +159,44 @@ std::vector<Audio> Pipeline::flush_idle(uint64_t bit_offset) {
 
 std::vector<Audio> Pipeline::drain() {
     std::vector<Audio> audio;
-    while (auto out = voice_.read()) {
-        ++status_.audio_frames;
-        audio.push_back(Audio{config.id, status_.epoch, out->index, out->pcm});
-    }
+    voice_op({VoiceOp::Kind::Drain, 0, status_.epoch}, &audio);
     return audio;
 }
 
 std::vector<Audio> Pipeline::flush() {
-    voice_.flush();
+    voice_op({VoiceOp::Kind::Flush});
     return drain();
+}
+
+// 同期なら今すぐ実行する(例外もその場で出る: 原本と同じ)。切り離しているなら溜める
+void Pipeline::voice_op(VoiceOp op, std::vector<Audio>* out) {
+    if (deferred_) {
+        voice_ops_.push_back(op);
+        return;
+    }
+    std::vector<Audio> ignored;
+    execute(op, out ? *out : ignored);
+}
+
+void Pipeline::execute(const VoiceOp& op, std::vector<Audio>& out) {
+    switch (op.kind) {
+    case VoiceOp::Kind::Push: voice_.push(op.index, op.payload); break;
+    case VoiceOp::Kind::Missing: voice_.push(op.index, std::nullopt); break;
+    case VoiceOp::Kind::Flush: voice_.flush(); break;
+    case VoiceOp::Kind::Reset: voice_ = voice::Voice{}; break;
+    case VoiceOp::Kind::Drain:
+        while (auto o = voice_.read()) {
+            ++status_.audio_frames;
+            out.push_back(Audio{config.id, op.epoch, o->index, o->pcm});
+        }
+        break;
+    }
+}
+
+std::vector<Audio> Pipeline::run_voice(const std::vector<VoiceOp>& ops) {
+    std::vector<Audio> audio;
+    for (const auto& op : ops) execute(op, audio);
+    return audio;
 }
 
 std::vector<protocol::Message> Pipeline::take_messages() {

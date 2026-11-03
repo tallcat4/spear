@@ -4,8 +4,12 @@
 //   → [全チャネル] Pipeline(原本 pipeline.rs: 受信 DSP → フレーム同期 → 音声フレームの誤り訂正 → 音声合成 / データ電文)
 // work_rate 以降は原本(jr-conventional-line-radio-receiver)の 240 kS/s 経路と同じ。前段(回転 + FIR)は spear 側の追加。
 //
-// チャネル処理は worker スレッドに分ける(MLSE 64 状態と音声合成 × 22 波)。process() は全チャネルの処理を待ってから返り、
-// Observer はすべて呼び出し元のスレッドで、チャネルの順に(各チャネル内ではフレーム → 音声の順に)呼ぶ。
+// チャネル処理は呼び出し元と worker スレッドで分ける(MLSE 64 状態と音声合成 × 22 波)。ブロックごとに、前のブロックで重かったチャネルから順に
+// 空いたスレッドが 1 つずつ取る(通話中のチャネルが 1 つのスレッドに偏って全体を待たせない)。
+// 音声合成(1 フレーム数 ms)は DSP と別のタスクにして次のブロックで回す: あるブロックで溜めた合成への操作は次の process() で
+// 次のブロックの DSP と並行して実行し、その音声はその process() で渡す(音声は 1 ブロック遅れる。中身と順序は同期のときと同じ)。
+// process() は全タスクを待ってから返り、Observer はすべて呼び出し元のスレッドで、チャネルの順に呼ぶ。
+// 各チャネル内の順序は同期のときと同じ(前のブロックの音声 → このブロックのフレーム)。
 #pragma once
 
 #include "pipeline.hpp"
@@ -14,6 +18,7 @@
 #include "spear/dsp/stage.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -31,7 +36,7 @@ struct ReceiverConfig {
     double work_rate_target = 240e3;         // decim = floor(in_rate / これ)(1 以上)。原本の既定 240 kS/s
     double band_center_hz = 0;               // 帯域中心(チャネルのオフセットの基準)
     std::vector<ChannelConfig> channels;
-    int threads = 0;                         // 0 = 自動(ハードウェアスレッド数 − 1、チャネル数まで)
+    int threads = 0;                         // 処理するスレッド数(呼び出し元を含む)。0 = 自動(物理コア数 ≒ ハードウェアスレッド数 / 2、チャネル数まで)
 };
 
 // フレームの時刻(provenance)
@@ -57,7 +62,7 @@ public:
     double work_rate() const { return work_rate_; }
     std::size_t decim() const { return decim_; }
     int num_channels() const { return static_cast<int>(ch_.size()); }
-    int threads() const { return std::max(1, static_cast<int>(workers_.size())); }
+    int threads() const { return static_cast<int>(workers_.size()) + 1; }
     void set_observer(Observer o) { obs_ = std::move(o); }
 
     // 入力ブロック(in_rate)。first_index = radio.rx の sample index(provenance)
@@ -78,8 +83,14 @@ public:
 
 private:
     struct Channel;
-    void work(std::size_t worker);
-    void run_channel(Channel& c);
+    struct Task {
+        Channel* channel;
+        bool voice;                        // true: 前のブロックで溜めた音声合成、false: このブロックの DSP〜フレーム
+    };
+    void work();
+    void run_task(const Task& t);
+    void run_round();
+    void finish_voice(bool deliver);
 
     ReceiverConfig cfg_;
     Observer obs_;
@@ -104,6 +115,8 @@ private:
     std::size_t pending_ = 0;
     bool quit_ = false;
     std::span<const cf32> work_in_;
+    std::vector<Task> tasks_;              // このブロックで取る順(音声合成が先、次に DSP を前のブロックの処理時間の降順)
+    std::atomic<std::size_t> next_{0};
 };
 
 } // namespace spear::jr_train

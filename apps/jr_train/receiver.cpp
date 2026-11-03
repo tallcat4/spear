@@ -1,6 +1,7 @@
 #include "receiver.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -18,9 +19,10 @@ struct Receiver::Channel {
     std::unique_ptr<Pipeline> pipe;
     // worker が 1 ブロックで作ったもの(呼び出し元のスレッドで Observer に渡す)
     std::vector<FrameEvent> events;
-    std::vector<Audio> audio;
-    std::size_t worker = 0;
-    bool failed = false;
+    std::vector<Audio> audio;              // 音声合成のタスクが作ったもの(前のブロックの分)
+    std::vector<VoiceOp> voice_ops;        // このブロックで実行する合成への操作(前のブロックで溜めたもの)
+    int64_t cost_ns = 0;                   // 直前のブロックの DSP の処理時間(取る順を決める)
+    bool failed = false, voice_failed = false;
     uint64_t resets = 0;
 };
 
@@ -46,14 +48,14 @@ Receiver::Receiver(ReceiverConfig cfg) : cfg_(std::move(cfg)) {
         auto c = std::make_unique<Channel>();
         c->index = static_cast<int>(i);
         c->pipe = std::make_unique<Pipeline>(cc, work_rate_, cfg_.band_center_hz);
+        c->pipe->set_deferred_voice(true);
         ch_.push_back(std::move(c));
     }
-    const unsigned hw = std::max(2u, std::thread::hardware_concurrency());   // 0(不明)でも 1 以上
-    std::size_t n = cfg_.threads > 0 ? static_cast<std::size_t>(cfg_.threads) : hw - 1;
+    // 既定は物理コア数(SMT の兄弟スレッドまで使うと、電池駆動では全コアのクロックが下がって遅くなる。docs/apps/jr_train.md「負荷と最適化」)
+    const unsigned hw = std::max(1u, std::thread::hardware_concurrency());   // 0(不明)でも 1 以上
+    std::size_t n = cfg_.threads > 0 ? static_cast<std::size_t>(cfg_.threads) : std::max(1u, hw / 2);
     n = std::clamp<std::size_t>(n, 1, std::max<std::size_t>(1, ch_.size()));
-    for (auto& c : ch_) c->worker = static_cast<std::size_t>(c->index) % n;
-    if (n > 1)
-        for (std::size_t w = 0; w < n; ++w) workers_.emplace_back([this, w] { work(w); });
+    for (std::size_t w = 1; w < n; ++w) workers_.emplace_back([this] { work(); });
 }
 
 Receiver::~Receiver() {
@@ -65,18 +67,49 @@ Receiver::~Receiver() {
     for (auto& t : workers_) t.join();
 }
 
-void Receiver::run_channel(Channel& c) {
+// 同じチャネルの 2 つのタスクは同時に走るが、触る状態は分かれている(DSP: 合成器以外、音声: 合成器と audio_frames)。
+// 失敗は呼び出し元のスレッドで作り直す(原本は受信全体を止める。ここではそのチャネルだけやり直す)
+void Receiver::run_task(const Task& t) {
+    Channel& c = *t.channel;
+    if (t.voice) {
+        try {
+            c.audio = c.pipe->run_voice(c.voice_ops);
+        } catch (const std::exception&) {
+            c.voice_failed = true;
+        }
+        return;
+    }
     c.events.clear();
-    c.audio.clear();
     if (c.failed) return;
+    const auto t0 = std::chrono::steady_clock::now();
     try {
-        c.audio = c.pipe->process(work_in_, [&](const FrameEvent& ev) { c.events.push_back(ev); });
+        c.pipe->process(work_in_, [&](const FrameEvent& ev) { c.events.push_back(ev); });
     } catch (const std::exception&) {
-        c.failed = true;   // 呼び出し元のスレッドで作り直す(原本は受信全体を止める。ここではそのチャネルだけやり直す)
+        c.failed = true;
+    }
+    c.cost_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+}
+
+// 残っているタスクを 1 つずつ取って処理する(呼び出し元と worker の両方が回す)
+void Receiver::run_round() {
+    for (std::size_t i; (i = next_.fetch_add(1, std::memory_order_relaxed)) < tasks_.size();) run_task(tasks_[i]);
+}
+
+// 溜まっている合成への操作を今すぐ実行する(区間の切れ目と入力の終わり)。deliver なら音声を Observer に渡す
+void Receiver::finish_voice(bool deliver) {
+    for (auto& c : ch_) {
+        std::vector<Audio> audio;
+        try {
+            audio = c->pipe->run_voice(c->pipe->take_voice_ops());
+        } catch (const std::exception&) {
+            continue;   // このあと作り直す(discontinuity)か、入力の終わり
+        }
+        if (deliver && obs_.audio)
+            for (const auto& a : audio) obs_.audio(c->index, a);
     }
 }
 
-void Receiver::work(std::size_t worker) {
+void Receiver::work() {
     uint64_t seen = 0;
     for (;;) {
         {
@@ -85,8 +118,7 @@ void Receiver::work(std::size_t worker) {
             if (quit_) return;
             seen = round_;
         }
-        for (auto& c : ch_)
-            if (c->worker == worker) run_channel(*c);
+        run_round();
         {
             std::lock_guard<std::mutex> lk(mu_);
             if (--pending_ == 0) cv_done_.notify_one();
@@ -130,15 +162,34 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
     if (work.empty()) return;
     // 3) 全チャネル(worker で並列)
     work_in_ = work;
+    // タスク: 前のブロックで溜めた音声合成(重いので先に)と、このブロックの DSP(前のブロックで重かった順)
+    tasks_.clear();
+    for (auto& c : ch_) {
+        c->audio.clear();
+        c->voice_failed = false;
+        c->voice_ops = c->pipe->take_voice_ops();
+        if (!c->voice_ops.empty()) tasks_.push_back({c.get(), true});
+    }
+    const auto pushes = [](const Channel* c) {
+        return std::count_if(c->voice_ops.begin(), c->voice_ops.end(), [](const VoiceOp& op) { return op.kind == VoiceOp::Kind::Push; });
+    };
+    std::stable_sort(tasks_.begin(), tasks_.end(), [&](const Task& a, const Task& b) { return pushes(a.channel) > pushes(b.channel); });
+    const std::size_t voice_tasks = tasks_.size();
+    for (auto& c : ch_) tasks_.push_back({c.get(), false});
+    std::stable_sort(tasks_.begin() + static_cast<std::ptrdiff_t>(voice_tasks), tasks_.end(),
+                     [](const Task& a, const Task& b) { return a.channel->cost_ns > b.channel->cost_ns; });
+    // 出力は取る順に依らない(各タスクは独立で、Observer は下でチャネルの順に呼ぶ)
     if (workers_.empty()) {
-        for (auto& c : ch_) run_channel(*c);
+        for (const auto& t : tasks_) run_task(t);
     } else {
+        next_.store(0, std::memory_order_relaxed);
         {
             std::lock_guard<std::mutex> lk(mu_);
             pending_ = workers_.size();
             ++round_;
         }
         cv_start_.notify_all();
+        run_round();
         std::unique_lock<std::mutex> lk(mu_);
         cv_done_.wait(lk, [&] { return pending_ == 0; });
     }
@@ -148,10 +199,15 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
     const auto to_us = [&](uint64_t work_samples) { return static_cast<uint64_t>(static_cast<double>(work_samples) / work_rate_ * 1e6); };
     for (auto& cp : ch_) {
         Channel& c = *cp;
-        if (c.failed) {
+        if (obs_.audio && !c.voice_failed)   // 前のブロックの音声(このブロックの DSP が失敗しても前のブロックの分は有効)
+            for (const auto& a : c.audio) obs_.audio(c.index, a);
+        if (c.failed || c.voice_failed) {
             c.failed = false;
-            c.pipe->discontinuity();
+            c.voice_failed = false;
+            c.pipe->discontinuity();   // このブロックで溜めた合成への操作も捨てる
             ++c.resets;
+            c.events.clear();
+            c.audio.clear();
             continue;
         }
         for (const auto& ev : c.events) {
@@ -161,14 +217,13 @@ void Receiver::process(std::span<const cf32> in, uint64_t first_index) {
             t.time_us = to_us(segment_start_) + ev.frame.bit_offset * 1'000'000 / 9600;
             if (obs_.frame) obs_.frame(c.index, ev, t);
         }
-        if (obs_.audio)
-            for (const auto& a : c.audio) obs_.audio(c.index, a);
         c.events.clear();
         c.audio.clear();
     }
 }
 
 void Receiver::discontinuity() {
+    finish_voice(true);   // 切れ目の前のブロックの音声(同期なら前の process() で渡っていた分)
     for (auto& c : ch_) {
         c->pipe->discontinuity();
         c->failed = false;
@@ -177,10 +232,12 @@ void Receiver::discontinuity() {
 }
 
 void Receiver::flush() {
+    finish_voice(true);
     for (auto& c : ch_) {
         std::vector<Audio> tail;
         try {
-            tail = c->pipe->flush();
+            c->pipe->flush();   // 合成への操作(先読みの吐き出し)を溜める
+            tail = c->pipe->run_voice(c->pipe->take_voice_ops());
         } catch (const std::exception&) {
             continue;
         }

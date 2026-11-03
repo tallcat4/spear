@@ -77,6 +77,59 @@ int64_t rem_euclid(int64_t a, int64_t b) {
     return r < 0 ? r + b : r;
 }
 
+using V8 = float __attribute__((vector_size(32)));
+using M8 = int32_t __attribute__((vector_size(32)));
+
+#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__) && !defined(__SANITIZE_THREAD__) && !defined(__SANITIZE_ADDRESS__)
+#define JR_DSP_CLONES __attribute__((target_clones("avx2", "default")))
+#else
+#define JR_DSP_CLONES
+#endif
+
+inline V8 load8(const float* p) {
+    V8 v;
+    std::memcpy(&v, p, sizeof v);
+    return v;
+}
+
+// 4 出力の polyphase 内積。出力 o の和は window_o[i] · taps_o[i] を i の順に 1 本の累算器で取る(実部・虚部は別の累算器)。
+// レーン = (出力 4 個 × 実部・虚部)。taps2 は各タップを 2 回並べた列(複素と同じ並びにして、窓と同じ転置で揃える)
+JR_DSP_CLONES
+void polyphase4(const C32* const window[4], const float* const taps2[4], std::size_t length, C32 out[4]) {
+    const float* w0 = &window[0]->re;
+    const float* w1 = &window[1]->re;
+    const float* w2 = &window[2]->re;
+    const float* w3 = &window[3]->re;
+    V8 acc{};
+    std::size_t i = 0;
+    // 4 タップずつ: 4 出力 × 4 タップを (出力 0..3) × タップ i..i+3 の 4 行に転置する
+    const auto rows = [](V8 a, V8 b, V8 c, V8 d, V8& r0, V8& r1, V8& r2, V8& r3) {
+        const V8 lo_ab = __builtin_shufflevector(a, b, 0, 1, 8, 9, 4, 5, 12, 13);     // a0 b0 a2 b2
+        const V8 hi_ab = __builtin_shufflevector(a, b, 2, 3, 10, 11, 6, 7, 14, 15);   // a1 b1 a3 b3
+        const V8 lo_cd = __builtin_shufflevector(c, d, 0, 1, 8, 9, 4, 5, 12, 13);
+        const V8 hi_cd = __builtin_shufflevector(c, d, 2, 3, 10, 11, 6, 7, 14, 15);
+        r0 = __builtin_shufflevector(lo_ab, lo_cd, 0, 1, 2, 3, 8, 9, 10, 11);
+        r2 = __builtin_shufflevector(lo_ab, lo_cd, 4, 5, 6, 7, 12, 13, 14, 15);
+        r1 = __builtin_shufflevector(hi_ab, hi_cd, 0, 1, 2, 3, 8, 9, 10, 11);
+        r3 = __builtin_shufflevector(hi_ab, hi_cd, 4, 5, 6, 7, 12, 13, 14, 15);
+    };
+    for (; i + 4 <= length; i += 4) {
+        V8 x0, x1, x2, x3, t0, t1, t2, t3;
+        rows(load8(w0 + 2 * i), load8(w1 + 2 * i), load8(w2 + 2 * i), load8(w3 + 2 * i), x0, x1, x2, x3);
+        rows(load8(taps2[0] + 2 * i), load8(taps2[1] + 2 * i), load8(taps2[2] + 2 * i), load8(taps2[3] + 2 * i), t0, t1, t2, t3);
+        acc += x0 * t0;
+        acc += x1 * t1;
+        acc += x2 * t2;
+        acc += x3 * t3;
+    }
+    for (; i < length; ++i) {
+        const V8 x{w0[2 * i], w0[2 * i + 1], w1[2 * i], w1[2 * i + 1], w2[2 * i], w2[2 * i + 1], w3[2 * i], w3[2 * i + 1]};
+        const V8 t{taps2[0][2 * i], taps2[0][2 * i], taps2[1][2 * i], taps2[1][2 * i], taps2[2][2 * i], taps2[2][2 * i], taps2[3][2 * i], taps2[3][2 * i]};
+        acc += x * t;
+    }
+    for (std::size_t o = 0; o < 4; ++o) out[o] = C32{acc[2 * o], acc[2 * o + 1]};
+}
+
 // ---- 入力 rate → 19.2 kS/s(原本 Resampler)----
 // rate が 256 kHz の 2 倍以上なら 3 段 CIC(整数、wrapping)で先に間引く。
 class Resampler {
@@ -92,6 +145,9 @@ public:
         for (float& tap : prototype) tap *= 32.f;
         cic_scale_ = 1.0 / (32768.0 * d * d * d);
         arms_ = arms(prototype, 32);
+        arms2_.resize(arms_.size());
+        for (std::size_t p = 0; p < arms_.size(); ++p)
+            for (float t : arms_[p]) arms2_[p].insert(arms2_[p].end(), {t, t});
         // 2 回書く(i と i + ring_len_): 窓を剰余なしの連続領域として読む。窓は出力が揃うまで(最大 kGroup 個、
         // 1 出力あたり入力 20 sample 以下)上書きされない長さにする
         ring_len_ = count + 16 + 128;
@@ -129,21 +185,30 @@ public:
         ring_[write_ + ring_len] = value;
         if (++write_ == ring_len) write_ = 0;
         ++input_index_;
+        // 次の出力の位置と相は next_output_ が変わったときだけ求める(入力ごとに floor / round を呼ばない。値は同じ)
         for (;;) {
-            auto position = static_cast<int64_t>(std::floor(next_output_));
-            auto phase = static_cast<std::size_t>(std::round((next_output_ - static_cast<double>(position)) * 32.0));
-            if (phase == 32) {
-                phase = 0;
-                ++position;
+            if (!have_next_) {
+                auto position = static_cast<int64_t>(std::floor(next_output_));
+                auto phase = static_cast<std::size_t>(std::round((next_output_ - static_cast<double>(position)) * 32.0));
+                if (phase == 32) {
+                    phase = 0;
+                    ++position;
+                }
+                next_first_ = position - half_;
+                next_phase_ = phase;
+                ready_at_ = next_first_ + static_cast<int64_t>(arms_[phase].size());
+                have_next_ = true;
             }
-            const int64_t first = position - half_;
+            if (ready_at_ > input_index_) return;
+            const int64_t first = next_first_;
+            const std::size_t phase = next_phase_;
             const auto& taps = arms_[phase];
-            if (first + static_cast<int64_t>(taps.size()) > input_index_) return;
             // (write_ + first − input_index_) mod ring_len。first − input_index_ は −ring_len 以上(窓は直近の ring_len 内)
             int64_t wrapped = static_cast<int64_t>(write_) + first - input_index_;
             if (wrapped < 0) wrapped += static_cast<int64_t>(ring_len);
             const auto offset = static_cast<std::size_t>(wrapped);
-            pending_[pending_count_++] = Pending{ring_.data() + offset, taps.data()};   // offset + taps.size() <= 2 * ring_len
+            pending_[pending_count_++] = Pending{ring_.data() + offset, taps.data(), arms2_[phase].data()};   // offset + taps.size() <= 2 * ring_len
+            have_next_ = false;
             if (pending_count_ == kGroup) flush(sink);
             next_output_ += step_;
         }
@@ -156,23 +221,12 @@ public:
         const std::size_t length = arms_[0].size();
         std::size_t n = 0;
         if (pending_count_ == kGroup) {
-            const Pending a = pending_[0], b = pending_[1], c = pending_[2], d = pending_[3];
-            float ar = 0.f, ai = 0.f, br = 0.f, bi = 0.f, cr = 0.f, ci = 0.f, dr = 0.f, di = 0.f;
-            for (std::size_t i = 0; i < length; ++i) {
-                ar += a.window[i].re * a.taps[i];
-                ai += a.window[i].im * a.taps[i];
-                br += b.window[i].re * b.taps[i];
-                bi += b.window[i].im * b.taps[i];
-                cr += c.window[i].re * c.taps[i];
-                ci += c.window[i].im * c.taps[i];
-                dr += d.window[i].re * d.taps[i];
-                di += d.window[i].im * d.taps[i];
-            }
+            const C32* windows[4] = {pending_[0].window, pending_[1].window, pending_[2].window, pending_[3].window};
+            const float* taps2[4] = {pending_[0].taps2, pending_[1].taps2, pending_[2].taps2, pending_[3].taps2};
+            C32 out[4];
+            polyphase4(windows, taps2, length, out);
             pending_count_ = 0;
-            sink(C32{ar, ai});
-            sink(C32{br, bi});
-            sink(C32{cr, ci});
-            sink(C32{dr, di});
+            for (const C32& v : out) sink(v);
             return;
         }
         for (; n < pending_count_; ++n) {
@@ -193,12 +247,13 @@ private:
     uint64_t delays_[6] = {};
     double cic_scale_ = 1.0;
     std::size_t counter_ = 0;
-    std::vector<std::vector<float>> arms_;
+    std::vector<std::vector<float>> arms_, arms2_;
     std::vector<C32> ring_;
     std::size_t ring_len_ = 0;
     struct Pending {
         const C32* window;
         const float* taps;
+        const float* taps2;
     };
     static constexpr std::size_t kGroup = 4;
     std::array<Pending, kGroup> pending_{};
@@ -207,8 +262,67 @@ private:
     double step_ = 1.0;
     int64_t input_index_ = 0;
     double next_output_ = 0.0;
+    bool have_next_ = false;
+    int64_t next_first_ = 0, ready_at_ = 0;
+    std::size_t next_phase_ = 0;
     std::size_t write_ = 0;
 };
+
+// 整合フィルタと微分の kTaps 個の窓(半シンボル間隔 = 2 sample おき)。窓 k の和は x[2k + i] · t[i] を i の順に 1 本の累算器で取る。
+// レーンは別々の和(4 窓 × 実部・虚部)に割り当て、レーンをまたいだ加算はしない(1 つずつ計算したときとビット一致)
+JR_DSP_CLONES
+void clock_windows(const C32* base, const float* taps, const float* dtaps, std::size_t length, C32* values, C32* derivatives) {
+    static_assert(sizeof(C32) == 2 * sizeof(float));
+    const float* x = reinterpret_cast<const float*>(base);
+    std::size_t k = 0;
+    // 8 窓ずつ: 窓 k..k+3 は x[2k + i], x[2k + 2 + i], x[2k + 4 + i], x[2k + 6 + i](複素 1 個おき)
+    for (; k + 8 <= kTaps; k += 8) {
+        V8 m0{}, d0{}, m1{}, d1{};
+        for (std::size_t i = 0; i < length; ++i) {
+            const float* p = x + 2 * (2 * k + i);
+            const V8 a0 = load8(p), a1 = load8(p + 8), a2 = load8(p + 16), a3 = load8(p + 24);
+            const V8 x0 = __builtin_shufflevector(a0, a1, 0, 1, 4, 5, 8, 9, 12, 13);
+            const V8 x1 = __builtin_shufflevector(a2, a3, 0, 1, 4, 5, 8, 9, 12, 13);
+            const V8 t = V8{} + taps[i], dt = V8{} + dtaps[i];
+            m0 += x0 * t;
+            d0 += x0 * dt;
+            m1 += x1 * t;
+            d1 += x1 * dt;
+        }
+        for (std::size_t j = 0; j < 4; ++j) {
+            values[k + j] = C32{m0[2 * j], m0[2 * j + 1]};
+            derivatives[k + j] = C32{d0[2 * j], d0[2 * j + 1]};
+            values[k + 4 + j] = C32{m1[2 * j], m1[2 * j + 1]};
+            derivatives[k + 4 + j] = C32{d1[2 * j], d1[2 * j + 1]};
+        }
+    }
+    for (; k + 4 <= kTaps; k += 4) {
+        V8 m0{}, d0{};
+        for (std::size_t i = 0; i < length; ++i) {
+            const float* p = x + 2 * (2 * k + i);
+            const V8 x0 = __builtin_shufflevector(load8(p), load8(p + 8), 0, 1, 4, 5, 8, 9, 12, 13);
+            const V8 t = V8{} + taps[i], dt = V8{} + dtaps[i];
+            m0 += x0 * t;
+            d0 += x0 * dt;
+        }
+        for (std::size_t j = 0; j < 4; ++j) {
+            values[k + j] = C32{m0[2 * j], m0[2 * j + 1]};
+            derivatives[k + j] = C32{d0[2 * j], d0[2 * j + 1]};
+        }
+    }
+    for (; k < kTaps; ++k) {
+        const C32* w = base + 2 * k;
+        float mr = 0.f, mi = 0.f, dr = 0.f, di = 0.f;
+        for (std::size_t i = 0; i < length; ++i) {
+            mr += w[i].re * taps[i];
+            mi += w[i].im * taps[i];
+            dr += w[i].re * dtaps[i];
+            di += w[i].im * dtaps[i];
+        }
+        values[k] = C32{mr, mi};
+        derivatives[k] = C32{dr, di};
+    }
+}
 
 // ---- 整合フィルタ + タイミング(原本 ClockRecovery)----
 class ClockRecovery {
@@ -257,38 +371,10 @@ public:
             return false;
         }
         // 半シンボル間隔の窓で共通の小数位相を評価する。複素のまま保つ(後段の適応系列推定に振幅が要る)
-        // 3 つの窓を同時に進める(12 本の累算器で加算のレイテンシを隠す)。各和はタップの順に 1 本の累算器で取る
         const float* a = arms_[static_cast<std::size_t>(arm)].data();
         const float* da = derivatives_[static_cast<std::size_t>(arm)].data();
         const C32* base = ring_.data() + (start_ + static_cast<std::size_t>(first)) % kRing;   // + 2 (kTaps − 1) + length <= 2 kRing
-        static_assert(kTaps % 3 == 0);
-        for (std::size_t k = 0; k < kTaps; k += 3) {
-            const C32* x0 = base + 2 * k;
-            const C32* x1 = x0 + 2;
-            const C32* x2 = x0 + 4;
-            float m0r = 0.f, m0i = 0.f, d0r = 0.f, d0i = 0.f, m1r = 0.f, m1i = 0.f, d1r = 0.f, d1i = 0.f, m2r = 0.f, m2i = 0.f, d2r = 0.f, d2i = 0.f;
-            for (std::size_t i = 0; i < length; ++i) {
-                const float t = a[i], dt = da[i];
-                m0r += x0[i].re * t;
-                m0i += x0[i].im * t;
-                d0r += x0[i].re * dt;
-                d0i += x0[i].im * dt;
-                m1r += x1[i].re * t;
-                m1i += x1[i].im * t;
-                d1r += x1[i].re * dt;
-                d1i += x1[i].im * dt;
-                m2r += x2[i].re * t;
-                m2i += x2[i].im * t;
-                d2r += x2[i].re * dt;
-                d2i += x2[i].im * dt;
-            }
-            values[k] = C32{m0r, m0i};
-            derivatives[k] = C32{d0r, d0i};
-            values[k + 1] = C32{m1r, m1i};
-            derivatives[k + 1] = C32{d1r, d1i};
-            values[k + 2] = C32{m2r, m2i};
-            derivatives[k + 2] = C32{d2r, d2i};
-        }
+        clock_windows(base, a, da, length, values.data(), derivatives.data());
         position_ = std::max(position_ + shift + 4, 0);
         while (position_ > 12) {
             --position_;
@@ -348,13 +434,8 @@ struct Carrier {
     }
 };
 
-using V8 = float __attribute__((vector_size(32)));
-using M8 = int32_t __attribute__((vector_size(32)));
-
 // 原本の peak = fmax(peak, x) の畳み込み(peak = 0 から)と同じ値: 0 と NaN でない点の最大。最大は順序に依らない
-#if defined(__x86_64__) && defined(__GNUC__) && !defined(__clang__) && !defined(__SANITIZE_THREAD__) && !defined(__SANITIZE_ADDRESS__)
-__attribute__((target_clones("avx2", "default")))
-#endif
+JR_DSP_CLONES
 float window_peak(const float* level) {
     V8 acc{};
     for (std::size_t i = 0; i < 64; i += 8) {

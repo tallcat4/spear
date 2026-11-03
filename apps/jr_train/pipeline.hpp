@@ -21,6 +21,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace spear::jr_train {
@@ -69,6 +70,14 @@ struct FrameEvent {
 // 現在の UTC を RFC 3339(原本 chrono の to_rfc3339 と同じ形: "2026-10-15T08:00:00.123456789+00:00")
 std::string now_rfc3339();
 
+// 音声合成への操作(Receiver が合成を DSP と別のタスクで回すときに溜める。順序は記録した順のまま)
+struct VoiceOp {
+    enum class Kind : uint8_t { Push, Missing, Flush, Reset, Drain } kind = Kind::Push;
+    uint32_t index = 0;
+    uint64_t epoch = 0;       // Drain: 出す音声の epoch(記録した時点の値)
+    voice::Payload payload{};
+};
+
 class Pipeline {
 public:
     Pipeline(ChannelConfig config, double rate, double center);
@@ -83,9 +92,18 @@ public:
     const PipelineStatus& snapshot();       // コンスタレーションと EVM、電文の履歴を更新して返す
     const PipelineStatus& status() const { return status_; }
 
+    // 音声合成を process() から切り離す(Receiver 用)。有効なら process() / frame() / flush() は合成への操作を溜めるだけで音声を返さず、
+    // take_voice_ops() で取り出した操作を run_voice() で実行すると、同期で動かしたときと同じ音声が同じ順に出る。
+    // run_voice() が触るのは合成器と status().audio_frames だけなので、別のスレッドで次の process() と同時に動かせる
+    void set_deferred_voice(bool on) { deferred_ = on; }
+    std::vector<VoiceOp> take_voice_ops() { return std::exchange(voice_ops_, {}); }
+    std::vector<Audio> run_voice(const std::vector<VoiceOp>& ops);
+
 private:
     std::vector<Audio> flush_idle(uint64_t bit_offset);
     std::vector<Audio> drain();
+    void voice_op(VoiceOp op, std::vector<Audio>* out = nullptr);
+    void execute(const VoiceOp& op, std::vector<Audio>& out);
     double rate_, center_;
     dsp::Demodulator dsp_;
     protocol::Synchronizer sync_;
@@ -97,6 +115,8 @@ private:
     std::deque<Received> history_;
     std::deque<protocol::Message> events_;
     PipelineStatus status_;
+    bool deferred_ = false;
+    std::vector<VoiceOp> voice_ops_;
 };
 
 } // namespace spear::jr_train
