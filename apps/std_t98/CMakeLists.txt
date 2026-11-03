@@ -23,11 +23,18 @@ set_target_properties(spear_blip25c PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED
 target_include_directories(spear_blip25c PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/blip25c/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/blip25c/src)
 target_compile_options(spear_blip25c PRIVATE -w)
 
+# 4 値 FSK の受信フィルタ(H/P)と Gardner のシンボル同期。STD-T99 Annex 2(apps/std_t99)も同じ物理層なので共有する。
+# STD-T99 側からは "std_t98/dsp/rrc.hpp" で参照する(apps/ を include に出す。apps/std_t98 を出すと receiver.hpp などが衝突する)
+add_library(spear_std_t98_dsp STATIC
+  dsp/rrc.cpp
+  dsp/symbol_sync.cpp
+)
+target_include_directories(spear_std_t98_dsp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(spear_std_t98_dsp PUBLIC spear_dsp)
+
 add_library(spear_std_t98_rx STATIC
   receiver.cpp
   ambe.cpp
-  dsp/rrc.cpp
-  dsp/symbol_sync.cpp
   dsp/sync_correlator.cpp
   secret/pn.cpp
   secret/guided.cpp
@@ -41,7 +48,7 @@ add_library(spear_std_t98_rx STATIC
   secret/worker.cpp
 )
 target_include_directories(spear_std_t98_rx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(spear_std_t98_rx PUBLIC spear_std_t98_protocol spear_dsp spear_core PRIVATE spear_blip25c onnxruntime::onnxruntime)
+target_link_libraries(spear_std_t98_rx PUBLIC spear_std_t98_protocol spear_std_t98_dsp spear_dsp spear_core PRIVATE spear_blip25c onnxruntime::onnxruntime)
 # モデルの埋め込み(secret/models.cpp の .incbin)。モデルファイルが変われば再コンパイルされるように依存を張る
 set(SPEAR_STD_T98_MODELS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/models)
 set_source_files_properties(secret/models.cpp PROPERTIES

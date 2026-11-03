@@ -9,6 +9,7 @@
 #include "slpr_app.hpp"
 #include "spectrum_app.hpp"
 #include "std_t98_app.hpp"
+#include "std_t99_app.hpp"
 #include "template_app.hpp"
 
 #include <QCoreApplication>
@@ -42,7 +43,7 @@ TEST(Apps, RegistryListsAllIntegratedApps) {
     EXPECT_EQ(apps[1].info.id, "recorder");
     EXPECT_NE(apps[0].info.page_url.find("SpectrumPage.qml"), std::string::npos);
     // 統合した試験機能も既存 App と同じ GUI のメニューに 1 回ずつ登録されること。
-    for (const auto* id : {"spectrum", "recorder", "demod", "std_t98", "adsb", "slpr", "jr_train"}) {
+    for (const auto* id : {"spectrum", "recorder", "demod", "std_t98", "adsb", "slpr", "jr_train", "std_t99"}) {
         EXPECT_EQ(std::count_if(apps.begin(), apps.end(), [id](const auto& e) { return e.info.id == id; }), 1) << id;
     }
 }
@@ -350,4 +351,36 @@ TEST(Apps, JrTrainLifecycleAndRecordingOnSynthetic) {
     EXPECT_FALSE(app->running());
     EXPECT_EQ(core.rx().consumer_count(), 0u) << "stop 後に consumer が残ってはならない";
     std::filesystem::remove_all(dir);
+}
+
+// STD-T99 DIGICOM: 4 Msps / LO = 選択チャネル − 250 kHz を宣言し、観測点が流れ、選局で LO が動き、stop で consumer が残らない。
+// 受信機自体(規格書の試験信号でのフレーム・呼の情報・音声)の検証は apps/std_t99/tests。
+TEST(Apps, StdT99RunsAndRetunesOnChannelChange) {
+    Core core(".");
+    SyntheticSignal sig;
+    sig.noise_amplitude = 0.02;
+    core.set_source(std::make_unique<SyntheticSource>(&core.events(), sig));
+    auto app = std::make_shared<apps::StdT99App>(appfw::AppInfo{"std_t99", "STD-T99 DIGICOM", "", Direction::RX, ""});
+    QVariantMap settings; settings["audio_device"] = "null";
+    app->configure(settings);
+    RfConfig c; c.center_freq = 100e6; c.sample_rate = 1e6;   // App が 4 Msps / チャネル − 250 kHz に上書きする
+    app->set_rf_config(c);
+    EXPECT_EQ(app->selectedChannel(), 18) << "既定は呼出チャネル";
+    ASSERT_TRUE(core.run_app(app));
+    EXPECT_DOUBLE_EQ(core.source().config().sample_rate, 4e6);
+    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 146.984375e6 - 250e3);
+    const auto t0 = std::chrono::steady_clock::now();
+    while ((!app->bandView()->processor() || app->bandView()->processor()->rows_written() < 4 ||
+            app->channelView()->processor()->rows_written() < 4) && std::chrono::steady_clock::now() - t0 < 6s)
+        std::this_thread::sleep_for(50ms);
+    EXPECT_GT(app->bandView()->processor()->rows_written(), 3u) << "std_t99.band(400 kHz)が流れていること";
+    EXPECT_GT(app->channelView()->processor()->rows_written(), 3u) << "std_t99.channel(100 kHz)が流れていること";
+    app->setSelectedChannel(1);   // CH1 は 4 MHz 下: LO を動かす
+    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 142.934375e6 - 250e3);
+    std::this_thread::sleep_for(300ms);
+    EXPECT_EQ(app->status()["frames"].toDouble(), 0.0) << "雑音からフレームは出ない";
+    EXPECT_EQ(app->losslessDrops(), 0.0);
+    core.stop_app();
+    EXPECT_FALSE(app->running());
+    EXPECT_EQ(core.rx().consumer_count(), 0u) << "stop 後に consumer が残ってはならない";
 }

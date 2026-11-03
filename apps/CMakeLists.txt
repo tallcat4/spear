@@ -47,6 +47,7 @@ add_subdirectory(std_t98)
 add_subdirectory(adsb)
 add_subdirectory(slpr)
 add_subdirectory(jr_train)
+add_subdirectory(std_t99)
 add_subdirectory(template)   # UNLISTED: コンパイルだけ(腐らせない)
 
 # ---- レジストリ生成 ----

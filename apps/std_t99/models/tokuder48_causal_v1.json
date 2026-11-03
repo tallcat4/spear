@@ -1,0 +1,96 @@
+{
+ "name": "tokuder48_causal_v1",
+ "n_bits": 48,
+ "input": "info48 of neurodec.tokuder_fec / tokuder_neurodec.fec (soft-decoded TCH frames)",
+ "sample_rate": 8000,
+ "frame_samples": 160,
+ "trained_with": "https://github.com/tallcat4/neurodec",
+ "training": {
+  "step": 30000,
+  "data_hours_train": 5.47,
+  "corpora": [
+   "VCTK (CC BY 4.0)",
+   "JVS (personal / non-commercial research only; no redistribution)",
+   "JSUT (terms of the distributor)"
+  ],
+  "vocoder_pretraining": "clean speech of the training transmissions (VCTK, JVS, JSUT), causal; frozen during decoder training",
+  "note": "frontend from the causal decoder (60k steps), then 30k steps with a one-frame look-ahead at lr 1e-4"
+ },
+ "evaluation_held_out_speakers": {
+  "utterances": 219,
+  "pesq_nb": 2.525,
+  "stoi": 0.804,
+  "logmel_db": 4.758,
+  "f0_rmse_cent": 87.7,
+  "pesq_nb_ber1": 2.509,
+  "pesq_nb_ber3": 2.44
+ },
+ "model": {
+  "frontend_kind": "bittoken",
+  "bittoken": {
+   "d_token": 64,
+   "token_layers": 2,
+   "token_heads": 4,
+   "width": 256,
+   "layers": 6,
+   "expansion": 3,
+   "mixer": "mlp",
+   "mlp_hidden": 1024
+  },
+  "dequant": {
+   "group_frames": 1,
+   "kernels": [
+    [
+     3,
+     5
+    ],
+    [
+     5,
+     5
+    ],
+    [
+     7,
+     5
+    ]
+   ],
+   "channels": [
+    8,
+    16
+   ],
+   "kernel_1d": 5,
+   "heads": 3,
+   "d_head": 4,
+   "d_ff": 16,
+   "ffn_dims": [
+    1024,
+    56
+   ],
+   "attn_axis": "bit",
+   "soft_perm": false
+  },
+  "aux_mels": 80,
+  "backend": "istft",
+  "istft": {
+   "width": 192,
+   "layers": 6,
+   "expansion": 3,
+   "n_fft": 512,
+   "hop": 80,
+   "upsample": "learned",
+   "excitation": true
+  },
+  "mel_bridge": true,
+  "f0_head": true,
+  "ap_bands": 5,
+  "block_frames": 4,
+  "causal": true,
+  "lookahead_frames": 1
+ },
+ "latency": {
+  "causal": true,
+  "lookahead_frames": 1,
+  "istft_overlap_samples": 256,
+  "note": "frame t uses the bits of frames <= t + 1; the output is final 20 ms + 32 ms after frame t"
+ },
+ "parameters": 4424081
+}
