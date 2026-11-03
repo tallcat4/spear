@@ -194,24 +194,24 @@ int main(int argc, char** argv) {
 }
 
 TEST(Apps, StdT98LifecycleOnSynthetic) {
-    // 30ch 受信機を合成源(信号なし)で start → 観測点が動く → stop。実信号の検証は apps/std_t98/tests(実録音 golden)
+    // 97ch 受信機(v2.0 登録局、apps/std_t98/channel_plan.hpp)を合成源(信号なし)で start → 観測点が動く → stop。実信号の検証は apps/std_t98/tests(実録音 golden)
     Core core(".");
-    SyntheticSignal sig; sig.tones = {{-93750.0 + 250e3, 0.05}};   // ch1 の位置(帯域中心 − 15 ch、LO は −250 kHz)に無変調トーン
+    SyntheticSignal sig; sig.tones = {{351.2e6 - (351.29375e6 - 500e3), 0.05}};   // CH1(351.2 MHz)の位置に無変調トーン(LO は基準 − 500 kHz)
     sig.noise_amplitude = 0.002;
     core.set_source(std::make_unique<SyntheticSource>(&core.events(), sig));
     auto app = std::make_shared<apps::StdT98App>(appfw::AppInfo{"std_t98", "STD-T98 MONITOR", "", Direction::RX, ""});
     QVariantMap settings; settings["audio_device"] = "null";
     app->configure(settings);
-    RfConfig c; c.center_freq = 100e6; c.sample_rate = 1e6;   // App が 4 Msps / 帯域中心 − 250 kHz に上書きする
+    RfConfig c; c.center_freq = 100e6; c.sample_rate = 1e6;   // App が 4 Msps / 基準 − 500 kHz に上書きする
     app->set_rf_config(c);
     ASSERT_TRUE(core.run_app(app));
     EXPECT_DOUBLE_EQ(core.source().config().sample_rate, 4e6);
-    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 351.29375e6 - 250e3);
+    EXPECT_DOUBLE_EQ(core.source().config().center_freq, 351.29375e6 - 500e3);
     std::this_thread::sleep_for(800ms);
     ASSERT_NE(app->bandView()->processor(), nullptr);
     EXPECT_GT(app->bandView()->processor()->rows_written(), 3u) << "帯域の観測点(std_t98.band)が流れていること";
     const auto chans = app->channels();
-    ASSERT_EQ(chans.size(), 30);
+    ASSERT_EQ(chans.size(), 97);
     EXPECT_GT(chans[0].toMap()["power"].toDouble(), chans[10].toMap()["power"].toDouble() + 20) << "ch1 のトーンがチャネル電力に出る";
     EXPECT_EQ(app->losslessDrops(), 0.0);
     core.stop_app();
