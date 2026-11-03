@@ -3,7 +3,7 @@
 #   ./spear.sh                    B210 で全画面起動
 #   ./spear.sh --source synthetic 合成データ
 #   ./spear.sh --windowed         ウィンドウ表示(開発用)
-#   SPEAR_BUILD_DIR=build-experiments ./spear.sh   別のビルドディレクトリの spear-gui を起動(既定 build)
+#   SPEAR_BUILD_DIR=build-tsan ./spear.sh           別のビルドディレクトリの spear-gui を起動(既定 build)
 # 追加引数はそのまま spear-gui へ渡す。ログ・録音・イベントログは ~/spear/ 配下。個体設定は ~/spear/site.conf、
 # 運転状態(ゲイン/AGC、スケルチ、MUTE、表示レンジ…)は ~/spear/state.conf に自動保存され次回復元される(site.conf が優先)。
 set -u
