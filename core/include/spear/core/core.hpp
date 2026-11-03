@@ -7,8 +7,10 @@
 #include "app.hpp"
 #include "event.hpp"
 #include "health.hpp"
+#include "power_hold.hpp"
 #include "source.hpp"
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 
@@ -37,16 +39,22 @@ public:
     // App は起動したまま DeviceState を表示する。判定は ready_timeout_s まで待つ。
     bool run_app(std::shared_ptr<App> app, std::string* err = nullptr);
     void set_ready_timeout(double s) { ready_timeout_s_ = s; }
+    // App の実行中は CPU を performance にするよう power-profiles-daemon に要求する(§11.1、power_hold.hpp)。
+    // 既定は off(テストや headless の道具が ppd に触らないように)。装置の GUI が on にする
+    void set_performance_hold(bool on) { hold_enabled_ = on; }
+    const PerformanceHold& performance_hold() const { return *hold_; }
     void stop_app();
     std::shared_ptr<App> active_app() const;
 
 private:
     EventBus events_;
+    std::unique_ptr<PerformanceHold> hold_;   // health_ より先に作り、後に壊す(監視 thread が check() を呼ぶ)
     std::unique_ptr<HealthMonitor> health_;
     std::unique_ptr<Source> source_;
     mutable std::mutex mu_;
     std::shared_ptr<App> app_;
     double ready_timeout_s_ = 10.0;
+    std::atomic<bool> hold_enabled_{false};
 };
 
 } // namespace spear

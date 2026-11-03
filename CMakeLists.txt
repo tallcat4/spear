@@ -31,6 +31,7 @@ find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFTW3F REQUIRED IMPORTED_TARGET fftw3f)
 pkg_check_modules(ALSA REQUIRED IMPORTED_TARGET alsa)
+pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)   # sd-bus: power-profiles-daemon への性能の要求(core/power_hold)
 
 if(SPEAR_WITH_UHD)
   find_package(UHD 4.0 REQUIRED)

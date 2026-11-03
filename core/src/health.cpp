@@ -30,7 +30,10 @@ HealthSnapshot read_health(const std::string& disk_path) {
         double khz;
         if (!read_sys(base + "scaling_cur_freq", khz)) break;
         sum += khz / 1000.0; mn = std::min(mn, khz / 1000.0); ++n;
-        if (i == 0) read_sys(base + "scaling_governor", s.governor);
+        if (i == 0) {
+            read_sys(base + "scaling_governor", s.governor);
+            read_sys(base + "energy_performance_preference", s.epp);
+        }
     }
     if (n) { s.cpu_mhz_avg = sum / n; s.cpu_mhz_min = mn; }
 
@@ -95,10 +98,13 @@ void HealthMonitor::run() {
     bool first = true;
     while (!stop_) {
         auto s = read_health(disk_path_);
+        std::function<void(const HealthSnapshot&)> observer;
         {
             std::lock_guard lk(mu_);
             latest_ = s;
+            observer = observer_;
         }
+        if (observer) observer(s);
         if (events_) {
             const uint64_t thr = s.core_throttle_count + s.pkg_throttle_count;
             if (!first && thr != last_throttle)

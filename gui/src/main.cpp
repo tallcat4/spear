@@ -79,6 +79,8 @@ int main(int argc, char** argv) {
     // ディスクの空き(ステータスバー / DIAG / DiskLow event)は録音先のファイルシステムで測る(録音が使うのはそこ)
     { std::error_code ec; std::filesystem::create_directories(record_dir, ec); }
     Core core(record_dir);
+    // App の実行中は CPU を performance に(§11.1。バッテリー駆動の既定の EPP では DSP が追いつかない)。--set power.performance_hold=0 で切る
+    core.set_performance_hold(settings.value("power.performance_hold", true).toBool());
     std::unique_ptr<EventLogFile> evlog;
     if (const char* p = arg(argc, argv, "--event-log", nullptr)) evlog = std::make_unique<EventLogFile>(core.events(), p);
 

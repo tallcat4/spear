@@ -79,6 +79,9 @@ class SystemModel : public QObject {
     // ---- host ----
     Q_PROPERTY(double cpuMhz READ cpuMhz NOTIFY changed)
     Q_PROPERTY(QString governor READ governor NOTIFY changed)
+    Q_PROPERTY(QString epp READ epp NOTIFY changed)
+    Q_PROPERTY(bool perfHoldWanted READ perfHoldWanted NOTIFY changed)
+    Q_PROPERTY(bool perfHoldHeld READ perfHoldHeld NOTIFY changed)
     Q_PROPERTY(double pkgTemp READ pkgTemp NOTIFY changed)
     Q_PROPERTY(int throttleCount READ throttleCount NOTIFY changed)
     Q_PROPERTY(bool onAc READ onAc NOTIFY changed)
@@ -132,6 +135,9 @@ public:
     QVariantList consumers() const { return consumers_; }
     double cpuMhz() const { return h_.cpu_mhz_avg; }
     QString governor() const { return QString::fromStdString(h_.governor); }
+    QString epp() const { return QString::fromStdString(h_.epp); }
+    bool perfHoldWanted() const { return core_.performance_hold().wanted(); }
+    bool perfHoldHeld() const { return core_.performance_hold().held(); }
     double pkgTemp() const { return h_.pkg_temp_c; }
     int throttleCount() const { return static_cast<int>(h_.core_throttle_count + h_.pkg_throttle_count); }
     bool onAc() const { return h_.on_ac; }

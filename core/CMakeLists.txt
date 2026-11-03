@@ -12,9 +12,10 @@ add_library(spear_core STATIC
   src/sigmf.cpp
   src/core.cpp
   src/audio_sink.cpp
+  src/power_hold.cpp
 )
 target_include_directories(spear_core PUBLIC include)
-target_link_libraries(spear_core PUBLIC Threads::Threads PkgConfig::ALSA)
+target_link_libraries(spear_core PUBLIC Threads::Threads PkgConfig::ALSA PRIVATE PkgConfig::SYSTEMD)
 target_compile_definitions(spear_core PUBLIC
   $<$<BOOL:${SPEAR_TAP}>:SPEAR_TAP_ENABLED=1>
 )

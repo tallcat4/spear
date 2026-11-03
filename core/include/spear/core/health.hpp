@@ -8,6 +8,8 @@
 #include "event.hpp"
 
 #include <atomic>
+#include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -18,6 +20,7 @@ struct HealthSnapshot {
     double   cpu_mhz_avg = 0;      // scaling_cur_freq 平均
     double   cpu_mhz_min = 0;
     std::string governor;          // "performance" / "powersave"
+    std::string epp;               // cpu0 の energy_performance_preference("performance" / "balance_power" …、無ければ空)
     double   pkg_temp_c = 0;       // x86_pkg_temp
     uint64_t core_throttle_count = 0;
     uint64_t pkg_throttle_count = 0;
@@ -39,6 +42,11 @@ public:
     ~HealthMonitor();
     HealthSnapshot latest() const;
     void set_disk_low_threshold(uint64_t bytes) { disk_low_ = bytes; }
+    // 周期ごとに監視 thread から呼ぶ(Core が App 実行中の性能の要求を確かめるのに使う)
+    void set_observer(std::function<void(const HealthSnapshot&)> f) {
+        std::lock_guard lk(mu_);
+        observer_ = std::move(f);
+    }
 private:
     void run();
     EventBus* events_;
@@ -47,6 +55,7 @@ private:
     std::atomic<uint64_t> disk_low_{1ull << 30}; // 1 GiB
     mutable std::mutex mu_;
     HealthSnapshot latest_;
+    std::function<void(const HealthSnapshot&)> observer_;
     std::atomic<bool> stop_{false};
     std::thread th_;
 };

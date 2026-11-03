@@ -6,7 +6,9 @@
 namespace spear {
 
 Core::Core(std::string disk_path)
-    : health_(std::make_unique<HealthMonitor>(&events_, std::move(disk_path))) {}
+    : hold_(std::make_unique<PerformanceHold>(&events_)), health_(std::make_unique<HealthMonitor>(&events_, std::move(disk_path))) {
+    health_->set_observer([this](const HealthSnapshot& s) { hold_->check(s.epp); });
+}
 
 Core::~Core() {
     stop_app();
@@ -36,6 +38,7 @@ bool Core::run_app(std::shared_ptr<App> app, std::string* err) {
         app_ = app;
     }
     events_.emit(EventKind::Info, "core", "app start: " + app->name());
+    if (hold_enabled_) hold_->acquire("S.P.E.A.R. " + app->name());   // DSP が追いつくように(§11.1)。失敗しても起動は続ける
     app->start(*this);   // App が subscribe してから
     source_->start();    // stream を流す
 
@@ -65,6 +68,7 @@ void Core::stop_app() {
     if (!app) return;
     source_->stop();
     app->stop();
+    hold_->release();
     events_.emit(EventKind::Info, "core", "app stop: " + app->name());
 }
 

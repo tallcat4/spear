@@ -88,6 +88,9 @@ Item {
             width: page.colW; spacing: 4
             Header { text: "HOST" }
             KV { k: "CPU"; v: sys.cpuMhz.toFixed(0) + " MHz  " + sys.governor }
+            // App の実行中は performance を要求する(Core の PerformanceHold)。要求中に EPP が performance でなければ橙
+            KV { k: "EPP"; v: (sys.epp || "--") + (sys.perfHoldWanted ? (sys.perfHoldHeld ? "  HOLD" : "  HOLD REFUSED") : "")
+                 vc: sys.perfHoldWanted && sys.epp !== "performance" ? Theme.amber : Theme.text }
             KV { k: "PKG TEMP"; v: sys.pkgTemp.toFixed(0) + " °C"; vc: sys.pkgTemp >= 90 ? Theme.red : Theme.text }
             KV { k: "THROTTLE"; v: sys.throttleCount.toString() }
             KV { k: "POWER"; v: sys.onAc ? "AC" : "BATTERY"; vc: sys.onAc ? Theme.text : Theme.amber }
