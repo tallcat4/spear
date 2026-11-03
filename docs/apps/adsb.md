@@ -12,7 +12,8 @@ apps/adsb/
   dsp/ppm.*          プリアンブル検出(パルスチップ 0/2/7/9 vs 無音チップ、電力比)+ PPM ビット判定。dump1090 の detectModeS を任意の整数 spc に一般化
   receiver.*         回転(−lo_offset)→ 低域 FIR(±1.5 MHz、47 tap)→ |x|² → PpmDecoder → CRC →(任意)1 bit 訂正 → Message。既知 ICAO キャッシュ(300 s)
   aircraft.*         AircraftTable: ICAO ごとの集約、CPR 偶奇ペア(10 s)→ 前回位置からの局所解、基準位置からの距離・方位、期限切れ(60 s)
-  map/               ミニマップ: world.spearmap(Natural Earth 1:10m + OurAirports、build_map.py で生成、バイナリに埋め込み 3.9 MB)、map_data(展開)、
+  map/               ミニマップの QQuickPaintedItem(機体・航跡・タッチ)。地図データ(world.spearmap: Natural Earth 1:10m + OurAirports、build_map.py、埋め込み 3.9 MB)・
+                     表示範囲・下地の描画は widgets/map(spear_map、2026-11-03 に STD-T99 の地図のため抽出)。以下は抽出前の記述:
                      view.hpp(局所等距円筒、自動フィット)、map_item(QQuickPaintedItem: 陸 / 湖 / 境界 / 都市 / 空港 / 滑走路 / 航跡 / 機体)
   adsb_app.* / AdsbPage.qml   GUI(表 / ミニマップ / 最後のフレームの電力窓 / 統計)
 tools/adsb_decode  spear-adsb-decode <base> [--fix] [--ref lat,lon] [--golden out.txt]
@@ -72,8 +73,8 @@ cutoff 1.2 MHz は 801、2.5 MHz は 630(1.5 MHz が最良)。taps 23 は 47 と
    ずつの部分和にする。
 6. **Event に generation が無い**: `Frame` は radio.rx の sample index を持つが generation を持たず、Event の `SampleRange.generation` は 0 で出している
    (STD-T98 も同じ)。Receiver に generation を渡す口を SDK として揃えるべき。
-7. **表とミニマップは App 内**(`AdsbPage.qml` の ListView、`map/MapItem`)。地図は APRS / AIS / ラジオゾンデ等の候補 App でも要るので、2 つ目の利用者が出た時点で
-   `map/` を `Spear.Widgets`(地図データは共通の資源)に抽出する。表の model は 250 ms ごとに作り直す QVariantList なので delegate も作り直される
+7. **表とミニマップは App 内**(`AdsbPage.qml` の ListView、`map/MapItem`)。地図は 2 つ目の利用者(STD-T99 の発信位置、2026-11-03)が出たので、
+   データ・表示範囲・下地の描画を `widgets/map`(`spear_map`)に抽出した。重ねて描くもの(機体)とタッチは App の QQuickPaintedItem に残る。表の model は 250 ms ごとに作り直す QVariantList なので delegate も作り直される
    (数十機なら問題ないが、多数なら差分更新の model が要る)。ミニマップの下地は表示範囲が変わるたび(自動フィット中は 4 Hz)に描き直す。
    世界規模の幅では陸リングが多く 1 回数十 ms かかる(実用の 20–300 km では数 ms)。
 8. **sc16 → cf32 変換と回転**はどの App でも書いている(demod / STD-T98 / ADS-B)。`docs/dsp-boundary.md` の基準(数学的定義、定数なし、2 つ目の利用者、参照ベクトル)を

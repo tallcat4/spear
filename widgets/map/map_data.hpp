@@ -1,5 +1,5 @@
-// ミニマップの地図データ(純 C++、Qt 非依存)。
-// apps/adsb/map/world.spearmap(build_map.py が Natural Earth 1:10m + OurAirports から作る。どちらもパブリックドメイン)を
+// 地図データ(純 C++、Qt 非依存。ADS-B と STD-T99 で共有)。
+// widgets/map/world.spearmap(build_map.py が Natural Earth 1:10m + OurAirports から作る。どちらもパブリックドメイン)を
 // バイナリに埋め込み、最初の利用時に展開する。全世界の陸地 / 湖 / 国境 / 日本の都道府県境 / 都市 / 空港 / 滑走路。
 // 座標は経度・緯度(度)。折れ線ごとに bbox を持ち、描画側は表示範囲と交わるものだけを描く。
 #pragma once
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace spear::adsb::map {
+namespace spear::map {
 
 struct LonLat { float lon = 0, lat = 0; };
 
@@ -36,4 +36,4 @@ std::span<const uint8_t> embedded_blob();
 // 一度だけ展開した共有インスタンス(失敗時は空)
 const MapData& world();
 
-} // namespace spear::adsb::map
+} // namespace spear::map

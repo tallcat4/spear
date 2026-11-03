@@ -9,7 +9,7 @@
 
 使い方: build_map.py [--tol 0.003] [--cache DIR] [--out world.spearmap]
 
-形式(little endian、apps/adsb/map/map_data.cpp が読む):
+形式(little endian、widgets/map/map_data.cpp が読む):
   magic "SPMAP1\\0\\0"
   section land:     u32 n; n × { u32 npts; npts × (f32 lon, f32 lat) }   閉じた多角形(外周も穴も同列、even-odd で塗る)
   section lakes:    同上

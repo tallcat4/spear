@@ -14,3 +14,5 @@ qt_add_qml_module(spear_widgets
   NO_PLUGIN_OPTIONAL
 )
 target_link_libraries(spear_widgets PRIVATE spear_theme spear_input spear_appfw)
+
+add_subdirectory(map)

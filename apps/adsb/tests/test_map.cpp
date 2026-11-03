@@ -1,10 +1,10 @@
-// ミニマップ: 埋め込み地図データの展開と、表示範囲の自動フィット(Qt 非依存の部分)
+// 地図(widgets/map、ADS-B から抽出): 埋め込み地図データの展開と、表示範囲の自動フィット(Qt 非依存の部分)
 #include "map/map_data.hpp"
 #include "map/view.hpp"
 
 #include <gtest/gtest.h>
 
-using namespace spear::adsb::map;
+using namespace spear::map;
 
 namespace {
 // 陸リング全体に対する even-odd の内外判定

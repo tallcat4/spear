@@ -49,6 +49,7 @@ class StdT99App final : public appfw::GuiApp {
     Q_PROPERTY(QVariantMap call READ call NOTIFY metersChanged)          // 現在の(最後の)送信
     Q_PROPERTY(QVariantList history READ history NOTIFY metersChanged)   // 受信履歴(新しい順、100 件)
     Q_PROPERTY(QVariantMap status READ status NOTIFY metersChanged)      // 同期 / フレーム / CRC / 電力 / ずれ
+    Q_PROPERTY(QVariantList pins READ pins NOTIFY metersChanged)         // 地図のピン: 最後の送信 + 履歴のほかの発信者(測位あり・日本の範囲内)
     Q_PROPERTY(double losslessDrops READ losslessDrops NOTIFY metersChanged)
     Q_PROPERTY(double dspLoad READ dspLoad NOTIFY metersChanged)
     Q_PROPERTY(double voiceDrops READ voiceDrops NOTIFY metersChanged)
@@ -92,6 +93,7 @@ public:
     QVariantMap call() const;
     QVariantList history() const;
     QVariantMap status() const;
+    QVariantList pins() const;
     double losslessDrops() const { return sub_ ? static_cast<double>(sub_->stats().dropped_blocks) : 0; }
     double dspLoad() const { return dsp_load_; }
     double voiceDrops() const { return voice_ ? static_cast<double>(voice_->dropped()) : 0; }

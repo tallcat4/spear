@@ -4,21 +4,21 @@
 #include <cstring>
 #include <mutex>
 
-// SPEAR_ADSB_MAP_DIR は CMake が apps/adsb/map の絶対パスで定義する(std_t98/secret/models.cpp と同じ .incbin)
+// SPEAR_MAP_DIR は CMake が widgets/map の絶対パスで定義する(std_t98/secret/models.cpp と同じ .incbin)
 #define SPEAR_STR2(x) #x
 #define SPEAR_STR(x) SPEAR_STR2(x)
 asm(".section .rodata\n"
     ".balign 64\n"
-    ".global spear_adsb_map_data\nspear_adsb_map_data:\n"
-    ".incbin \"" SPEAR_STR(SPEAR_ADSB_MAP_DIR) "/world.spearmap\"\n"
-    ".global spear_adsb_map_end\nspear_adsb_map_end:\n"
+    ".global spear_map_data\nspear_map_data:\n"
+    ".incbin \"" SPEAR_STR(SPEAR_MAP_DIR) "/world.spearmap\"\n"
+    ".global spear_map_end\nspear_map_end:\n"
     ".byte 0\n"
     ".previous\n");
-extern "C" const uint8_t spear_adsb_map_data[], spear_adsb_map_end[];
+extern "C" const uint8_t spear_map_data[], spear_map_end[];
 
-namespace spear::adsb::map {
+namespace spear::map {
 
-std::span<const uint8_t> embedded_blob() { return {spear_adsb_map_data, static_cast<std::size_t>(spear_adsb_map_end - spear_adsb_map_data)}; }
+std::span<const uint8_t> embedded_blob() { return {spear_map_data, static_cast<std::size_t>(spear_map_end - spear_map_data)}; }
 
 namespace {
 struct Reader {
@@ -88,4 +88,4 @@ const MapData& world() {
     return data;
 }
 
-} // namespace spear::adsb::map
+} // namespace spear::map

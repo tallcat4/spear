@@ -24,6 +24,7 @@ apps/std_t99/
   storage.*           SAVE(.burst / .llr / .jsonl / .wav、原本の FORMAT.md と同じ形式)
   monitor.*           上の全体(Qt / UHD 非依存)。App・spear-std-t99-decode・テストが同じものを使う
   std_t99_app.*       GUI App
+  position_map.*      発信位置の地図(QQuickPaintedItem: ピンとタッチ。地図データ・表示範囲・下地は widgets/map で ADS-B と共有)
   StdT99Page.qml      チャネル格子 / 通話 / 位置 / 待受 / 帯域スペクトラム / アイ / 品質 / 履歴
   models/             重み(バイナリに埋め込む。models/README.md)
   tests/              規格書 7.7.2 の試験信号、選択呼出の表、実機録音の golden
@@ -40,7 +41,7 @@ tools/std_t99_decode  spear-std-t99-decode <sigmf base> [--ch N] [--save dir] [-
 | 待受 | 再生だけを決める。表示と保存は常に全通話 | 原本と同じ |
 | event | 送信の開始だけ(radio.rx の index 付き)。フレームごとには出さない | イベントログを溢れさせない |
 | 保存 | SAVE = 復号結果、REC IQ = radio.rx の SigMF | REC IQ は golden 用(JR TRAIN RADIO と同じ経路) |
-| 地図 | まだ無い(位置は文字で表示) | ADS-B のミニマップの `Spear.Widgets` への抽出が先(2 つ目の利用者。下の「残り」) |
+| 地図 | ADS-B の地図(Natural Earth 1:10m、埋め込み)のデータ・表示範囲・下地の描画を `widgets/map`(`spear_map`)に抽出して共有。最後の送信を赤いピン、履歴のほかの発信者を橙の点。測位無効と日本の範囲外は立てない。1 か所だけのときは 60 km 幅 | 原本のプラグインと同じ表示。2 つ目の利用者なので抽出(docs/dsp-boundary.md の昇格ルール)。原本の日本地図(鉄道・道路・市街地・日本語の地名)より粗いが、オフラインの全世界データを 1 つにする |
 
 ## 原本からの変更
 - **送信の区切り**: 実機は 1 送信の頭に同期バーストを続けて送る(2026-11-03 の実機: 音声で 2 個、緊急通信の位置通知で 6 個)。原本は PICH1 付きの同期バーストごとに呼を分けていたので、
@@ -61,12 +62,12 @@ tools/std_t99_decode  spear-std-t99-decode <sigmf base> [--ch N] [--save dir] [-
 - **実機**(2026-11-03、FZ-G2 + B210 5IWG5D5、TRXA、AGC slow、CH18、送信機 1 台を近くで): 118 s で 290 フレーム、**すべて CRC 正常**、音声フレーム 258。
   6 送信(音声 4 回、緊急通信 1 の位置通知 2 回)、発信者 034-0010744、発信者名「TallCat」(CRC-32 一致)、一斉呼出。復号した音声は明瞭(作者が聴いて確認)。
   golden は `~/spear/golden/std_t99/ch18.sigmf-*`(`spear-headless` で録ったので LO 補正なし。周波数ずれの表示は +467 Hz)。
-  録音の再生で App の画面も確認した(`docs/gui/std_t99.png`)。
+  録音の再生で App の画面も確認した。`docs/gui/std_t99.png` は試験信号(4 Msps の SigMF にしたもの)の再生で、地図に東京のピンが立つ。
 - 性能: 復号器は 1 フレーム(20 ms)あたり約 1.6 ms(1 コアの 8 %)。DSP thread は合成信号で 9 %(4 Msps)。
 
 ## 既知の問題・残り
 1. アイパターンの DC はシンボル経路の同期語から取るので、捕捉経路(acquire)だけで出た送信の最初のフレームでは前の値が残る(表示だけ)。
-2. **地図**: 原本のプラグインは内蔵の日本地図にピンを立てる。ADS-B のミニマップ(`apps/adsb/map/`)を `Spear.Widgets` に抽出してから載せる(2 つ目の利用者)。
+2. **地図の細かさ**: 地名は英語(Natural Earth populated_places_simple)、鉄道・道路・市街地は無い。原本のプラグインの日本地図(name_ja、鉄道、道路)が要るなら `widgets/map/build_map.py` に層を足す。
 3. 実機で未確認: 個別通話・グループ通話・位置(GPS 測位あり)・遠隔制御の要求、弱い局、CH1–9 の群。待受(個別 / グループ)で再生が止まること。
 4. 2 周波待受(4.7.2)・送信・応答は持たない(原本と同じ)。
 5. 音声の大きさ: `dsp::Leveler`(−18 dBFS)を AudioSink の手前に通す(`docs/audio.md`)。保存と `std_t99.audio` には掛けない。

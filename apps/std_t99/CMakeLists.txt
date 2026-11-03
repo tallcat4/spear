@@ -8,6 +8,7 @@
 #   session/call  メッセージの集約、送信の区切り、選択呼出の着信判定、受信履歴
 #   voice/        TOKUDER: 誤り訂正、tokuder48_causal_v1 の推論、音声の時間軸、復号スレッド
 #   storage       .burst / .llr / .jsonl / .wav の保存
+#   position_map  発信位置の地図(QQuickPaintedItem。地図データと下地は widgets/map、ADS-B と共有)
 #   monitor       上の全体(Qt / UHD 非依存 → ツール・テストと共有 §10.4)
 #   models/       学習済みの重み(バイナリに埋め込む。models/README.md)
 add_library(spear_std_t99_rx STATIC
@@ -50,7 +51,7 @@ if(COMMAND spear_add_app)
     CLASS spear::apps::StdT99App
     HEADER std_t99_app.hpp
     PAGE StdT99Page.qml
-    SOURCES std_t99_app.cpp
-    LIBS spear_std_t99_rx
+    SOURCES std_t99_app.cpp position_map.cpp position_map.hpp
+    LIBS spear_std_t99_rx spear_map
   )
 endif()

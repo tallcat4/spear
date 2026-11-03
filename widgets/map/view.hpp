@@ -1,4 +1,4 @@
-// ミニマップの表示範囲(純 C++)。中心と横幅 [km] で持ち、局所等距円筒図法で画面に写す(数百 km の範囲では十分)。
+// 地図の表示範囲(純 C++、ADS-B と STD-T99 で共有)。中心と横幅 [km] で持ち、局所等距円筒図法で画面に写す(数百 km の範囲では十分)。
 // 自動フィット: 位置のある全機を含む bbox に余白をつけた範囲へ寄せる。広げる方向は速く、狭める方向はゆっくり(機が消えた
 // 瞬間に画面が跳ねない)。手動操作(パン / ズーム)中は追従しない。
 #pragma once
@@ -8,7 +8,7 @@
 #include <numbers>
 #include <vector>
 
-namespace spear::adsb::map {
+namespace spear::map {
 
 struct Geo { double lon = 0, lat = 0; };
 
@@ -83,4 +83,4 @@ inline bool ease(View& cur, const View& target, const std::vector<Geo>& pts, con
     return true;
 }
 
-} // namespace spear::adsb::map
+} // namespace spear::map

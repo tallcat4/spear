@@ -7,7 +7,8 @@
 
 STD-T99 DIGICOM(デジタル小電力コミュニティ無線、2026-11-03 追加): std-t99-receiver-sharp を 1 チャネル受信の App として移植した(並列受信は持たない)。
 実機の送信機 1 台で CH18 を受信し、118 s・290 フレームがすべて CRC 正常、発信者名・緊急通信 1・TOKUDER 音声(明瞭)を確認、golden にした。
-残り: 地図(ADS-B のミニマップの抽出)、個別 / グループ通話・GPS 測位ありの位置・待受の実地確認(`docs/apps/std_t99.md`)。
+発信位置の地図も入れた(ADS-B の地図のデータ・表示範囲・下地の描画を `widgets/map` に抽出し、両 App で共有)。
+残り: 個別 / グループ通話・GPS 測位ありの位置・待受の実地確認(`docs/apps/std_t99.md`)。
 
 バッテリー駆動の JR TRAIN RADIO で通話中に取りこぼす問題は解決した。原因は CPU の電源管理(HWP が EPP≠performance のとき
 受信中の負荷に 900 MHz を選ぶ)と baloo の落ちては再起動するループで、DSP の不足ではなかった。App の実行中だけ ppd に performance を
@@ -60,7 +61,7 @@ IQ → DSP → 軟判定 FEC → Tracker → ソルバーの回帰試験では�
 | M3 | STD-T98 App | 完了 | 実録音・実機ともにフレーム抽出から AMBE 音声まで。秘話は自己スクランブルした実音声で Python と一致し、実機の秘話呼でも鍵が見つかり復号できた(`docs/apps/std_t98.md`) |
 | — | JR TRAIN RADIO(JR 在来線デジタル列車無線) | 実機確認前 | 原本(Rust)の全機能を C++ に移植: 受信 DSP、同期、音声の誤り訂正と合成、データ電文、運行把握、通話の自動選択、保存。合成信号で原本とビット一致を確認(`docs/apps/jr_train.md`) |
 | — | ADS-B App(§7.2) | 完了 | 実機で受信。実録音 golden(羽田近傍 30 s で 1223 フレーム、6 機)。8 Msps をフルレートで消費して drops 0(`docs/apps/adsb.md`) |
-| — | STD-T99 DIGICOM(デジコミ、1 チャネル) | 実機で受信 | 規格書 7.7.2 の試験信号(29/29 フレーム)、実機の録音 golden(CH18、118 s、290/290 CRC、発信者名・緊急・音声)。地図は未(`docs/apps/std_t99.md`) |
+| — | STD-T99 DIGICOM(デジコミ、1 チャネル) | 実機で受信 | 規格書 7.7.2 の試験信号(29/29 フレーム)、実機の録音 golden(CH18、118 s、290/290 CRC、発信者名・緊急・音声)、発信位置の地図(`docs/apps/std_t99.md`) |
 | — | SLPR 20CH RX(特定小電力 20ch 同時受信) | 完了 | 合成 NFM で 2 ch 同時・隣接・provenance をテストで固定。実機で ch12 の実信号を受信、drop 0(`docs/apps/slpr.md`) |
 
 ## コンポーネントと検証状態
@@ -82,13 +83,13 @@ IQ → DSP → 軟判定 FEC → Tracker → ソルバーの回帰試験では�
 | `apps/adsb` | 1090 MHz Mode S / ADS-B 受信機(C++ のみ: 回転 → 低域 FIR → 電力 → プリアンブル / PPM → CRC-24、DF17/18/11 + AP 形式)、航空機表(CPR 偶奇 / 局所)、GUI(表 / ミニマップ(埋め込みのオフライン地図 Natural Earth + OurAirports。全機が入るよう自動で範囲を合わせる)/ 電力窓 / 統計)。radio.rx を 8 Msps のまま Lossless で消費 | 既知ベクトル(The 1090MHz Riddle)、合成 PPM で provenance をサンプル単位で確認、ライフサイクル、実録音 golden(`~/spear/golden/adsb`、羽田近傍 3 s / 136 フレーム)、実機で動作(`docs/apps/adsb.md`) |
 | `apps/slpr` | 特定小電力(422 MHz 帯、単信 20 ch、ICOM 準拠の 01–20)の同時 NFM 受信機(C++ のみ: 回転 → resamp1 → PFB 32 × 12.5 kHz → quadrature demod → LPF → DC 阻止 → 床相対 squelch(attack / hold))、加算ミキサ、GUI(帯域スペクトラム / 20ch 格子 / 選択 ch の IQ) | 合成 NFM(2 ch 同時、隣接の漏れ、provenance、hold)、ライフサイクル、実機で ch12 の実信号(`docs/apps/slpr.md`) |
 | `apps/jr_train` | JR 在来線デジタル列車無線の多波受信機(C++ のみ、Qt / UHD 非依存): 回転 + FIR ÷8(1.92 MS/s → 240 kS/s)→ チャネルごとの Pipeline(π/4-DQPSK 復調・64 状態 MLSE・フレーム同期・音声の誤り訂正・音声の復号(mrl-celp-c の聞きやすさ優先 / CELP + GRU/MLP の jr-voice を切り替え)・データ電文・LH5・運行把握)。worker スレッドで並列。通話の自動選択、保存(WAV / JSONL)。GUI(帯域スペクトラム / タイル / コンスタレーション・電文・運行把握 / SAVE / REC IQ)。プリセット east / central / west | 原本(Rust)とのビット一致(Mac、`tests/vectors`、refgen)、差分ファジング(規模 5 ですべて一致)、原本の単体テストの移植、TSan。Mac で spear 全体をビルドしてライフサイクルテストと画面を確認。Arch(FZ-G2)でもビット一致、実機で負荷(22 波 20 分)と画面を確認。**実信号での受信は未確認**(`docs/apps/jr_train.md`) |
-| `apps/std_t99` | ARIB STD-T99 Annex 2 の 1 チャネル受信機(C++ のみ: 回転 → ÷40 → 100 kHz → PFB の bin 0 → 4FSK(RRC / Gardner は STD-T98 と共有)→ 同期の状態機械 + 捕捉経路 → RICH / SACCH / PICH / FACCH / TCH)、メッセージと呼の集約、選択呼出の着信判定(表 Annex 2-4-14)、TOKUDER(tokuder48_causal_v1 の C++ 推論、専用スレッド)、保存(.burst / .llr / .jsonl / .wav)、GUI(チャネル格子 / 通話 / 位置 / 待受 / スペクトラム / アイ / 履歴 / SAVE / REC IQ) | 規格書の試験信号(4 Msps と 100 kHz、開始位置 20 通り、雑音)、選択呼出の表、実機録音 golden(`~/spear/golden/std_t99/ch18`)、ライフサイクル |
+| `apps/std_t99` | ARIB STD-T99 Annex 2 の 1 チャネル受信機(C++ のみ: 回転 → ÷40 → 100 kHz → PFB の bin 0 → 4FSK(RRC / Gardner は STD-T98 と共有)→ 同期の状態機械 + 捕捉経路 → RICH / SACCH / PICH / FACCH / TCH)、メッセージと呼の集約、選択呼出の着信判定(表 Annex 2-4-14)、TOKUDER(tokuder48_causal_v1 の C++ 推論、専用スレッド)、保存(.burst / .llr / .jsonl / .wav)、GUI(チャネル格子 / 通話 / 位置と地図 / 待受 / スペクトラム / アイ / 履歴 / SAVE / REC IQ) | 規格書の試験信号(4 Msps と 100 kHz、開始位置 20 通り、雑音)、選択呼出の表、実機録音 golden(`~/spear/golden/std_t99/ch18`)、ライフサイクル |
 | `tools/` | `spear-soak`(M-1)、`spear-headless`(M0)、`spear-std-t98-decode`(録音 → フレーム表 / WAV / ペイロード。秘話呼は鍵を探索して復号)、`spear-adsb-decode`(録音 → フレーム表 / 航空機一覧 / golden)、`spear-jr-train-decode`(録音 → 音声・電文・統計。原本の decode-wave と同じ形式の出力、保存、frames、WAV)、`spear-std-t99-decode`(録音 → フレームの JSON・送信の要約・SAVE と同じ 4 ファイル・WAV) | — |
 
 ## 未完の作業・既知の問題
 
 1. STD-T98 秘話の golden: 実機の秘話呼で動作は確認した(2026-09-17)。その録音の抜粋(鍵つき)を `~/spear/golden/std_t98/` に加え、受信 → 鍵探索 → 復号を通しで回帰テストにする。現在の E2E テストは、平文の実音声を自分でスクランブルしたもの。
-2. ADS-B(2026-09-17 実装・実機確認、`docs/apps/adsb.md`): 地上位置(TC5–8)の CPR、多数機のときの表の差分更新 model、受信機 reset の SDK 規約(generation 切替時)、ミニマップの `Spear.Widgets` への抽出(2 つ目の利用者が出たら)が残っている。
+2. ADS-B(2026-09-17 実装・実機確認、`docs/apps/adsb.md`): 地上位置(TC5–8)の CPR、多数機のときの表の差分更新 model、受信機 reset の SDK 規約(generation 切替時)が残っている。地図の抽出は 2026-11-03 に済んだ(`widgets/map`、STD-T99 と共有)。
 3. STD-T98 の実地確認: 2026-10-16 にフレーム同期を状態機械にし、squelch を廃止して活動を同期で示すようにし、AMBE を blip25c(軟判定の Golay)にした。次の実地で弱い局の聞こえ方を確認する。残る改善案は SACCH / PICH の Viterbi の軟判定と、4 値のレベル判定の追従(9/20 の録音では外側のレベルが 3.4 で、下位ビットの誤りが多い)。
    以前の経緯: 2026-09-20 のイベントで「遠い局が途切れる / 空き ch が開く」症状が出た。原因は AGC で揺れる床に絶対閾値のスケルチが乗っていたこと。床相対スケルチと出力ゲートに直した(2026-09-21、`docs/apps/std_t98.md`「スケルチ」)。次の実地で AGC OFF(手動ゲイン)との比較と、弱い局の聞こえ方を確認する。引き込み(`max_deviation` の単位の修正後)は録音解析で 0.1〜0.4 s と確認した。
 4. IQ RECORDER: 録音一覧と再生元の選択(`Spear.Input` に ListPicker が必要)。ディスク残量による自動停止は 2026-10-16 に入れた。

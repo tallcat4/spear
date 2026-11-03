@@ -1,12 +1,13 @@
 // STD-T99 DIGICOM のページ (1920×1200)
 //   上 : チャネル格子(上段 CH1–9 = 142.934375 MHz〜、下段 CH10–18 = 146.934375 MHz〜。CH18 は呼出チャネル)。タップで選局
-//   左 : 通話(状態の帯・発信者・発信者名・宛先・種別。緊急は赤、緊急応答は琥珀の帯)/ 位置(緯度経度・高度・GPS 時刻・速度・方位)/ 待受
-//   右 : 帯域スペクトラム(std_t99.band 400 kHz)/ アイパターン / 受信品質 / 受信履歴
-// 原本のプラグインの地図はまだ無い(ADS-B のミニマップを Spear.Widgets へ抽出してから。docs/apps/std_t99.md)。
+//   左 : 通話(状態の帯・発信者・発信者名・宛先・種別。緊急は赤、緊急応答は琥珀の帯)/ 位置(数値と地図。最後の送信は赤いピン、
+//        履歴のほかの発信者は橙の点。地図データと下地は widgets/map で ADS-B と共有)
+//   右 : 帯域スペクトラム(std_t99.band 400 kHz)/ アイパターン / 受信品質と待受 / 受信履歴
 import QtQuick
 import Spear.Theme
 import Spear.Widgets
 import Spear.Input
+import Spear.Apps.Std_t99
 
 Item {
     id: page
@@ -128,39 +129,48 @@ Item {
             }
         }
 
-        // 位置(GPS data 1 / 2、PICH2)
+        // 位置(GPS data 1 / 2、PICH2): 左に数値、右に地図
         Rectangle {
             id: posCard
-            x: 0; y: callCard.y + callCard.height + Theme.pad; width: parent.width; height: 210
+            x: 0; y: callCard.y + callCard.height + Theme.pad; width: parent.width; height: parent.height - y
             color: Theme.panel; border.color: Theme.line; border.width: 1
             Text { x: Theme.pad; y: 6; text: "POSITION" + (page.call.hasPosition && !page.call.gpsValid ? "  (NO FIX: V)" : ""); color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
             Column {
-                x: Theme.pad; y: 30; spacing: 6
-                Row {
-                    spacing: 6
-                    Readout { label: "LATITUDE"; value: !page.call.hasPosition ? "—" : page.call.gpsValid ? page.call.latText : "NO FIX"; width: 300; height: 58; valueColor: Theme.textBright }
-                    Readout { label: "LONGITUDE"; value: !page.call.hasPosition ? "—" : page.call.gpsValid ? page.call.lonText : "NO FIX"; width: 310; height: 58; valueColor: Theme.textBright }
-                    Readout { label: "ALTITUDE"; value: page.call.hasPosition && page.call.gpsValid ? page.call.altitude + " m" : "—"; width: posCard.width - 2 * Theme.pad - 622; height: 58 }
-                }
-                Row {
-                    spacing: 6
-                    Readout { label: "DECIMAL"; value: page.call.hasPosition && page.call.gpsValid ? page.call.lat.toFixed(6) + ", " + page.call.lon.toFixed(6) : "—"; width: 300; height: 58 }
-                    Readout { label: "GPS TIME"; value: page.call.hasGpsTime ? page.call.gpsTime : "—"; width: 310; height: 58 }
-                    Readout { label: "SPEED / DIR"; value: page.call.hasGpsTime && page.call.gpsTime !== "NO FIX" ? page.call.speedKn.toFixed(1) + " kn  " + page.call.direction + "°" : "—"; width: posCard.width - 2 * Theme.pad - 622; height: 58 }
-                }
+                id: posCol
+                x: Theme.pad; y: 30; spacing: 6; width: 300
+                Readout { label: "LATITUDE"; value: !page.call.hasPosition ? "—" : page.call.gpsValid ? page.call.latText : "NO FIX"; width: parent.width; height: 58; valueColor: Theme.textBright }
+                Readout { label: "LONGITUDE"; value: !page.call.hasPosition ? "—" : page.call.gpsValid ? page.call.lonText : "NO FIX"; width: parent.width; height: 58; valueColor: Theme.textBright }
+                Readout { label: "ALTITUDE"; value: page.call.hasPosition && page.call.gpsValid ? page.call.altitude + " m" : "—"; width: parent.width; height: 58 }
+                Readout { label: "GPS TIME"; value: page.call.hasGpsTime ? page.call.gpsTime : "—"; width: parent.width; height: 58; valueSize: Theme.fsBase }
+                Readout { label: "SPEED / DIR"; value: page.call.hasGpsTime && page.call.gpsTime !== "NO FIX" ? page.call.speedKn.toFixed(1) + " kn  " + page.call.direction + "°" : "—"; width: parent.width; height: 58 }
             }
-        }
-
-        // 待受の設定(ソフトキーで変える)
-        Rectangle {
-            x: 0; y: posCard.y + posCard.height + Theme.pad; width: parent.width; height: parent.height - y
-            color: Theme.panel; border.color: Theme.line; border.width: 1
-            Row {
-                x: Theme.pad; y: Theme.pad; spacing: 6
-                Readout { label: "STANDBY"; value: page.standbyNames[app.standby]; width: 230; height: 58; valueColor: Theme.amber }
-                Readout { label: "OWN DEVICE ID"; value: app.ownId; width: 260; height: 58 }
-                Readout { label: "OWN GROUP"; value: app.ownGroup === 0 ? "00 (ALL)" : ("0" + app.ownGroup).slice(-2); width: 200; height: 58 }
-                Readout { label: "SAVE"; value: app.saving ? app.savedFrames.toFixed(0) + " frames" : "OFF"; width: 200; height: 58; valueColor: app.saving ? Theme.green : Theme.textDim }
+            Text { x: posCol.x + posCol.width + Theme.pad; y: 6
+                   text: "MAP  N up  " + (posMap.autoFit ? "AUTO FIT" : "MANUAL") + "  " + posMap.spanKm.toFixed(0) + " km" + (posMap.pinCount === 0 ? "  NO POSITION" : "")
+                   color: Theme.textDim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+            Rectangle {
+                x: posCol.x + posCol.width + Theme.pad; y: 30; width: parent.width - x - Theme.pad; height: parent.height - y - Theme.pad
+                color: "#000000"; border.color: Theme.lineDim; border.width: 1; clip: true
+                PositionMap {
+                    id: posMap
+                    anchors.fill: parent; anchors.margins: 1
+                    pins: app.pins
+                    landColor: "#161616"; coastColor: Theme.line; lineColor: Theme.gridMajor; textColor: Theme.text; dimColor: Theme.textDim
+                    pinColor: Theme.red; otherColor: Theme.amber; fontFamily: Theme.mono
+                    // タッチ: ドラッグでパン、ピンチでズーム(操作すると自動フィットが切れる。FIT で戻す)
+                    PinchArea {
+                        anchors.fill: parent
+                        property real startSpan: 0
+                        onPinchStarted: startSpan = posMap.spanKm
+                        onPinchUpdated: (p) => { if (p.scale > 0) posMap.zoom((startSpan / p.scale) / posMap.spanKm) }
+                        MouseArea {
+                            anchors.fill: parent
+                            property real lx: 0; property real ly: 0
+                            onPressed: (m) => { lx = m.x; ly = m.y }
+                            onPositionChanged: (m) => { if (!pressed) return; posMap.pan(m.x - lx, m.y - ly); lx = m.x; ly = m.y }
+                        }
+                    }
+                }
+                KeyButton { anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 6; width: 90; height: 50; label: "FIT"; labelSize: Theme.fsBase; enabled: !posMap.autoFit; onPressed: posMap.autoFit = true }
             }
         }
     }
@@ -173,7 +183,7 @@ Item {
 
         SpectrumView {
             id: band
-            x: 0; y: 0; width: parent.width; height: 300
+            x: 0; y: 0; width: parent.width; height: 260
             compact: true; showWaterfall: true
             source: app.bandView; centerFreq: app.channelFreqHz(app.selectedChannel); centerEditable: false
             markerHz: 0; markerLabel: "CH " + app.selectedChannel
@@ -190,7 +200,7 @@ Item {
         }
         EyeDiagram {
             id: eye
-            x: 0; y: band.height + Theme.pad; width: Math.round(parent.width * 0.48); height: 300
+            x: 0; y: band.height + Theme.pad; width: Math.round(parent.width * 0.48); height: 290
             source: app.eye
             title: "EYE  CH " + app.selectedChannel + "  4FSK 2400 Bd"
             yMin: -5; yMax: 5; levels: [-3, -1, 1, 3]
@@ -210,6 +220,8 @@ Item {
                           width: parent.cw; height: 58; valueColor: app.losslessDrops > 0 || app.voiceDrops > 0 ? Theme.red : Theme.text }
                 Readout { label: "AUDIO"; value: app.audioError !== "" ? app.audioError : (app.mute ? "MUTE" : "TOKUDER 8 kHz"); width: parent.cw; height: 58
                           valueColor: app.audioError !== "" ? Theme.red : Theme.text }
+                Readout { label: "STANDBY  /  OWN GROUP"; value: page.standbyNames[app.standby] + "  " + ("0" + app.ownGroup).slice(-2); width: parent.cw; height: 58; valueColor: Theme.amber }
+                Readout { label: "OWN DEVICE ID"; value: app.ownId; width: parent.cw; height: 58 }
             }
             Text { x: Theme.pad; anchors.bottom: parent.bottom; anchors.bottomMargin: 6; width: parent.width - 2 * Theme.pad; elide: Text.ElideMiddle
                    visible: app.recording || app.recordError !== ""; text: app.recordError !== "" ? app.recordError : "REC " + app.recordPath

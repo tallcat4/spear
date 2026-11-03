@@ -135,6 +135,33 @@ QVariantMap StdT99App::status() const {
     return m;
 }
 
+QVariantList StdT99App::pins() const {
+    // 最後の送信の位置を赤いピン、履歴にあるほかの発信者の最後の位置を橙の点(std-t99-receiver-sharp と同じ)。
+    // 測位無効(V)と日本の範囲の外(緯度 20–46°、経度 122–154°)は立てない
+    auto usable = [](const CallInfo& c) {
+        if (!c.position || !c.position->valid) return false;
+        const double la = c.position->latitude_deg(), lo = c.position->longitude_deg();
+        return la >= 20 && la <= 46 && lo >= 122 && lo <= 154;
+    };
+    std::lock_guard<std::mutex> lk(mu_);
+    QVariantList out;
+    std::vector<std::string> seen;
+    for (std::size_t i = 0; i < history_.size(); ++i) {
+        const auto& c = history_[i];
+        const std::string who = c.caller.value_or("?");
+        if (std::find(seen.begin(), seen.end(), who) != seen.end()) continue;
+        seen.push_back(who);
+        if (!usable(c)) continue;
+        QVariantMap m;
+        m["lat"] = c.position->latitude_deg();
+        m["lon"] = c.position->longitude_deg();
+        m["label"] = QString::fromStdString(c.name.empty() ? who : c.name);
+        m["current"] = i == 0;
+        out.push_back(m);
+    }
+    return out;
+}
+
 std::unique_ptr<Monitor> StdT99App::build_monitor(Core& core) {
     // 回転量 = 選択チャネル − 実際の LO。実際の LO は Core(単一の所有者)から読む: B210 ならチャネル − loOffset、
     // 録音の再生なら録音時の中心(retune できない)。個体の LO 誤差は Core の Radio が radio.freq_err_ppm で打ち消す
