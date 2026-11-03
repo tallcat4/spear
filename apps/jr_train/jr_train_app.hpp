@@ -11,12 +11,15 @@
 // プリセット(east / central / west)は site.conf の jr_train.preset。画面に周波数・レートの操作は置かない。
 #pragma once
 
+#include <optional>
+
 #include "call_monitor.hpp"
 #include "presets.hpp"
 #include "receiver.hpp"
 #include "storage.hpp"
 #include "spear/appfw/app.hpp"
 #include "spear/appfw/view_source.hpp"
+#include "spear/appfw/speech_level.hpp"
 #include "spear/core/audio_sink.hpp"
 #include "spear/core/block.hpp"
 #include "spear/core/recording.hpp"
@@ -229,6 +232,8 @@ private:
     uint64_t band_seq_ = 0, band_gen_ = 0;
     std::shared_ptr<Subscription> sub_;
     std::unique_ptr<AudioSink> audio_;
+    std::optional<dsp::LevelerConfig> level_cfg_ = dsp::LevelerConfig{};   // site.conf: audio_level_dbfs
+    std::unique_ptr<dsp::Leveler> leveler_;                                // DSP thread 専用。AudioSink に渡す直前に通す
     std::thread th_;
     std::atomic<bool> stop_{false};
     int timer_ = 0;

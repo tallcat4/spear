@@ -9,8 +9,11 @@
 // レート: 1.92 Msps (B210 の 30.72 MHz / 16) → /8 = 240 kHz channel → /5 = 48 kHz audio
 #pragma once
 
+#include <optional>
+
 #include "spear/appfw/app.hpp"
 #include "spear/appfw/view_source.hpp"
+#include "spear/appfw/speech_level.hpp"
 #include "spear/core/audio_sink.hpp"
 #include "spear/core/block.hpp"
 #include "spear/core/stream.hpp"
@@ -118,6 +121,8 @@ private:
     appfw::ViewSource view_, channel_view_;
     std::unique_ptr<appfw::ViewProcessor> vp_, channel_vp_;
     std::unique_ptr<AudioSink> audio_;
+    std::optional<dsp::LevelerConfig> level_cfg_ = dsp::LevelerConfig{};   // site.conf: audio_level_dbfs
+    std::unique_ptr<dsp::Leveler> leveler_;                                // DSP thread 専用。AudioSink に渡す直前に通す
     std::unique_ptr<BlockPool> channel_pool_, audio_pool_;
     std::unique_ptr<Stream<cf32>> channel_;
     std::unique_ptr<Stream<float>> audio_stream_;

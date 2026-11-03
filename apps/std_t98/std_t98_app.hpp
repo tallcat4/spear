@@ -9,6 +9,8 @@
 // RF: 4 Msps、LO は帯域中心から loOffset だけ離す(ゼロ IF の DC スパイクをチャネル 16 に重ねない)。
 #pragma once
 
+#include <optional>
+
 #include "ambe.hpp"
 #include "channel_plan.hpp"
 #include "secret/tracker.hpp"
@@ -16,6 +18,7 @@
 #include "spear/appfw/app.hpp"
 #include "spear/appfw/trace_source.hpp"
 #include "spear/appfw/view_source.hpp"
+#include "spear/appfw/speech_level.hpp"
 #include "spear/core/audio_sink.hpp"
 #include "spear/core/block.hpp"
 #include "spear/core/stream.hpp"
@@ -138,6 +141,8 @@ private:
     appfw::TraceSource eye_;
     std::unique_ptr<appfw::ViewProcessor> vp_, band_vp_, channel_vp_;
     std::unique_ptr<AudioSink> audio_;
+    std::optional<dsp::LevelerConfig> level_cfg_ = dsp::LevelerConfig{};   // site.conf: audio_level_dbfs
+    std::unique_ptr<dsp::Leveler> leveler_;                                // DSP thread 専用。AudioSink に渡す直前に通す
     // 音声ミキサ(DSP thread 専用): 各チャネルのフレーム音声を provenance(radio.rx index → 8 kHz index)の位置に加算し、
     // 入力の進みから一定の遅延(kMixLatency)を置いた位置まで AudioSink に流す。全チャネル同時再生も 1 チャネルも同じ経路。
     struct Mixer {

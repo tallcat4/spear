@@ -38,6 +38,7 @@ StdT98App::~StdT98App() = default;
 
 void StdT98App::configure(const QVariantMap& settings) {
     if (settings.contains("audio_device")) audio_device_ = settings["audio_device"].toString().toStdString();
+    level_cfg_ = appfw::speech_level(settings, level_cfg_);
     if (settings.contains("std_t98.band_center_hz")) band_center_hz_ = settings["std_t98.band_center_hz"].toDouble();
     if (settings.contains("std_t98.secret")) secret_enabled_ = settings["std_t98.secret"].toInt() != 0;
 }
@@ -315,6 +316,7 @@ void StdT98App::mix_flush(uint64_t reached_input_index) {
         v = 0.f;
     }
     mix_.play_pos = target;
+    if (leveler_) leveler_->process(out);
     if (audio_) audio_->write(out);
 }
 
@@ -353,6 +355,8 @@ void StdT98App::on_start(Core& core) {
     channel_vp_->start();
 
     audio_ = std::make_unique<AudioSink>(&core.events(), audio_device_, kAudioRate);
+
+    leveler_ = appfw::make_speech_leveler(level_cfg_, "std_t98.level", static_cast<double>(kAudioRate));
     audio_->set_mute(mute_);
     std::string err;
     if (!audio_->open(&err)) core.events().emit(EventKind::Warning, info().id, "audio disabled: " + err);

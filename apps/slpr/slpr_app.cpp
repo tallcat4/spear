@@ -23,6 +23,7 @@ SlprApp::~SlprApp() = default;
 
 void SlprApp::configure(const QVariantMap& settings) {
     if (settings.contains("audio_device")) audio_device_ = settings["audio_device"].toString().toStdString();
+    level_cfg_ = appfw::speech_level(settings, level_cfg_);
     if (settings.contains("slpr.band_center_hz")) band_center_hz_ = settings["slpr.band_center_hz"].toDouble();
     if (settings.contains("slpr.squelch_margin_db")) squelch_margin_db_ = settings["slpr.squelch_margin_db"].toDouble();
 }
@@ -175,6 +176,7 @@ void SlprApp::on_start(Core& core) {
 
     // 音声は 12.5 kHz のまま(PFB の出力レート)。ALSA/PipeWire 側でリサンプルさせる(STD-T98 の 8 kHz と同じ扱い)
     audio_ = std::make_unique<AudioSink>(&core.events(), audio_device_, static_cast<unsigned>(kSpacingHz));
+    leveler_ = appfw::make_speech_leveler(level_cfg_, "slpr.level", static_cast<double>(kSpacingHz));
     audio_->set_mute(mute_);
     std::string err;
     if (!audio_->open(&err)) core.events().emit(EventKind::Warning, info().id, "audio disabled: " + err);
@@ -252,6 +254,7 @@ void SlprApp::run() {
             mix_db_ = 10.0 * std::log10(mpw / static_cast<double>(mix_.size()) + 1e-20);
             TAP("slpr.audio", mix_.data(), mix_.size());
             publish(*audio_stream_, *audio_pool_, std::span<const float>(mix_.data(), mix_.size()), audio_seq_, audio_index_);
+            if (leveler_) leveler_->process(mix_);   // 観測点(slpr.audio)とメーターには掛けない
             if (audio_) audio_->write(mix_);
         }
         {

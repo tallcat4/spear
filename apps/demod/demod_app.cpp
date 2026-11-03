@@ -67,6 +67,7 @@ DemodApp::~DemodApp() = default;
 
 void DemodApp::configure(const QVariantMap& settings) {
     if (settings.contains("audio_device")) audio_device_ = settings["audio_device"].toString().toStdString();
+    level_cfg_ = appfw::speech_level(settings, level_cfg_);
 }
 
 RfConfig DemodApp::declare_rf_config() const {
@@ -168,6 +169,7 @@ void DemodApp::on_start(Core& core) {
 
     // ---- 音声 ----
     audio_ = std::make_unique<AudioSink>(&core.events(), audio_device_, static_cast<unsigned>(kAudioRate));
+    leveler_ = appfw::make_speech_leveler(level_cfg_, "demod.level", static_cast<double>(kAudioRate));
     audio_->set_mute(mute_);
     std::string err;
     if (!audio_->open(&err)) core.events().emit(EventKind::Warning, info().id, "audio disabled: " + err);
@@ -291,6 +293,7 @@ void DemodApp::run() {
             audio_index_ += na;
             audio_stream_->publish(b.commit(static_cast<uint32_t>(na)));
         }
+        if (leveler_) leveler_->process(std::span<float>(audio.data(), na));   // 観測点(demod.audio)とメーターには掛けない
         if (audio_) audio_->write(std::span<const float>(audio.data(), na));
         pending = {};
     }

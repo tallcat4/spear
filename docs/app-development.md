@@ -37,7 +37,7 @@ docs/apps/<id>.md    実装メモ
 | ページ | `required property var app / ui`、`softKeys`(7 個まで、8 個目 BACK はシェル)、`softKey(action)`。部品は `Spear.Widgets` / `Spear.Input` |
 | 操作音 | `Spear.Input` の部品(KeyButton / ValueField)とソフトキーは自動で鳴る。自前の MouseArea でアクションを起こすなら、**実際に何かが変わる分岐の中で** `Feedback.tap()`(例: 格子の選択が変わったとき)。ドラッグ / ピンチ / フリックには入れない。`Feedback.reject()` は数値入力の拒否専用 |
 | 入力 | `ui.askFreq / askRate / askGain / askRef / askOffset(current, callback)`、`ui.restartWithRate(v)`、`ui.showDiagnostics()`。自前の数値入力(タッチ専用) |
-| 設定 | `configure(const QVariantMap&)`: `record_dir`、`audio_device`、`--set key=value`(`spear.sh` が `~/spear/site.conf` から渡す。App のキーは `<id>.<name>`。`radio.*` は Core が読む)。保存値の復元より後に呼ばれる(site.conf が勝つ) |
+| 設定 | `configure(const QVariantMap&)`: `record_dir`、`audio_device`、`audio_level_dbfs`(声のレベル合わせ、`docs/audio.md`)、`--set key=value`(`spear.sh` が `~/spear/site.conf` から渡す。App のキーは `<id>.<name>`。`radio.*` は Core が読む)。保存値の復元より後に呼ばれる(site.conf が勝つ) |
 | 運転状態の保存 | コンストラクタで `persist({"squelchDb", "view.dbMax", ...})`。シェルの `SettingsStore` が `~/spear/state.conf` から書き戻し、NOTIFY のたびに保存する。宣言するのは **ユーザーが操作する値**(スケルチ、MUTE、モード、REF/AVG、選択 ch)。観測値・派生値(チャネル IQ 表示のレンジ等)・個体値(site.conf)は宣言しない。名前の解決は `spear_settings_tests` が全 App について確認する |
 | 観測点 | 内部 stream を `Stream<cf32>/<float>` として publish し `ViewProcessor` を繋ぐ(spectrum/waterfall)。短いトレース(アイ等)は `appfw::TraceSource` に push → `EyeDiagram` |
 | 表示 | `SpectrumView`(`markers` で多チャネル、`compact` で狭い場所)、`EyeDiagram`、`Readout`、`LevelMeter`。1920×1200 固定キャンバス、タッチのみ |

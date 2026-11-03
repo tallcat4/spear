@@ -8,9 +8,12 @@
 // RF: 4 Msps、LO は帯域中心(ch11 = 422.1750 MHz)から loOffset(250 kHz)だけ下(ゼロ IF の DC スパイクを帯域の外へ)。
 #pragma once
 
+#include <optional>
+
 #include "receiver.hpp"
 #include "spear/appfw/app.hpp"
 #include "spear/appfw/view_source.hpp"
+#include "spear/appfw/speech_level.hpp"
 #include "spear/core/audio_sink.hpp"
 #include "spear/core/block.hpp"
 #include "spear/core/stream.hpp"
@@ -126,6 +129,8 @@ private:
     appfw::ViewSource view_, band_view_, channel_view_;
     std::unique_ptr<appfw::ViewProcessor> vp_, band_vp_, channel_vp_;
     std::unique_ptr<AudioSink> audio_;
+    std::optional<dsp::LevelerConfig> level_cfg_ = dsp::LevelerConfig{};   // site.conf: audio_level_dbfs
+    std::unique_ptr<dsp::Leveler> leveler_;                                // DSP thread 専用。AudioSink に渡す直前に通す
     // 音声ミキサ(DSP thread 専用): 全チャネルの音声は同じブロックで同じ数だけ出るので、加算するだけ(provenance で並べ直す必要が無い)
     std::vector<float> mix_;
     std::unique_ptr<BlockPool> band_pool_, channel_pool_, audio_pool_;

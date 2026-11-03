@@ -76,6 +76,7 @@ void JrTrainApp::configure(const QVariantMap& settings) {
     if (settings.contains("jr_train.save_messages")) save_options_.data_messages = settings["jr_train.save_messages"].toInt() != 0;
     if (settings.contains("record_dir")) record_dir_ = settings["record_dir"].toString().toStdString();
     if (settings.contains("audio_device")) audio_device_ = settings["audio_device"].toString().toStdString();
+    level_cfg_ = appfw::speech_level(settings, level_cfg_);
     recompute_active();
     Q_EMIT configChanged();
 }
@@ -464,10 +465,12 @@ void JrTrainApp::deliver_audio(Receiver& rx) {
     if (previous != monitored) audio_primed_ = false;
     if (audio_ && !out.empty()) {
         if (!audio_primed_) {
-            const std::vector<float> silence(kPrimeSamples, 0.f);
+            std::vector<float> silence(kPrimeSamples, 0.f);
+            if (leveler_) leveler_->process(silence);   // 前の通話の先読み(3 ms)を押し出す
             audio_->write(silence);
             audio_primed_ = true;
         }
+        if (leveler_) leveler_->process(out);   // 保存(saver_)には掛けない
         audio_->write(out);
     }
     std::lock_guard<std::mutex> lk(mu_);
@@ -545,6 +548,8 @@ void JrTrainApp::on_start(Core& core) {
     band_vp_->start();
 
     audio_ = std::make_unique<AudioSink>(&core.events(), audio_device_, kAudioRate, kAudioRate * 2);
+
+    leveler_ = appfw::make_speech_leveler(level_cfg_, "jr_train.level", static_cast<double>(kAudioRate));
     audio_->set_mute(mute_);
     std::string err;
     if (!audio_->open(&err)) core.events().emit(EventKind::Warning, info().id, "audio disabled: " + err);
