@@ -10,6 +10,7 @@ qt_add_executable(spear-gui
   src/ui_audio.cpp
   src/tap_sound.cpp
   src/boot_sound.cpp
+  src/system_volume.cpp
 )
 qt_add_qml_module(spear-gui
   URI Spear
@@ -24,6 +25,7 @@ qt_add_qml_module(spear-gui
     qml/SplashPage.qml
     qml/ConfirmDialog.qml
     qml/DiagnosticsPage.qml
+    qml/VolumePopup.qml
   SOURCES
     src/system_model.hpp
     src/shell.hpp

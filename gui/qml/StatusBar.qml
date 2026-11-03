@@ -2,6 +2,7 @@
 import QtQuick
 import Spear.Theme
 import Spear.Widgets
+import Spear.Input
 
 Rectangle {
     id: bar
@@ -38,8 +39,20 @@ Rectangle {
             color: Theme.textBright; font.family: Theme.mono; font.pixelSize: Theme.fsLarge; font.bold: true
         }
     }
+    // 出力の音量(OS。SystemVolume)。タップで音量の操作を出す(キオスクには OS の音量の表示が無い)
+    signal volumeTapped()
+    Rectangle {
+        id: volBlock
+        anchors.right: gainBlock.left; anchors.rightMargin: Theme.pad; anchors.verticalCenter: parent.verticalCenter
+        width: 92; height: Theme.statusBarH - 8
+        color: "transparent"; border.color: Theme.line; border.width: 1
+        Text { anchors.centerIn: parent
+               text: "♪" + (!volume.available ? "--" : (volume.muted ? "MUTE" : Math.round(volume.volume * 100) + "%"))
+               color: volume.muted ? Theme.amber : Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsBase }
+        MouseArea { anchors.fill: parent; onClicked: { Feedback.tap(); volume.refresh(); bar.volumeTapped() } }
+    }
     Item {
-        anchors.left: parent.left; anchors.right: gainBlock.left; anchors.rightMargin: Theme.pad; height: parent.height
+        anchors.left: parent.left; anchors.right: volBlock.left; anchors.rightMargin: Theme.pad; height: parent.height
         clip: true
     Row {
         anchors.verticalCenter: parent.verticalCenter
@@ -82,7 +95,7 @@ Rectangle {
         property bool warn: false
         property bool dim: false
         property bool bright: false
-        width: t.implicitWidth + 16; height: Theme.statusBarH
+        width: t.implicitWidth + 8; height: Theme.statusBarH
         Text { id: t; anchors.centerIn: parent; text: parent.text
                color: parent.warn ? Theme.red : (parent.bright ? Theme.textBright : (parent.dim ? Theme.textDim : Theme.text))
                font.family: Theme.mono; font.pixelSize: Theme.fsBase; font.bold: parent.warn || parent.bright }

@@ -21,3 +21,8 @@
   STD-T98 の 2.6 s の抜粋 −21〜−24 dBFS(短いので出だしの大きな音節の影響が残る)。
 - テスト: `tests/test_leveler.cpp`(大小の入力が同じ大きさになる、上限、無音で利得が動かない、群遅延)。
 
+## 音量の操作(`gui/src/system_volume.*`、`gui/qml/VolumePopup.qml`)
+- ステータスバーの `♪100%`(MUTE 中は `♪MUTE`)をタップすると音量のパネルが出る(− / + / MUTE、5 % 刻み、上限 100 %)。3 s 操作が無いか、外をタップすると消える。
+- 音量キー(Qt::Key_VolumeUp / Down / Mute)でも同じパネルが出る。キオスク(cage)では OS が音量キーを扱わないので spear が扱う。
+  Plasma の中では KWin が先に取り、Plasma の表示が出る。
+- 読み書きは `wpctl`(`@DEFAULT_AUDIO_SINK@`)。Plasma の音量と同じ値なので、行き来しても音量は変わらない。操作は順に 1 つずつ実行し、毎回 OS から読み直して表示する。

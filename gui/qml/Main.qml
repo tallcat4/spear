@@ -63,7 +63,7 @@ Window {
         transformOrigin: Item.TopLeft
         x: Math.round((win.width - 1920 * fit) / 2); y: Math.round((win.height - 1200 * fit) / 2)
 
-        StatusBar { id: status; width: parent.width; anchors.top: parent.top }
+        StatusBar { id: status; width: parent.width; anchors.top: parent.top; onVolumeTapped: volumePopup.show() }
 
         Item {
             id: content
@@ -139,6 +139,8 @@ Window {
             acceptLabel: "EXIT"; cancelLabel: "CANCEL"
             onAccepted: shell.quit()
         }
+        // ---- 音量(OS の出力)。VOL のタップと音量キーで出る ----
+        VolumePopup { id: volumePopup }
         // ---- 自前の数値入力(モーダル)。入力中もステータスバーは見せる ----
         NumericEntry {
             id: entry
@@ -228,5 +230,6 @@ Window {
             else shell.draftGain = v
         })
     }
+    function openVolume() { volumePopup.show() }
     function demoAppAction(action) { if (win.appOpen && appPage.item && appPage.item.softKey) appPage.item.softKey(action) }
 }

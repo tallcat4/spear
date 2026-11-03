@@ -26,7 +26,7 @@ hold し、キオスクセッションを入れた(`docs/kiosk.md`)。屋上で�
 - Plasma から起動した App は、起動時からの利用者の systemd の制限(rtprio 0)を引き継ぐ。再起動後は 99。
 
 音声の大きさ(2026-11-03): 声が起動音より 20〜30 dB 小さかったので、全 App の音声を AudioSink の手前で同じ大きさにそろえる
-`dsp::Leveler`(−18 dBFS、リミッタ −1 dBFS)を入れた。
+`dsp::Leveler`(−18 dBFS、リミッタ −1 dBFS)を入れた。キオスク用に音量のパネル(ステータスバーの `♪`、音量キー)も足した。
 実機で聞いて目標の大きさを決めるのが残り(`docs/audio.md`)。
 
 JR TRAIN RADIO の残り:
